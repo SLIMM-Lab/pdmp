@@ -1,0 +1,14 @@
+name: pdmp
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python
+  - jupyter
+  - jupyterlab
+  - jupyterlab_vim
+  - matplotlib
+  - numpy
+  - scipy
+  - seaborn
+  - pyvbmc
