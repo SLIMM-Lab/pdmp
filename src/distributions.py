@@ -37,10 +37,15 @@ class MultivariateNormal:
     def getCov(self):
         return self.cov_
 
+    def get_n_obs(self):
+        return 0
+
     def logDensity(self, x):
         diff = x - self.mean_
         return self.constant_ - self.logDet_ - 0.5 * np.linalg.norm(np.linalg.solve(self.covL_, diff)) ** 2
 
+    # remove unnecessary argument if zagzag directly samples on gaussian
+    # def gradLogDensity(self, x, sub_sampling=False):
     def gradLogDensity(self, x):
         diff = x - self.mean_
         return - sp.linalg.solve_triangular(self.covL_.transpose(),
@@ -177,8 +182,25 @@ class Likelihood:
         for i in range(self.n_obs_):
             hess += self.dists_[i].gradLogDensity(m) @ hess_m + \
                     self.dists_[i].hessianLogDensity(m) @ grad_m @ grad_m.T
-
         return hess
+
+class FlatLikelihood:
+
+    def __init__(self, dim):
+        self.dim_ = dim
+        pass
+
+    def get_n_obs(self):
+        return 0
+
+    def logDensity(self, params, idx=None):
+        return 1.0
+
+    def gradLogDensity(self, params, idx=None):
+        if idx is None:
+            return np.zeros(self.dim_)
+        else:
+            return 0.
 
 
 class Posterior:
@@ -217,37 +239,3 @@ def getSample(dim, rng=None):
     else:
         dist = MultivariateNormal(np.zeros(dim), np.eye(dim), rng=rng)
     return dist.getSample()
-
-
-if __name__ == '__main__':
-    mean = np.array([0., 1.])
-    # cov = np.array([[1., ]])
-    cov = np.eye(2)
-
-    rng = np.random.default_rng(0)
-
-    dist = MultivariateLogNormal(mean, cov, rng=rng)
-
-    x = np.array([-0.01, 1.])
-
-    dist.logDensity(x)
-
-    # x = np.linspace(0.01, 3, 100)
-    # y = np.zeros_like(x)
-    # y_np = np.zeros_like(x)
-    #
-    # for i in range(len(x)):
-    #     y[i] = np.exp(dist.logDensity(x[i]))
-    #     # y[i] = dist.logDensity(x[i])
-    #     y_np[i] = pdf(x[i], mean[0], cov[0, 0])
-    #
-    # x0 = x[50]
-    # y0 = y[50]
-    # dydx = y0 * dist.gradLogDensity(np.array([x0]))[0]
-    # # dydx = dist.gradLogDensity(np.array([x0]))[0]
-    #
-    # fig, ax = plt.subplots()
-    # ax.plot(x, y)
-    # ax.plot(x, y0 + (x - x0) * dydx)
-    # ax.scatter(x0, y0)
-    # fig.show()

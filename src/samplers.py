@@ -129,6 +129,10 @@ class LangevinDynamicsSampler:
         self.state_ = getSample(self.target_.getDim(), rng=self.rng_)
         self.state_ = np.zeros_like(self.state_)
         self.state_ = np.array([0.5, 0.4])
+
+        if hasattr(self.target_, 'getPriorSample'):
+            self.state_ = self.target_.getPriorSample()
+
         self.chain_ = np.zeros((self.n_samples_, self.dim_))
         self.chain_[0, :] = self.state_
         self.logDensity_ = self.target_.logDensity(self.state_)
@@ -348,13 +352,13 @@ class HamiltonianMonteCarlo:
 
         # if self.plot_:
         # self.fig_.fig.show()
-        # self.fig_.savefig(f"plots/hmc_2d_l2.pdf")
+        # self.fig_.savefig(f"plots/hmc_2d_l2.p_x")
 
 
 class ZigZagSampler:
 
     def __init__(self, target, n_events=1000, gamma=0.01, rng=None, seed=None, approximation=None,
-                 sub_sampling=False, **kwargs):
+                 sub_sampling=False, n_events_accepted=None, **kwargs):
         self.target_ = target
         self.dim_ = self.target_.getDim()
         self.n_obs_ = self.target_.get_n_obs()
@@ -368,7 +372,16 @@ class ZigZagSampler:
         self.plot_ = False
         self.approximation_ = approximation
         self.thinning_ = False
+        self.n_accepted_ = 0
+        self.n_accepted_0_ = n_events_accepted
+        self.accepted_iters_ = np.zeros(self.n_accepted_0_, dtype=int)
         self.sub_sampling_ = sub_sampling
+
+        # if 'ss' in kwargs:
+        #     self.ss_ = kwargs['ss']
+        #
+        # if 'us' in kwargs:
+        #     self.us_ = kwargs['us']
 
         if rng is None and seed is None:
             self.rng_ = np.random.default_rng(0)
@@ -446,6 +459,8 @@ class ZigZagSampler:
 
     def cinlars_method_linear(self):
         s = -np.log(self.rng_.uniform(0, 1, self.dim_))
+        # s = self.ss_[self.iter_]
+        # print(f"s: {s}")
 
         a = (np.abs(self.approximation_['inv_cov'])
              @ np.abs((self.positions_[self.iter_] - self.approximation_['mean'])) + self.gamma_ + self.offset_)
@@ -457,19 +472,45 @@ class ZigZagSampler:
 
         if idx is None:
             rates = self.velocities_[self.iter_] * (self.approximation_['inv_cov']
-                                                    @ (x - self.approximation_['mean']))
-            return np.maximum(rates, 0) + self.gamma_ + self.offset_
+                                                    @ (x - self.approximation_['mean'])) + self.offset_
+            # return np.maximum(rates, 0) + self.gamma_ + self.offset_
+            return np.maximum(rates, 0) + self.gamma_
         else:
             rate = self.velocities_[self.iter_, idx] * (self.approximation_['inv_cov'][idx]
-                                                        @ (x - self.approximation_['mean'][idx]))
-            return np.maximum(rate, 0) + self.gamma_ + self.offset_
+                                                        @ (x - self.approximation_['mean'])) + self.offset_
+            # return np.maximum(rate, 0) + self.gamma_ + self.offset_
+            return np.maximum(rate, 0) + self.gamma_
+
+    def approximate_bounds(self, x, T, idx=None):
+
+        if idx is None:
+            a = (np.abs(self.approximation_['inv_cov'])
+                 @ np.abs((x - self.approximation_['mean'])) + self.gamma_ + self.offset_)
+            b = np.sum(np.abs(self.approximation_['inv_cov']), axis=1)
+            return a + b * T
+            # return np.divide((np.sqrt(a ** 2 + 2 * b * self.dt_) - a), b, where=b != 0)
+        else:
+            a = (np.abs(self.approximation_['inv_cov'][idx])
+                 @ np.abs((x - self.approximation_['mean'])) + self.gamma_ + self.offset_)
+            b = np.sum(np.abs(self.approximation_['inv_cov'][idx]))
+            # return np.divide((np.sqrt(a ** 2 + 2 * b * self.dt_) - a), b, where=b != 0)
+            return a + b * T
 
     def poisson_thinning(self, j, T):
-        m = self.rates(self.positions_[self.iter_] + T * self.velocities_[self.iter_], idx=j)
-        M = self.approximate_rates(self.positions_[self.iter_] + T * self.velocities_[self.iter_], idx=j)
+        m = self.rates(self.positions_[self.iter_] + T * self.velocities_[self.iter_], idx_d=j)
+        # m = self.approximate_rates(self.positions_[self.iter_] + T * self.velocities_[self.iter_], idx=j)
+        M = self.approximate_bounds(self.positions_[self.iter_], T, idx=j)
         u = self.rng_.uniform(0, 1)
-        if u < m / M:
+        # u = self.us_[self.iter_]
+        # print(f"u: {u}")
+        if u < (m / M):
             self.velocities_[self.iter_ + 1, j] = -self.velocities_[self.iter_, j]
+            self.n_accepted_ += 1
+            self.accepted_iters_[self.n_accepted_] = self.iter_ + 1
+        else:
+            self.velocities_[self.iter_ + 1, j] = self.velocities_[self.iter_, j]
+
+        # print(f"{m/M}")
 
         if m > M:
             print(f"upper bound too tight, m: {m:.5f}, M: {M:.5f}"
@@ -495,6 +536,13 @@ class ZigZagSampler:
             if i % 50 == 0:
                 print(f"Sampling event {i}")
             self.step()
+            if self.thinning_:
+                if self.n_accepted_ == self.n_accepted_0_ - 1:
+                    print(f"Acceptance rate: {self.n_accepted_ / self.n_events_}")
+                    self.positions_ = self.positions_[self.accepted_iters_]
+                    self.times_ = self.times_[self.accepted_iters_]
+                    self.velocities_ = self.velocities_[self.accepted_iters_]
+                    break
 
         print(f"Done")
 

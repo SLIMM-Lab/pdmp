@@ -53,3 +53,6 @@ venv.bak/
 # Pycharm project settings
 .idea
 
+# figures and other results
+*figures
+
