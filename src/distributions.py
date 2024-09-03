@@ -42,12 +42,18 @@ class MultivariateNormal:
 
     def logDensity(self, x):
         diff = x - self.mean_
-        return self.constant_ - self.logDet_ - 0.5 * np.linalg.norm(np.linalg.solve(self.covL_, diff)) ** 2
+        if diff.ndim == 1:
+            if self.dim_ == 1:
+                return self.constant_ - self.logDet_ - 0.5 * np.abs(diff / self.covL_[0,0]) ** 2
+            else:
+                return self.constant_ - self.logDet_ - 0.5 * np.linalg.norm(np.linalg.solve(self.covL_, diff)) ** 2
+        else:
+            return (self.constant_ - self.logDet_ - 0.5 * np.linalg.norm(np.linalg.solve(self.covL_, diff.T), axis=0) ** 2).T
 
     # remove unnecessary argument if zagzag directly samples on gaussian
     # def gradLogDensity(self, x, sub_sampling=False):
     def gradLogDensity(self, x):
-        diff = x - self.mean_
+        diff =  x - self.mean_
         return - sp.linalg.solve_triangular(self.covL_.transpose(),
                                             sp.linalg.solve_triangular(self.covL_, diff, lower=True))
 
@@ -130,6 +136,7 @@ class MultivariateLogNormal:
 class Likelihood:
     def __init__(self, model, x_obs, u_obs, sigma_obs):
         self.model_ = model
+        self.n_params_ = model.getDim()
         self.x_obs_ = x_obs
         self.u_obs_ = u_obs
         self.n_obs_ = self.u_obs_.shape[0]
@@ -159,7 +166,7 @@ class Likelihood:
     def gradLogDensity(self, params, idx=None):
 
         if idx is None:
-            grad = np.zeros(self.dim_)
+            grad = np.zeros(self.n_params_)
             for i in range(self.n_obs_):
                 m = self.model_.eval(self.x_obs_, params, idx=i)
                 grad_m = self.model_.eval_grad(self.x_obs_, params, idx=i)
@@ -171,17 +178,17 @@ class Likelihood:
             grad_m = self.model_.eval_grad(self.x_obs_, params, idx=idx)
             return self.dists_[idx].gradLogDensity(m) @ grad_m
 
-    # todo: fix this implementation
-    def hessianLogDensity(self, params):
+    def hessianLogDensity(self, params: np.ndarray) -> np.ndarray:
 
-        m = self.model_.eval(self.x_obs_, params)
-        grad_m = self.model_.eval_grad(self.x_obs_, params)
-        hess_m = self.model_.eval_hessian(self.x_obs_, params)
-        hess = np.zeros((self.dim_, self.dim_))
+        hess = np.zeros((self.n_params_, self.n_params_))
 
         for i in range(self.n_obs_):
-            hess += self.dists_[i].gradLogDensity(m) @ hess_m + \
-                    self.dists_[i].hessianLogDensity(m) @ grad_m @ grad_m.T
+            m = self.model_.eval(self.x_obs_, params, idx=i)
+            grad_m = self.model_.eval_grad(self.x_obs_, params, idx=i)
+            hess_m = self.model_.eval_hessian(self.x_obs_, params, idx=i)
+            hess += np.einsum('ij,jk,il', self.dists_[i].hessianLogDensity(m), grad_m, grad_m)
+            hess += np.einsum('i,ijk->jk', self.dists_[i].gradLogDensity(m), hess_m)
+
         return hess
 
 class FlatLikelihood:

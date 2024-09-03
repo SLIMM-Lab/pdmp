@@ -5,7 +5,6 @@ import sympy as sy
 
 class ForwardModel:
     def __init__(self, F, n_params):
-        # self.F = F
         self.F = sy.symbols('F')
         self.F_vals = np.array(F)
         self.n_settings_ = self.F_vals.shape[0]
@@ -14,7 +13,6 @@ class ForwardModel:
         self.params_val = np.zeros(n_params)
         self.x = sy.symbols('x')
         self.u = sy.symbols('u', cls=sy.Function)
-        # C1 = sy.symbols('C1')
         offset = 1.
 
         self.E = offset + (self.params[0] - offset) * sy.Heaviside(self.x)
@@ -48,11 +46,6 @@ class ForwardModel:
         print("\n")
         self.hessian = [[sy.lambdify((self.x, self.F, *self.params), hess, 'numpy') for hess in hessian_row] for hessian_row in hessian]
 
-        # print(self.gradient)
-
-    # def set_params_vals(self, params_val):
-    #     self.params_val = params_val
-
     def eval_E(self, x, params):
         E = self.E.subs([*zip(self.params, params)])
         return np.array([E.subs(self.x, x_i) for x_i in x])
@@ -60,18 +53,30 @@ class ForwardModel:
     def eval(self, x, params, idx=None):
         if idx is None:
             idx = 0
-        return self.w_np(x, self.F_vals[idx], *params)
+
+        if len(params) == self.n_params:
+            return self.w_np(x, self.F_vals[idx], *params)
+        else:
+            if len(params.shape) == 1:
+                params=params[:, None]
+            assert params.shape[1] == self.n_params, "Array dimensions do not match"
+            return self.w_np(x, self.F_vals[idx], *[param[:, None] for param in params.T])
 
     def eval_grad(self, x, params, idx=0):
         if idx is None:
             idx = 0
         return np.array([[grad(x_i, self.F_vals[idx], *params) for grad in self.gradient] for x_i in x])
 
-    # todo: fix implementation
     def eval_hessian(self, x, params, idx=0):
         if idx is None:
             idx = 0
-        return np.array([[[hess(x_i, self.F_vals[idx], *params) for hess in hessian_row] for x_i in x] for hessian_row in self.hessian])
+
+        hessian = np.zeros((len(x), self.n_params, self.n_params))
+        for i, x_i in enumerate(x):
+            for j, hessian_row in enumerate(self.hessian):
+                for k, hess in enumerate(hessian_row):
+                    hessian[i, j, k] = hess(x_i, self.F_vals[idx], *params)
+        return hessian
 
     # todo: remove camel case notation
     def getDim(self):
