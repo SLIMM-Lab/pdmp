@@ -105,14 +105,14 @@ if __name__ == '__main__':
     # # ddf = lambda theta: model.eval_hessian(x_obs, theta)[0,0]
     #
     # # # hessian of likelihood
-    # # f = lambda theta: likelihood.logDensity(theta)
-    # # df = lambda theta: likelihood.gradLogDensity(theta)
-    # # ddf = lambda theta: likelihood.hessianLogDensity(theta)[0,0]
+    # # f = lambda theta: likelihood.log_density(theta)
+    # # df = lambda theta: likelihood.grad_log_density(theta)
+    # # ddf = lambda theta: likelihood.hessian_log_density(theta)[0,0]
     #
     # # hessian of posterior
-    # f = lambda theta: target.logDensity(theta)
-    # df = lambda theta: target.gradLogDensity(theta)
-    # ddf = lambda theta: target.hessianLogDensity(theta)[0,0]
+    # f = lambda theta: target.log_density(theta)
+    # df = lambda theta: target.grad_log_density(theta)
+    # ddf = lambda theta: target.hessian_log_density(theta)[0,0]
     #
     # x0 = np.array([2.])
     # f0 = f(x0)
@@ -145,14 +145,14 @@ if __name__ == '__main__':
     # ddf = lambda theta: model.eval_hessian(x_obs, theta)[0]
 
     # # hessian of likelihood
-    # f = lambda theta: likelihood.logDensity(theta)
-    # df = lambda theta: likelihood.gradLogDensity(theta)
-    # ddf = lambda theta: likelihood.hessianLogDensity(theta)
+    # f = lambda theta: likelihood.log_density(theta)
+    # df = lambda theta: likelihood.grad_log_density(theta)
+    # ddf = lambda theta: likelihood.hessian_log_density(theta)
 
     # hessian of posterior
-    f = lambda theta: target.logDensity(theta)
-    df = lambda theta: target.gradLogDensity(theta)
-    ddf = lambda theta: target.hessianLogDensity(theta)
+    f = lambda theta: target.log_density(theta)
+    df = lambda theta: target.grad_log_density(theta)
+    ddf = lambda theta: target.hessian_log_density(theta)
 
     x0 = np.array([2., 2.5])
     f0 = f(x0)
@@ -200,9 +200,9 @@ if __name__ == '__main__':
     plt.show()
 
     # define negative log posterior and gradient for optimization
-    log_post = lambda x: target.logDensity(x)
+    log_post = lambda x: target.log_density(x)
     n_log_post = lambda x: - log_post(x)
-    n_grad_log_post = lambda x: - target.gradLogDensity(x)
+    n_grad_log_post = lambda x: - target.grad_log_density(x)
 
     # find the minimum of the function with bfgs
     x0 = np.array([4., 4.])
@@ -210,7 +210,7 @@ if __name__ == '__main__':
     x_map = opt.x
     print(opt)
 
-    hess_an = target.hessianLogDensity(x_map)
+    hess_an = target.hessian_log_density(x_map)
     print(f"Hess an: \n{hess_an}")
 
     cov_map = np.linalg.inv(- hess_an)

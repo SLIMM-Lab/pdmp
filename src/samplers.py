@@ -3,7 +3,7 @@ import numpy as np
 import scipy as sp
 from typing import Tuple
 from src.distributions import MultivariateNormal
-from src.distributions import getSample
+from src.distributions import get_sample
 
 import seaborn as sns
 
@@ -12,7 +12,7 @@ class MetropolisHastingsSampler:
 
     def __init__(self, target, sigma=0.5, n_samples=10000, rng=None, seed=None, prec=None):
         self.target_ = target
-        self.dim_ = self.target_.getDim()
+        self.dim_ = self.target_.get_dim()
         self.sigma_ = sigma
         self.n_samples_ = n_samples
         self.n_accept_ = 0
@@ -26,9 +26,9 @@ class MetropolisHastingsSampler:
         else:
             self.rng_ = rng
 
-        self.proposalDist_ = MultivariateNormal(np.zeros(self.dim_),
-                                                np.eye(self.dim_),
-                                                rng=self.rng_)
+        self.proposal_dist_ = MultivariateNormal(np.zeros(self.dim_),
+                                                 np.eye(self.dim_),
+                                                 rng=self.rng_)
 
         if prec is None:
             self.prec_ = np.eye(self.dim_)
@@ -36,17 +36,17 @@ class MetropolisHastingsSampler:
             assert np.any(prec.shape != self.dim_) and (len(prec.shape) == 2)
             self.prec_ = prec
 
-        self.precL_ = np.linalg.cholesky(self.prec_)
+        self.prec_L_ = np.linalg.cholesky(self.prec_)
 
         self.reset()
 
     def reset(self):
         self.iter_ = 0
-        # check if self.target_ has a method getPriorSample, and if so, use it
-        if hasattr(self.target_, 'getPriorSample'):
-            self.state_ = self.target_.getPriorSample()
+        # check if self.target_ has a method get_prior_sample, and if so, use it
+        if hasattr(self.target_, 'get_prior_sample'):
+            self.state_ = self.target_.get_prior_sample()
         else:
-            self.state_ = getSample(self.target_.getDim(), rng=self.rng_)
+            self.state_ = get_sample(self.target_.get_dim(), rng=self.rng_)
         self.chain_ = np.zeros((self.n_samples_, self.dim_))
         self.chain_[0, :] = self.state_
 
@@ -55,15 +55,15 @@ class MetropolisHastingsSampler:
 
     def set_preconditioner(self, cov):
         self.prec_ = cov
-        self.precL_ = np.linalg.cholesky(self.prec_)
+        self.prec_L_ = np.linalg.cholesky(self.prec_)
 
     def step(self):
         self.iter_ += 1
-        proposal = self.state_ + self.sigma_ * self.precL_ @ self.proposalDist_.getSample()
-        logDensityProp = self.target_.logDensity(proposal)
-        logDensityCurrent = self.target_.logDensity(self.state_)
+        proposal = self.state_ + self.sigma_ * self.prec_L_ @ self.proposal_dist_.get_sample()
+        log_density_prop = self.target_.log_density(proposal)
+        log_density_current = self.target_.log_density(self.state_)
 
-        if (logDensityProp - logDensityCurrent) > np.log(self.rng_.uniform()):
+        if (log_density_prop - log_density_current) > np.log(self.rng_.uniform()):
             self.state_ = proposal
             self.n_accept_ += 1
             self.n_accept_last_ += 1
@@ -95,7 +95,7 @@ class LangevinDynamicsSampler:
     def __init__(self, target, sigma=0.5, n_samples=10000, adjusted=True,
                  prec=None, rng=None, seed=None):
         self.target_ = target
-        self.dim_ = self.target_.getDim()
+        self.dim_ = self.target_.get_dim()
         self.sigma_ = sigma
         self.n_samples_ = n_samples
         self.adjusted_ = adjusted
@@ -110,9 +110,9 @@ class LangevinDynamicsSampler:
         else:
             self.rng_ = rng
 
-        self.proposalDist_ = MultivariateNormal(np.zeros(self.dim_),
-                                                np.eye(self.dim_),
-                                                rng=self.rng_)
+        self.proposal_dist_ = MultivariateNormal(np.zeros(self.dim_),
+                                                 np.eye(self.dim_),
+                                                 rng=self.rng_)
 
         if prec is None:
             self.prec_ = np.eye(self.dim_)
@@ -120,44 +120,44 @@ class LangevinDynamicsSampler:
             assert np.any(prec.shape != self.dim_) and (len(prec.shape) == 2)
             self.prec_ = prec
 
-        self.precL_ = np.linalg.cholesky(self.prec_)
+        self.prec_L_ = np.linalg.cholesky(self.prec_)
 
         self.reset()
 
     def reset(self):
         self.iter_ = 1
-        self.state_ = getSample(self.target_.getDim(), rng=self.rng_)
+        self.state_ = get_sample(self.target_.get_dim(), rng=self.rng_)
         self.state_ = np.zeros_like(self.state_)
         self.state_ = np.array([0.5, 0.4])
 
         if hasattr(self.target_, 'getPriorSample'):
-            self.state_ = self.target_.getPriorSample()
+            self.state_ = self.target_.get_prior_sample()
 
         self.chain_ = np.zeros((self.n_samples_, self.dim_))
         self.chain_[0, :] = self.state_
-        self.logDensity_ = self.target_.logDensity(self.state_)
-        self.gradLogDensity_ = self.target_.gradLogDensity(self.state_)
+        self.log_density_ = self.target_.log_density(self.state_)
+        self.grad_log_density_ = self.target_.grad_log_density(self.state_)
 
-    def logProposalDensity(self, y, x, grad_x):
+    def log_proposal_density(self, y, x, grad_x):
         diff = y - x - 0.5 * self.sigma_ ** 2 * self.prec_ @ grad_x
         return - 0.5 * diff @ sp.linalg.solve(self.sigma_ ** 2 * self.prec_, diff)
 
     def step(self):
         self.iter_ += 1
-        self.randn_ = self.proposalDist_.getSample()
+        self.randn_ = self.proposal_dist_.get_sample()
         # self.randn_ = np.array([0.8037, -1.715])
-        prop = (self.state_ + self.sigma_ * self.precL_ @ self.randn_
-                + 0.5 * self.sigma_ ** 2 * self.prec_ @ self.gradLogDensity_)
-        logDensityProp = self.target_.logDensity(prop)
-        gradLogDensityProp = self.target_.gradLogDensity(prop)
-        logNumerator = logDensityProp + self.logProposalDensity(self.state_, prop, gradLogDensityProp)
-        logDenominator = self.logDensity_ + self.logProposalDensity(prop, self.state_, self.gradLogDensity_)
+        prop = (self.state_ + self.sigma_ * self.prec_L_ @ self.randn_
+                + 0.5 * self.sigma_ ** 2 * self.prec_ @ self.grad_log_density_)
+        log_density_prop = self.target_.log_density(prop)
+        grad_log_density_prop = self.target_.grad_log_density(prop)
+        log_numerator = log_density_prop + self.log_proposal_density(self.state_, prop, grad_log_density_prop)
+        log_denominator = self.log_density_ + self.log_proposal_density(prop, self.state_, self.grad_log_density_)
 
-        if not self.adjusted_ or ((logNumerator - logDenominator) > np.log(self.rng_.uniform())):
+        if not self.adjusted_ or ((log_numerator - log_denominator) > np.log(self.rng_.uniform())):
             self.state_ = prop
             self.chain_[self.iter_, :] = prop
-            self.logDensity_ = logDensityProp
-            self.gradLogDensity_ = gradLogDensityProp
+            self.log_density_ = log_density_prop
+            self.grad_log_density_ = grad_log_density_prop
             self.n_accept_ += 1
             self.n_accept_last_ += 1
         else:
@@ -168,7 +168,7 @@ class LangevinDynamicsSampler:
 
     def set_preconditioner(self, cov):
         self.prec_ = cov
-        self.precL_ = np.linalg.cholesky(self.prec_)
+        self.prec_L_ = np.linalg.cholesky(self.prec_)
 
     def run(self):
         for i in range(1, self.n_samples_ - 1):
@@ -199,7 +199,7 @@ class HamiltonianMonteCarlo:
         self.chain_ = None
         self.state_ = None
         self.target_ = target
-        self.dim_ = self.target_.getDim()
+        self.dim_ = self.target_.get_dim()
         self.step_scale_ = step_scale
         self.leap_frog_steps_ = leap_frog_steps
         self.n_samples_ = n_samples
@@ -229,7 +229,7 @@ class HamiltonianMonteCarlo:
         else:
             raise Exception("No valid scaling specified.")
 
-        self.M_ = self.scaling_.getCov()
+        self.M_ = self.scaling_.get_cov()
         self.M_inv_ = np.linalg.inv(self.M_)
 
         if plot and (self.dim_ == 1 or self.dim_ == 2):
@@ -252,11 +252,11 @@ class HamiltonianMonteCarlo:
             for i in range(self.gx_.shape[0]):
                 for j in range(self.gx_.shape[1]):
                     if self.dim_ == 2:
-                        self.gz_[i, j] = np.exp(self.target_.logDensity(np.array([self.gx_[i, j],
-                                                                                  self.gy_[i, j]])))
+                        self.gz_[i, j] = np.exp(self.target_.log_density(np.array([self.gx_[i, j],
+                                                                                   self.gy_[i, j]])))
                     else:
-                        self.gz_[i, j] = np.exp(self.target_.logDensity(np.array([self.gx_[i, j]])) +
-                                                self.scaling_.logDensity(np.array([self.gy_[i, j]])))
+                        self.gz_[i, j] = np.exp(self.target_.log_density(np.array([self.gx_[i, j]])) +
+                                                self.scaling_.log_density(np.array([self.gy_[i, j]])))
 
             # self.ax_.axis('equal')
             # self.ax_.set_xlim([x_lim[0], x_lim[1]])
@@ -286,13 +286,13 @@ class HamiltonianMonteCarlo:
         self.chain_[0, :] = self.state_
 
     def leap_frog_step_(self, p0: np.ndarray, q0: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        p = p0 + self.step_scale_ * 0.5 * self.target_.gradLogDensity(q0)
+        p = p0 + self.step_scale_ * 0.5 * self.target_.grad_log_density(q0)
         q = q0 + self.step_scale_ * self.M_inv_ @ p
-        p = p + self.step_scale_ * 0.5 * self.target_.gradLogDensity(q)
+        p = p + self.step_scale_ * 0.5 * self.target_.grad_log_density(q)
         return p, q
 
     def get_hamiltonian(self, p: np.ndarray, q: np.ndarray) -> float:
-        potential = - self.target_.logDensity(q)
+        potential = - self.target_.log_density(q)
         kinetic = 0.5 * p @ self.M_inv_ @ p
         kinetic = kinetic + 0.5 * np.log((2. * np.pi) ** self.dim_ * np.linalg.det(self.M_))
 
@@ -303,17 +303,17 @@ class HamiltonianMonteCarlo:
         p_hist = np.empty((self.leap_frog_steps_ + 1, self.dim_))
         q_hist = np.empty((self.leap_frog_steps_ + 1, self.dim_))
 
-        p_hist[0, :] = p0 = self.scaling_.getSample()
-        q_hist[0, :] = q0 = self.state_
+        p_hist[0, :] = p_0 = self.scaling_.get_sample()
+        q_hist[0, :] = q_0 = self.state_
 
-        hamiltonian0 = self.get_hamiltonian(p0, q0)
+        hamiltonian_0 = self.get_hamiltonian(p_0, q_0)
 
         for i in range(1, self.leap_frog_steps_ + 1):
             p_hist[i, :], q_hist[i, :] = self.leap_frog_step_(p_hist[i - 1, :], q_hist[i - 1, :])
 
         hamiltonian = self.get_hamiltonian(p_hist[-1, :], q_hist[-1, :])
 
-        accept = (- hamiltonian + hamiltonian0) > np.log(self.rng_.uniform())
+        accept = (- hamiltonian + hamiltonian_0) > np.log(self.rng_.uniform())
         if accept:
             self.state_ = q_hist[-1, :]
             self.n_accepted_ += 1
@@ -328,7 +328,7 @@ class HamiltonianMonteCarlo:
             else:
                 # self.ax_.plot(*q_hist.transpose(), *p_hist.transpose(), marker=".", color=color, markersize=2.)
                 aw = 0.01
-                # self.ax_.arrow(q0[0], self.p_old_, 0, p0[0] - self.p_old_, alpha=0.5,
+                # self.ax_.arrow(q_0[0], self.p_old_, 0, p_0[0] - self.p_old_, alpha=0.5,
                 #                color='k', width=aw, length_includes_head=True, head_width=7*aw)
                 # self.ax_.plot(*q_hist.transpose(), *p_hist.transpose(), marker=".", markersize=4.)
                 self.ax_.plot(*q_hist.transpose(), *p_hist.transpose(), marker=".", markersize=4., color=color)
@@ -360,7 +360,7 @@ class ZigZagSampler:
     def __init__(self, target, n_events=1000, gamma=0.01, rng=None, seed=None, approximation=None,
                  sub_sampling=False, n_events_accepted=None, **kwargs):
         self.target_ = target
-        self.dim_ = self.target_.getDim()
+        self.dim_ = self.target_.get_dim()
         self.n_obs_ = self.target_.get_n_obs()
         self.n_events_ = n_events
         self.times_ = np.zeros(self.n_events_)
@@ -393,7 +393,7 @@ class ZigZagSampler:
         if 'x0' in kwargs:
             self.positions_[0] = kwargs['x0']
         elif hasattr(self.target_, 'getPriorSample'):
-            self.positions_[0] = self.target_.getPriorSample()
+            self.positions_[0] = self.target_.get_prior_sample()
 
         # draw initial velocity from binomial distribution
         self.velocities_[0] = 2 * self.rng_.binomial(1, 0.5, self.dim_) - 1
@@ -416,9 +416,9 @@ class ZigZagSampler:
 
     def rates(self, x, idx_d=None, idx_n=None):
         if idx_d is None:
-            return np.maximum(-self.target_.gradLogDensity(x, idx_n) * self.velocities_[self.iter_], 0) + self.gamma_
+            return np.maximum(-self.target_.grad_log_density(x) * self.velocities_[self.iter_], 0) + self.gamma_
         else:
-            return np.maximum(0, -self.target_.gradLogDensity(x, idx_n, sub_sampling=self.sub_sampling_)[idx_d] * self.velocities_[self.iter_, idx_d]) + self.gamma_
+            return np.maximum(0, -self.target_.grad_log_density(x)[idx_d] * self.velocities_[self.iter_, idx_d]) + self.gamma_
 
     def cinlars_method(self):
         s = -np.log(self.rng_.uniform(0, 1, self.dim_))
@@ -579,8 +579,8 @@ if __name__ == '__main__':
 
     for i in range(gx.shape[0]):
         for j in range(gx.shape[1]):
-            gz[i, j] = np.exp(posterior.logDensity(np.array([gx[i, j], gy[i, j]])))
-            grad_z[i, j, :] = posterior.gradLogDensity(np.array([gx[i, j], gy[i, j]]))
+            gz[i, j] = np.exp(posterior.log_density(np.array([gx[i, j], gy[i, j]])))
+            grad_z[i, j, :] = posterior.grad_log_density(np.array([gx[i, j], gy[i, j]]))
 
     fig, ax = plt.subplots()
     ax.axis('equal')

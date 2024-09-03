@@ -84,7 +84,7 @@ if __name__ == '__main__':
     target = Posterior(prior, likelihood)
 
     # get laplace approximation
-    log_post = lambda x: target.logDensity(x)
+    log_post = lambda x: target.log_density(x)
     n_log_post = lambda x: - log_post(x)
 
     x0 = np.array([4., 4.])

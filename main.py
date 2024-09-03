@@ -168,7 +168,7 @@ if __name__ == '__main__':
 
     # ---------------------------------- laplace approx ----------------------------------------------
 
-    log_post = lambda x: target.logDensity(x)
+    log_post = lambda x: target.log_density(x)
     n_log_post = lambda x: - log_post(x)
     # # f = lambda x: model.eval(x_obs, x)[0]
 
