@@ -3,7 +3,7 @@ import os.path
 from src.forward_model import ForwardModel
 from src.project_field import compute_coefficients, squared_exponential_kernel
 from src.samplers import MetropolisHastingsSampler, LangevinDynamicsSampler, ZigZagSampler
-from src.distributions import MultivariateNormal, Likelihood, Posterior
+from src.distributions import MultivariateNormal, GaussianLikelihood, Posterior
 from src.utils import plot_pdf_contours, plot_samples, central_moment_from_skeleton
 
 import numpy as np
@@ -69,7 +69,7 @@ if __name__ == '__main__':
         u_obs[i] = u_gt + rng.normal(0, sigma_obs, (1, u_gt.shape[0]))
 
     # define likelihood and posterior
-    likelihood = Likelihood(model, x_obs, u_obs, sigma_obs)
+    likelihood = GaussianLikelihood(model, x_obs, u_obs, sigma_obs)
     target = Posterior(prior, likelihood)
 
     # get 'true' mean and variance from mcmc

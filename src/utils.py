@@ -6,7 +6,23 @@ from scipy.special import binom
 from src.distributions import MultivariateNormal
 
 
-def get_2d_despined_figure(plot_limits, nrows=1, ncols=1, figsize=(3., 4.), constrained_layout=True):
+def get_2d_despined_figure(plot_limits: tuple[list[float], list[float]],
+                           nrows: int = 1, ncols: int = 1,
+                           figsize: tuple[float, float] = (3., 4.),
+                           constrained_layout: bool = True) -> tuple[plt.Figure, plt.Axes]:
+    """
+    Create a 2D despined figure with specified plot limits and formatting.
+
+    Parameters:
+    plot_limits (tuple): A tuple containing two lists, each specifying the x and y axis limits respectively.
+    nrows (int, optional): Number of rows in the subplot grid. Default is 1.
+    ncols (int, optional): Number of columns in the subplot grid. Default is 1.
+    figsize (tuple, optional): Size of the figure in inches. Default is (3., 4.).
+    constrained_layout (bool, optional): Whether to use constrained layout for the figure. Default is True.
+
+    Returns:
+    tuple: A tuple containing the figure and axes objects.
+    """
 
     # create figure
     fig, ax = plt.subplots(nrows, ncols, figsize=figsize, constrained_layout=constrained_layout)
@@ -38,8 +54,31 @@ def get_2d_despined_figure(plot_limits, nrows=1, ncols=1, figsize=(3., 4.), cons
     return fig, ax
 
 
-def plot_pdf_contours(distribution, ax, plot_limits, n_grid=100, alpha=0.6, n_levels=20,
-                      cmap=sns.color_palette('rocket', as_cmap=True)):
+def plot_pdf_contours(
+        distribution: MultivariateNormal,
+        ax: plt.Axes,
+        plot_limits: tuple[list[float], list[float]],
+        n_grid: int = 100,
+        alpha: float = 0.6,
+        n_levels: int = 20,
+        cmap: sns.palettes._ColorPalette = sns.color_palette('rocket', as_cmap=True)
+) -> plt.Axes:
+    """
+    Plot the probability density function (PDF) contours of a multivariate normal distribution.
+
+    Parameters:
+    distribution (MultivariateNormal): The multivariate normal distribution to plot.
+    ax (plt.Axes): The matplotlib axes object to plot on.
+    plot_limits (tuple): A tuple containing two lists, each specifying the x and y axis limits respectively.
+    n_grid (int, optional): Number of grid points for the x and y axes. Default is 100.
+    alpha (float, optional): Transparency level of the contour plot. Default is 0.6.
+    n_levels (int, optional): Number of contour levels to plot. Default is 20.
+    cmap (sns.palettes._ColorPalette, optional): Colormap to use for the contour plot. Default is 'rocket' colormap.
+
+    Returns:
+    plt.Axes: The matplotlib axes object with the PDF contours plotted.
+    """
+
     x = np.linspace(*plot_limits[0], n_grid)
     y = np.linspace(*plot_limits[1], n_grid)
     X, Y = np.meshgrid(x, y)
@@ -54,7 +93,19 @@ def plot_pdf_contours(distribution, ax, plot_limits, n_grid=100, alpha=0.6, n_le
     return ax
 
 
-def plot_samples(samples, ax, color_code=True, n_vis=500):
+def plot_samples(samples: np.ndarray, ax: plt.Axes, color_code: bool = True, n_vis: int = 500) -> plt.Axes:
+    """
+    Plot samples on a given matplotlib axes object.
+
+    Parameters:
+    samples (np.ndarray): The samples to plot, expected to be a 2D array.
+    ax (plt.Axes): The matplotlib axes object to plot on.
+    color_code (bool, optional): Whether to color code the samples. Default is True.
+    n_vis (int, optional): Number of samples to visualize. Default is 500.
+
+    Returns:
+    plt.Axes: The matplotlib axes object with the samples plotted.
+    """
     samples_plot = samples[0::samples.shape[0] // n_vis]
 
     if color_code:
@@ -65,10 +116,21 @@ def plot_samples(samples, ax, color_code=True, n_vis=500):
     return ax
 
 
-def central_moment_from_skeleton(t, x, v, degree):
+def central_moment_from_skeleton(t: np.ndarray, x: np.ndarray, v: np.ndarray, degree: int) -> np.ndarray:
+    """
+    Compute the central moment of a piecewise linear curve defined by its skeleton.
+
+    Parameters:
+    t (np.ndarray): 1D array of time points.
+    x (np.ndarray): 2D array of positions corresponding to the time points.
+    v (np.ndarray): 2D array of velocities corresponding to the segments between time points.
+    degree (int): The degree of the moment to compute.
+
+    Returns:
+    np.ndarray: The computed central moment of the specified degree.
+    """
 
     # Compute the mean of the curve
-    # mean = np.zeros(x.shape[1])
     if degree != 1:
         mean = central_moment_from_skeleton(t, x, v, 1)
     else:
@@ -83,9 +145,6 @@ def central_moment_from_skeleton(t, x, v, degree):
         t0, t1 = t[i], t[i + 1]
         x0, x1 = x[i], x[i + 1]
         v0 = v[i]
-
-        def parametric_point(s):
-            return x0 + s * v0
 
         def integrand(k):
             return (t1 - t0)**(k + 1) / (k + 1)
