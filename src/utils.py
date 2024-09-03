@@ -1,9 +1,10 @@
+import matplotlib.colors
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.special import binom
 
-from src.distributions import MultivariateNormal
+from src.distributions import Distribution, MultivariateNormal
 
 
 def get_2d_despined_figure(plot_limits: tuple[list[float], list[float]],
@@ -55,13 +56,13 @@ def get_2d_despined_figure(plot_limits: tuple[list[float], list[float]],
 
 
 def plot_pdf_contours(
-        distribution: MultivariateNormal,
+        distribution: Distribution,
         ax: plt.Axes,
         plot_limits: tuple[list[float], list[float]],
         n_grid: int = 100,
         alpha: float = 0.6,
         n_levels: int = 20,
-        cmap: sns.palettes._ColorPalette = sns.color_palette('rocket', as_cmap=True)
+        cmap: matplotlib.colors.ListedColormap = sns.color_palette('rocket', as_cmap=True)
 ) -> plt.Axes:
     """
     Plot the probability density function (PDF) contours of a multivariate normal distribution.
