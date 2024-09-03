@@ -19,19 +19,19 @@ class Distribution:
         else:
             self.rng_ = rng
 
-    def getSample(self) -> np.ndarray:
+    def get_sample(self) -> np.ndarray:
         pass
 
-    def getDim(self) -> int:
+    def get_dim(self) -> int:
         pass
 
-    def logDensity(self, x: np.ndarray) -> float:
+    def log_density(self, x: np.ndarray) -> float:
         pass
 
-    def gradLogDensity(self, x: np.ndarray) -> np.ndarray:
+    def grad_log_density(self, x: np.ndarray) -> np.ndarray:
         pass
 
-    def hessianLogDensity(self, x: np.ndarray) -> np.ndarray:
+    def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
         pass
 
 
@@ -41,29 +41,29 @@ class MultivariateNormal(Distribution):
         super().__init__(rng=rng, seed=seed)
         self.mean_ = mean
         self.dim_ = mean.shape[0]
-        self.setCovariance(cov)
+        self.set_covariance(cov)
         self.constant_ = - 0.5 * np.log(2.0 * np.pi) * self.dim_
 
-    def setCovariance(self, cov: np.ndarray) -> None:
+    def set_covariance(self, cov: np.ndarray) -> None:
         self.cov_ = cov
         self.covL_ = np.linalg.cholesky(cov)
         self.invC_ = sp.linalg.cho_solve((self.covL_, True), np.eye(self.dim_))
         self.logDet_ = np.log(self.covL_.diagonal()).sum()
 
-    def getSample(self) -> np.ndarray:
+    def get_sample(self) -> np.ndarray:
         z = self.rng_.standard_normal(self.dim_)
         return self.covL_ @ z + self.mean_
 
-    def getDim(self) -> int:
+    def get_dim(self) -> int:
         return self.dim_
 
-    def getCov(self) -> np.ndarray:
+    def get_cov(self) -> np.ndarray:
         return self.cov_
 
     def get_n_obs(self) -> int:
         return 0
 
-    def logDensity(self, x: np.ndarray) -> float:
+    def log_density(self, x: np.ndarray) -> float:
         diff = x - self.mean_
         if diff.ndim == 1:
             if self.dim_ == 1:
@@ -73,12 +73,12 @@ class MultivariateNormal(Distribution):
         else:
             return (self.constant_ - self.logDet_ - 0.5 * np.linalg.norm(np.linalg.solve(self.covL_, diff.T), axis=0) ** 2).T
 
-    def gradLogDensity(self, x: np.ndarray) -> np.ndarray:
+    def grad_log_density(self, x: np.ndarray) -> np.ndarray:
         diff =  x - self.mean_
         return - sp.linalg.solve_triangular(self.covL_.transpose(),
                                             sp.linalg.solve_triangular(self.covL_, diff, lower=True))
 
-    def hessianLogDensity(self, x: np.ndarray) -> np.ndarray:
+    def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
         return - self.invC_
 
 
@@ -93,17 +93,17 @@ class BananaDistribution(MultivariateNormal):
         return np.array([x[0] / self.a_,
                          x[1] * self.a_ + self.a_ * self.b_ * (x[0] ** 2 + self.a_ ** 2)])
 
-    def getSample(self) -> np.ndarray:
+    def get_sample(self) -> np.ndarray:
         raise Exception("Cannot sample directly from Banana. Use MCMC instead")
 
-    def getDim(self) -> int:
+    def get_dim(self) -> int:
         return self.dim_
 
-    def logDensity(self, x: np.ndarray) -> float:
-        return super().logDensity(self.transform(x))
+    def log_density(self, x: np.ndarray) -> float:
+        return super().log_density(self.transform(x))
 
-    def gradLogDensity(self, x: np.ndarray) -> np.ndarray:
-        nGrad = - super().gradLogDensity(self.transform(x))
+    def grad_log_density(self, x: np.ndarray) -> np.ndarray:
+        nGrad = - super().grad_log_density(self.transform(x))
         return - np.array([nGrad[0] / self.a_ + nGrad[1] * self.a_ * self.b_ * 2 * x[0],
                            nGrad[1] * self.a_])
 
@@ -125,22 +125,22 @@ class MultivariateLogNormal(Distribution):
         self.dim_ = mean.shape[0]
         self.constant_ = - 0.5 * np.log(2.0 * np.pi) * self.dim_
 
-    def getDim(self) -> int:
+    def get_dim(self) -> int:
         return self.dim_
 
-    def getCov(self) -> np.ndarray:
+    def get_cov(self) -> np.ndarray:
         return self.cov_
 
-    def getMean(self) -> np.ndarray:
+    def get_mean(self) -> np.ndarray:
         return self.mean_
 
-    def logDensity(self, x: np.ndarray) -> float:
+    def log_density(self, x: np.ndarray) -> float:
         x[np.where(x < 0)] = small
         diff = np.log(x) - self.mean_normal_
         return self.constant_ - self.logDet_ - np.sum(np.log(x)) - 0.5 * np.linalg.norm(
             np.linalg.solve(self.covL_, diff)) ** 2
 
-    def gradLogDensity(self, x: np.ndarray) -> np.ndarray:
+    def grad_log_density(self, x: np.ndarray) -> np.ndarray:
         x[np.where(x < 0)] = small
         diff = np.log(x) - self.mean_normal_
         grad = -np.diag(1/x)
@@ -154,10 +154,10 @@ class Likelihood(Distribution):
     def get_n_obs(self) -> int:
         pass
 
-    def gradLogDensity(self, x: np.ndarray, idx: int = None) -> np.ndarray:
+    def grad_log_density(self, x: np.ndarray, idx: int = None) -> np.ndarray:
         pass
 
-    def hessianLogDensity(self, x: np.ndarray, idx: int = None) -> np.ndarray:
+    def hessian_log_density(self, x: np.ndarray, idx: int = None) -> np.ndarray:
         pass
 
 class GaussianLikelihood(Likelihood):
@@ -182,45 +182,45 @@ class GaussianLikelihood(Likelihood):
             self.dists_.append(MultivariateNormal(self.u_obs_[i],
                                                   sigma_obs**2 * np.eye(self.dim_)))
 
-    def getDim(self) -> int:
+    def get_dim(self) -> int:
         return self.dim_
 
-    def getSample(self) -> np.ndarray:
+    def get_sample(self) -> np.ndarray:
         raise Exception("Cannot sample directly from GaussianLikelihood. Use MCMC instead")
 
     def get_n_obs(self) -> int:
         return self.n_obs_
 
-    def logDensity(self, params: np.ndarray, idx: int = None) -> float:
+    def log_density(self, params: np.ndarray, idx: int = None) -> float:
         if idx is None:
             log_p = 0.
             for i in range(self.n_obs_):
-                log_p += self.dists_[i].logDensity(self.model_.eval(self.x_obs_, params))
+                log_p += self.dists_[i].log_density(self.model_.eval(self.x_obs_, params))
             return log_p
         else:
-            return self.dists_[idx].logDensity(self.model_.eval(self.x_obs_, params))
+            return self.dists_[idx].log_density(self.model_.eval(self.x_obs_, params))
 
-    def gradLogDensity(self, params: np.ndarray, idx: int = None) -> np.ndarray:
+    def grad_log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
         if idx is None:
             grad = np.zeros(self.n_params_)
             for i in range(self.n_obs_):
                 m = self.model_.eval(self.x_obs_, params, idx=i)
                 grad_m = self.model_.eval_grad(self.x_obs_, params, idx=i)
-                grad += self.dists_[i].gradLogDensity(m) @ grad_m
+                grad += self.dists_[i].grad_log_density(m) @ grad_m
             return grad
         else:
             m = self.model_.eval(self.x_obs_, params, idx=idx)
             grad_m = self.model_.eval_grad(self.x_obs_, params, idx=idx)
-            return self.dists_[idx].gradLogDensity(m) @ grad_m
+            return self.dists_[idx].grad_log_density(m) @ grad_m
 
-    def hessianLogDensity(self, params: np.ndarray, idx: int = None) -> np.ndarray:
+    def hessian_log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
 
         def hess_comp(hess, i):
             m = self.model_.eval(self.x_obs_, params, idx=i)
             grad_m = self.model_.eval_grad(self.x_obs_, params, idx=i)
             hess_m = self.model_.eval_hessian(self.x_obs_, params, idx=i)
-            hess += np.einsum('ij,jk,il', self.dists_[i].hessianLogDensity(m), grad_m, grad_m)
-            hess += np.einsum('i,ijk->jk', self.dists_[i].gradLogDensity(m), hess_m)
+            hess += np.einsum('ij,jk,il', self.dists_[i].hessian_log_density(m), grad_m, grad_m)
+            hess += np.einsum('i,ijk->jk', self.dists_[i].grad_log_density(m), hess_m)
 
         hess = np.zeros((self.n_params_, self.n_params_))
 
@@ -239,19 +239,19 @@ class FlatLikelihood(Likelihood):
         super().__init__(rng=rng, seed=seed)
         self.dim_ = dim
 
-    def getDim(self) -> int:
+    def get_dim(self) -> int:
         return self.dim_
 
-    def getSample(self) -> np.ndarray:
+    def get_sample(self) -> np.ndarray:
         raise Exception("Cannot sample directly from Flat GaussianLikelihood. Use MCMC instead")
 
     def get_n_obs(self) -> int:
         return 0
 
-    def logDensity(self, params: np.ndarray, idx: int = None) -> float:
+    def log_density(self, params: np.ndarray, idx: int = None) -> float:
         return 1.0
 
-    def gradLogDensity(self, params: np.ndarray, idx: int = None) -> np.ndarray:
+    def grad_log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
         if idx is None:
             return np.zeros(self.dim_)
         else:
@@ -260,38 +260,38 @@ class FlatLikelihood(Likelihood):
 class Posterior(Distribution):
     def __init__(self, prior: Distribution, likelihood: Likelihood, rng: np.random.Generator = None, seed: int = None):
         super().__init__(rng=rng, seed=seed)
-        self.dim_ = prior.getDim()
+        self.dim_ = prior.get_dim()
         self.prior_ = prior
         self.likelihood_ = likelihood
 
-    def getDim(self) -> int:
+    def get_dim(self) -> int:
         return self.dim_
 
-    def getSample(self) -> np.ndarray:
+    def get_sample(self) -> np.ndarray:
         raise Exception("Cannot sample directly from Posterior. Use MCMC instead")
 
     def get_n_obs(self) -> int:
         return self.likelihood_.get_n_obs()
 
-    def logDensity(self, params: np.ndarray) -> float:
-        return self.likelihood_.logDensity(params) + self.prior_.logDensity(params)
+    def log_density(self, params: np.ndarray) -> float:
+        return self.likelihood_.log_density(params) + self.prior_.log_density(params)
 
-    def gradLogDensity(self, params: np.ndarray, idx: int = None, sub_sampling: bool = False) -> np.ndarray:
+    def grad_log_density(self, params: np.ndarray, idx: int = None, sub_sampling: bool = False) -> np.ndarray:
         if sub_sampling:
-            approx_llh = self.likelihood_.get_n_obs() * self.likelihood_.gradLogDensity(params, idx)
-            return approx_llh + self.prior_.gradLogDensity(params)
+            approx_llh = self.likelihood_.get_n_obs() * self.likelihood_.grad_log_density(params)
+            return approx_llh + self.prior_.grad_log_density(params)
         else:
-            return self.likelihood_.gradLogDensity(params, idx) + self.prior_.gradLogDensity(params)
+            return self.likelihood_.grad_log_density(params) + self.prior_.grad_log_density(params)
 
-    def getPriorSample(self) -> np.ndarray:
-        return self.prior_.getSample()
+    def get_prior_sample(self) -> np.ndarray:
+        return self.prior_.get_sample()
 
-    def hessianLogDensity(self, params: np.ndarray) -> np.ndarray:
-        return self.likelihood_.hessianLogDensity(params) + self.prior_.hessianLogDensity(params)
+    def hessian_log_density(self, params: np.ndarray) -> np.ndarray:
+        return self.likelihood_.hessian_log_density(params) + self.prior_.hessian_log_density(params)
 
-def getSample(dim, rng=None):
+def get_sample(dim, rng=None):
     if rng is None:
         dist = MultivariateNormal(np.zeros(dim), np.eye(dim), seed=datetime.now().microsecond)
     else:
         dist = MultivariateNormal(np.zeros(dim), np.eye(dim), rng=rng)
-    return dist.getSample()
+    return dist.get_sample()

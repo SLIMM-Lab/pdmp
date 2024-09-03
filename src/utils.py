@@ -86,7 +86,7 @@ def plot_pdf_contours(
 
     for i in range(n_grid):
         for j in range(n_grid):
-            Z[i, j] = np.exp(distribution.logDensity(np.array([X[i, j], Y[i, j]])))
+            Z[i, j] = np.exp(distribution.log_density(np.array([X[i, j], Y[i, j]])))
 
     ax.contour(X, Y, Z, levels=n_levels, zorder=1, alpha=alpha, cmap=cmap)
 
@@ -195,7 +195,7 @@ if __name__ == '__main__':
 
     samples = np.zeros((n_samples, 2))
     for i in range(n_samples):
-        samples[i] = posterior.getSample()
+        samples[i] = posterior.get_sample()
 
     plot_samples(samples, ax, color_code=True)
 
