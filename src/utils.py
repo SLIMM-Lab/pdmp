@@ -6,6 +6,38 @@ from scipy.special import binom
 from src.distributions import MultivariateNormal
 
 
+def get_2d_despined_figure(plot_limits, nrows=1, ncols=1, figsize=(3., 4.), constrained_layout=True):
+
+    # create figure
+    fig, ax = plt.subplots(nrows, ncols, figsize=figsize, constrained_layout=constrained_layout)
+
+    # format the plot
+    ax.set_xlim(plot_limits[0])
+    ax.set_ylim(plot_limits[1])
+    ax.axis('equal')
+    ax.grid(False)
+    ax.autoscale(enable=False)
+
+    # set labels
+    ax.set_xlabel(r'$\theta_1$')
+    ax.set_ylabel(r'$\theta_2$')
+
+    # despine the plot
+    sns.despine()
+
+    # get rid of the ticks and tick labels
+    ax.set_yticklabels([])
+    ax.set_xticklabels([])
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+    # make the axes linewidths bigger
+    for axis in ['top', 'bottom', 'left', 'right']:
+        ax.spines[axis].set_linewidth(1.)
+
+    return fig, ax
+
+
 def plot_pdf_contours(distribution, ax, plot_limits, n_grid=100, alpha=0.6, n_levels=20,
                       cmap=sns.color_palette('rocket', as_cmap=True)):
     x = np.linspace(*plot_limits[0], n_grid)
@@ -90,30 +122,25 @@ if __name__ == '__main__':
     plt.show()
 
 
-    # # ---------------------------- test visualization ----------------------------
-    # # normal 2d
-    # rng = np.random.default_rng(0)
-    # mean, cov = np.array([0, 0]), np.array([[1, 0.3], [0.3, 1.]])
-    # posterior = MultivariateNormal(mean, cov, rng=rng)
-    # plot_limits = ([-3, 3], [-3, 3])
-    #
-    # fig, ax = plt.subplots(1,1, figsize=(7, 5))
-    #
-    # ax.axis('equal')
-    # ax.set_xlim(plot_limits[0])
-    # ax.set_ylim(plot_limits[1])
-    #
-    # plot_pdf_contours(posterior, ax)
-    #
-    # n_samples = 5000
-    #
-    # samples = np.zeros((n_samples, 2))
-    # for i in range(n_samples):
-    #     samples[i] = posterior.getSample()
-    #
-    # plot_samples(samples, ax, color_code=True)
-    #
-    # plt.show()
+    # ---------------------------- test visualization ----------------------------
+    # normal 2d
+    rng = np.random.default_rng(0)
+    mean, cov = np.array([0, 0]), np.array([[1, 0.3], [0.3, 1.]])
+    posterior = MultivariateNormal(mean, cov, rng=rng)
+    plot_limits = ([-3, 3], [-3, 3])
+
+    fig, ax = get_2d_despined_figure(plot_limits, figsize=(5, 3.5))
+    plot_pdf_contours(posterior, ax, plot_limits)
+
+    n_samples = 5000
+
+    samples = np.zeros((n_samples, 2))
+    for i in range(n_samples):
+        samples[i] = posterior.getSample()
+
+    plot_samples(samples, ax, color_code=True)
+
+    plt.show()
 
 
 
