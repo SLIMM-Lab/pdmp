@@ -6,7 +6,7 @@ from scipy.optimize import minimize
 
 from src.forward_model import ForwardModel
 from src.project_field import compute_coefficients, squared_exponential_kernel
-from src.distributions import MultivariateNormal, Likelihood, Posterior
+from src.distributions import MultivariateNormal, GaussianLikelihood, Posterior
 from src.samplers import ZigZagSampler
 from src.utils import plot_pdf_contours, plot_samples, central_moment_from_skeleton, get_2d_despined_figure
 from visualizations_eccomas.non_rev_demo import fig_path
@@ -34,7 +34,7 @@ def hessian_fd(f, x, h=1e-5):
 sns.set_style('white')
 rng = np.random.default_rng(1)
 
-save_fig = True
+save_fig = False
 fig_path = 'laplace_approx/figures'
 
 if __name__ == '__main__':
@@ -95,7 +95,7 @@ if __name__ == '__main__':
         u_obs[i] = u_gt + rng.normal(0, sigma_obs, (1, u_gt.shape[0]))
 
     # define likelihood and posterior
-    likelihood = Likelihood(model, x_obs, u_obs, sigma_obs)
+    likelihood = GaussianLikelihood(model, x_obs, u_obs, sigma_obs)
     target = Posterior(prior, likelihood)
 
     # # ------------------------- Test 1d ------------------------------

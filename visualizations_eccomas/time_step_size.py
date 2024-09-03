@@ -4,7 +4,7 @@ import seaborn as sns
 from os.path import join
 
 from src.samplers import MetropolisHastingsSampler, LangevinDynamicsSampler, ZigZagSampler
-from src.distributions import MultivariateNormal, Likelihood, Posterior, FlatLikelihood
+from src.distributions import MultivariateNormal, GaussianLikelihood, Posterior, FlatLikelihood
 from src.utils import plot_pdf_contours, plot_samples, central_moment_from_skeleton
 
 sns.set_style('white')
