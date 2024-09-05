@@ -1,7 +1,7 @@
 import os.path
 
 from src.forward_model import ForwardModel
-from src.project_field import compute_coefficients, squared_exponential_kernel
+from src.project_field import compute_coefficients, squared_exponential_kernel, PiecewiseConstantBasis
 from src.samplers import MetropolisHastingsSampler, LangevinDynamicsSampler, ZigZagSampler
 from src.distributions import MultivariateNormal, GaussianLikelihood, Posterior
 from src.utils import plot_pdf_contours, plot_samples, central_moment_from_skeleton
@@ -17,23 +17,13 @@ save_fig = False
 
 if __name__ == '__main__':
 
-
-    # set up random field
-    kernel = squared_exponential_kernel
+    # get the prior field
+    kernel_params = {'sigma': 1., 'l': 0.3}
     n_b = 2
-    interval = [0, 1]
+    interval = (0, 1)
+    basis = PiecewiseConstantBasis(n_b, interval)
+    prior_cov = compute_coefficients(squared_exponential_kernel, basis, interval, kernel_params=kernel_params)
     mean = 4.
-    basis = []
-
-    for i in range(n_b):
-        basis.append(lambda x, i=i: np.piecewise(x,
-                                                 [x < (i / n_b),
-                                                  x == (i / n_b),
-                                                  ((i / n_b) < x) & (x < ((i + 1) / n_b)),
-                                                  x == ((i + 1) / n_b),
-                                                  x > ((i + 1) / n_b)], [0, 0.5, 1, 0.5, 0]))
-
-    prior_cov = compute_coefficients(n_b, squared_exponential_kernel, basis, interval)
     prior = MultivariateNormal(mean * np.ones(n_b), prior_cov, rng=rng)
 
     # set up the forward model
