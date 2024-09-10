@@ -107,6 +107,8 @@ def plot_samples(samples: np.ndarray, ax: plt.Axes, color_code: bool = True, n_v
     Returns:
     plt.Axes: The matplotlib axes object with the samples plotted.
     """
+
+    n_vis = np.min([n_vis, samples.shape[0]])
     samples_plot = samples[0::samples.shape[0] // n_vis]
 
     if color_code:
