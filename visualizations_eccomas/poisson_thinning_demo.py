@@ -152,4 +152,4 @@ if __name__ == '__main__':
     lambda_const_values = np.ones_like(times) * lambda_const_function(times)
 
     plot_rates_and_events(times, rates, lambda_const_function, events_hom, events_non_hom, upper_bound, fig_path, save_fig=False)
-    plot_rates_and_events(times, rates, lambda_max_function, events_hom, events_not_non_hom, upper_bound, fig_path, save_fig=False)
+    plot_rates_and_events(times, rates, lambda_max_function, events_sine, events_non_hom, upper_bound, fig_path, save_fig=False)
