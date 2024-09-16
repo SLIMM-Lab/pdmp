@@ -41,14 +41,11 @@ class MultivariateNormal(Distribution):
         super().__init__(rng=rng, seed=seed)
         self.mean_ = mean
         self.dim_ = mean.shape[0]
-        self.set_covariance(cov)
-        self.constant_ = - 0.5 * np.log(2.0 * np.pi) * self.dim_
-
-    def set_covariance(self, cov: np.ndarray) -> None:
         self.cov_ = cov
         self.covL_ = np.linalg.cholesky(cov)
         self.invC_ = sp.linalg.cho_solve((self.covL_, True), np.eye(self.dim_))
         self.logDet_ = np.log(self.covL_.diagonal()).sum()
+        self.constant_ = - 0.5 * np.log(2.0 * np.pi) * self.dim_
 
     def get_sample(self) -> np.ndarray:
         z = self.rng_.standard_normal(self.dim_)
@@ -57,8 +54,14 @@ class MultivariateNormal(Distribution):
     def get_dim(self) -> int:
         return self.dim_
 
+    def get_mean(self) -> np.ndarray:
+        return self.mean_
+
     def get_cov(self) -> np.ndarray:
         return self.cov_
+
+    def get_inv_cov(self) -> np.ndarray:
+        return self.invC_
 
     def get_n_obs(self) -> int:
         return 0
@@ -80,6 +83,70 @@ class MultivariateNormal(Distribution):
 
     def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
         return - self.invC_
+
+
+class GaussianMixture(Distribution):
+
+    def __init__(self, means: np.ndarray, covs: np.ndarray, weights: np.ndarray, rng: np.random.Generator = None, seed: int = None):
+        super().__init__(rng=rng, seed=seed)
+        self.n_components_ = means.shape[0]
+        self.dim_ = means.shape[1]
+        self.means_ = means
+        self.covs_ = covs
+        self.weights_ = weights / np.sum(weights)
+        assert len(means) == len(covs) == len(weights)
+        self.dists_ = []
+        for i in range(self.n_components_):
+            self.dists_.append(MultivariateNormal(means[i], covs[i], rng=rng))
+        # self.constant_ = - 0.5 * np.log(2.0 * np.pi) * self.dim_
+
+    def get_sample(self) -> np.ndarray:
+        idx = self.rng_.choice(self.n_components_, p=self.weights_)
+        return self.dists_[idx].get_sample()
+
+    def get_dim(self) -> int:
+        return self.dim_
+
+    def get_n_obs(self) -> int:
+        return 0
+
+    def get_mean(self) -> np.ndarray:
+        mean = np.zeros(self.dim_)
+        for i in range(self.n_components_):
+            mean += self.weights_[i] * self.dists_[i].get_mean()
+        return mean
+
+    def get_cov(self) -> np.ndarray:
+        cov = np.zeros((self.dim_, self.dim_))
+        mean = self.get_mean()
+        for i in range(self.n_components_):
+            diff = self.dists_[i].get_mean() - mean
+            cov += self.weights_[i] * ( self.dists_[i].get_cov() + np.outer(diff, diff))
+        return cov
+
+    def log_density(self, x: np.ndarray) -> float:
+        log_p = 0.
+        for i in range(self.n_components_):
+            log_p += self.weights_[i] * np.exp(self.dists_[i].log_density(x))
+        return np.log(log_p)
+
+    def grad_log_density(self, x: np.ndarray) -> np.ndarray:
+        grad = np.zeros(self.dim_)
+        for i in range(self.n_components_):
+            gamma = self.weights_[i] * np.exp(self.dists_[i].log_density(x) - self.log_density(x))
+            grad += gamma * self.dists_[i].grad_log_density(x)
+        return grad
+
+    def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
+        hess = np.zeros((self.dim_, self.dim_))
+        grad = self.grad_log_density(x)
+        for i in range(self.n_components_):
+            gamma = self.weights_[i] * np.exp(self.dists_[i].log_density(x) - self.log_density(x))
+            diff_grad = self.dists_[i].grad_log_density(x) - grad
+            grad = self.grad_log_density(x)
+            hess += gamma * self.dists_[i].hessian_log_density(x)
+            hess += gamma * np.outer(diff_grad, diff_grad)
+        return hess
 
 
 class BananaDistribution(MultivariateNormal):
