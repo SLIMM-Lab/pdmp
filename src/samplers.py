@@ -16,7 +16,8 @@ class StepSampler:
                  n_samples: int = 10000,
                  rng: np.random.Generator = None,
                  seed: int = None,
-                 prec: np.ndarray = None):
+                 prec: np.ndarray = None,
+                 cov_factor: float = 1.):
         """
         Initialize the StepSampler class.
 
@@ -36,6 +37,7 @@ class StepSampler:
         self.n_accept_ = 1
         self.n_accept_last_ = 1
         self.rescale_interval_ = 100
+        self.cov_factor_ = cov_factor
 
         if rng is None and seed is None:
             self.rng_ = np.random.default_rng(0)
@@ -118,7 +120,8 @@ class MetropolisHastingsSampler(StepSampler):
                  n_samples: int = 10000,
                  rng: np.random.Generator = None,
                  seed: int = None,
-                 prec: np.ndarray = None):
+                 prec: np.ndarray = None,
+                 cov_factor: float = 1.):
         """
         Initialize the MetropolisHastingsSampler class.
 
@@ -130,7 +133,7 @@ class MetropolisHastingsSampler(StepSampler):
         seed (int, optional): Seed for the random number generator. Default is None.
         prec (np.ndarray, optional): Preconditioner matrix. Default is None.
         """
-        super().__init__(target=target, n_samples=n_samples, rng=rng, seed=seed, prec=prec)
+        super().__init__(target=target, n_samples=n_samples, rng=rng, seed=seed, prec=prec, cov_factor=cov_factor)
         self.sigma_ = sigma
         self.log_density_old_ = 0.
         self.reset()
@@ -166,7 +169,7 @@ class MetropolisHastingsSampler(StepSampler):
         for i in range(1, self.n_samples_ - 1):
 
             if i == 1000:
-                self.set_preconditioner(2.38**2/self.dim_ * self.get_sample_covariance())
+                self.set_preconditioner(self.cov_factor_ * 2.38**2/self.dim_ * self.get_sample_covariance())
 
             if i % self.rescale_interval_ == 0:
                 print(f"Iteration: {i}")
@@ -194,7 +197,8 @@ class LangevinDynamicsSampler(StepSampler):
                  adjusted: bool = True,
                  prec: np.ndarray = None,
                  rng: np.random.Generator = None,
-                 seed: int = None):
+                 seed: int = None,
+                 cov_factor: float = 1.):
         """
         Initialize the LangevinDynamicsSampler class.
 
@@ -207,7 +211,7 @@ class LangevinDynamicsSampler(StepSampler):
         rng (np.random.Generator, optional): Random number generator. Default is None.
         seed (int, optional): Seed for the random number generator. Default is None.
         """
-        super().__init__(target=target, n_samples=n_samples, rng=rng, seed=seed, prec=prec)
+        super().__init__(target=target, n_samples=n_samples, rng=rng, seed=seed, prec=prec, cov_factor=cov_factor)
         self.sigma_ = sigma
         self.log_density_ = 0.
         self.grad_log_density_ = np.zeros(self.dim_, dtype=np.float64)
@@ -268,7 +272,7 @@ class LangevinDynamicsSampler(StepSampler):
         """
         for i in range(1, self.n_samples_ - 1):
             if i == 1000:
-                self.set_preconditioner(np.power(self.dim_, -1./3.) * self.get_sample_covariance())
+                self.set_preconditioner(self.cov_factor_ * np.power(self.dim_, -1./3.) * self.get_sample_covariance())
 
             if i % self.rescale_interval_ == 0:
                 print(f"Iteration: {i}")
