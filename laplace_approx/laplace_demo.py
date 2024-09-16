@@ -8,27 +8,7 @@ from src.forward_model import ForwardModel
 from src.project_field import compute_coefficients, squared_exponential_kernel, PiecewiseConstantBasis
 from src.distributions import MultivariateNormal, GaussianLikelihood, Posterior
 from src.samplers import ZigZagSampler
-from src.utils import plot_pdf_contours, plot_samples, central_moment_from_skeleton, get_2d_despined_figure
-from visualizations_eccomas.non_rev_demo import fig_path
-
-
-def grad_fd(f, x, h=1e-5):
-    n = len(x)
-    grad = np.zeros(n)
-    for i in range(n):
-        grad[i] = (f(x + h * np.eye(n)[i]) - f(x - h * np.eye(n)[i])) / (2 * h)
-    return grad
-
-def hessian_fd(f, x, h=1e-5):
-    n = len(x)
-    hess = np.zeros((n, n))
-    for i in range(n):
-        for j in range(n):
-            hess[i, j] = (f(x + h * np.eye(n)[i] + h * np.eye(n)[j]) -
-                          f(x - h * np.eye(n)[i] + h * np.eye(n)[j]) -
-                          f(x + h * np.eye(n)[i] - h * np.eye(n)[j]) +
-                          f(x - h * np.eye(n)[i] - h * np.eye(n)[j])) / (4 * h**2)
-    return hess
+from src.utils import plot_pdf_contours, get_2d_despined_figure, grad_fd, hessian_fd
 
 
 sns.set_style('white')

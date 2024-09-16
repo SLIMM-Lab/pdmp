@@ -169,6 +169,48 @@ def central_moment_from_skeleton(t: np.ndarray, x: np.ndarray, v: np.ndarray, de
     return total_integral / t[-1]
 
 
+def grad_fd(f: callable, x: np.ndarray, h: float = 1e-5) -> np.ndarray:
+    """
+    Compute the gradient of a function using finite differences.
+
+    Parameters:
+    f (callable): The function for which the gradient is to be computed. It should take a numpy array as input and return a scalar.
+    x (np.ndarray): The point at which the gradient is to be computed. It should be a 1D numpy array.
+    h (float, optional): The step size for the finite difference approximation. Default is 1e-5.
+
+    Returns:
+    np.ndarray: The gradient of the function at the point x. It will be a 1D numpy array of the same length as x.
+    """
+    n = len(x)
+    grad = np.zeros(n)
+    for i in range(n):
+        grad[i] = (f(x + h * np.eye(n)[i]) - f(x - h * np.eye(n)[i])) / (2 * h)
+    return grad
+
+
+def hessian_fd(f: callable, x: np.ndarray, h: float = 1e-5) -> np.ndarray:
+    """
+    Compute the Hessian matrix of a function using finite differences.
+
+    Parameters:
+    f (callable): The function for which the Hessian is to be computed. It should take a numpy array as input and return a scalar.
+    x (np.ndarray): The point at which the Hessian is to be computed. It should be a 1D numpy array.
+    h (float, optional): The step size for the finite difference approximation. Default is 1e-5.
+
+    Returns:
+    np.ndarray: The Hessian matrix of the function at the point x. It will be a 2D numpy array of shape (n, n) where n is the length of x.
+    """
+    n = len(x)
+    hess = np.zeros((n, n))
+    for i in range(n):
+        for j in range(n):
+            hess[i, j] = (f(x + h * np.eye(n)[i] + h * np.eye(n)[j]) -
+                          f(x - h * np.eye(n)[i] + h * np.eye(n)[j]) -
+                          f(x + h * np.eye(n)[i] - h * np.eye(n)[j]) +
+                          f(x - h * np.eye(n)[i] - h * np.eye(n)[j])) / (4 * h**2)
+    return hess
+
+
 if __name__ == '__main__':
 
     # ---------------------------- test pd curve moments ----------------------------
