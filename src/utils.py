@@ -10,7 +10,9 @@ from src.distributions import Distribution, MultivariateNormal
 def get_2d_despined_figure(plot_limits: tuple[list[float], list[float]],
                            nrows: int = 1, ncols: int = 1,
                            figsize: tuple[float, float] = (3., 4.),
-                           constrained_layout: bool = True) -> tuple[plt.Figure, plt.Axes]:
+                           constrained_layout: bool = True,
+                           keep_ticks: bool = False,
+                           axis_label = '\\theta') -> tuple[plt.Figure, plt.Axes]:
     """
     Create a 2D despined figure with specified plot limits and formatting.
 
@@ -20,6 +22,7 @@ def get_2d_despined_figure(plot_limits: tuple[list[float], list[float]],
     ncols (int, optional): Number of columns in the subplot grid. Default is 1.
     figsize (tuple, optional): Size of the figure in inches. Default is (3., 4.).
     constrained_layout (bool, optional): Whether to use constrained layout for the figure. Default is True.
+    keep_ticks (bool, optional): Whether to keep the ticks. Mainly for debugging purpose. Default is True.
 
     Returns:
     tuple: A tuple containing the figure and axes objects.
@@ -36,17 +39,18 @@ def get_2d_despined_figure(plot_limits: tuple[list[float], list[float]],
     ax.autoscale(enable=False)
 
     # set labels
-    ax.set_xlabel(r'$\theta_1$')
-    ax.set_ylabel(r'$\theta_2$')
+    ax.set_xlabel(rf'${axis_label}_1$')
+    ax.set_ylabel(rf'${axis_label}_2$')
 
     # despine the plot
     sns.despine()
 
     # get rid of the ticks and tick labels
-    ax.set_yticklabels([])
-    ax.set_xticklabels([])
-    ax.set_xticks([])
-    ax.set_yticks([])
+    if not keep_ticks:
+        ax.set_yticklabels([])
+        ax.set_xticklabels([])
+        ax.set_xticks([])
+        ax.set_yticks([])
 
     # make the axes linewidths bigger
     for axis in ['top', 'bottom', 'left', 'right']:
@@ -94,7 +98,11 @@ def plot_pdf_contours(
     return ax
 
 
-def plot_samples(samples: np.ndarray, ax: plt.Axes, color_code: bool = True, n_vis: int = 500) -> plt.Axes:
+def plot_samples(samples: np.ndarray,
+                 ax: plt.Axes,
+                 color_code: bool = True,
+                 n_vis: int = 500,
+                 size = 3) -> plt.Axes:
     """
     Plot samples on a given matplotlib axes object.
 
@@ -112,9 +120,9 @@ def plot_samples(samples: np.ndarray, ax: plt.Axes, color_code: bool = True, n_v
     samples_plot = samples[0::samples.shape[0] // n_vis]
 
     if color_code:
-        ax.scatter(*samples_plot.transpose(), s=3, zorder=2, c=np.linspace(0, 1, samples_plot.shape[0]))
+        ax.scatter(*samples_plot.transpose(), s=size, zorder=2, c=np.linspace(0, 1, samples_plot.shape[0]))
     else:
-        ax.scatter(*samples_plot.transpose(), s=3, zorder=2, c='C0')
+        ax.scatter(*samples_plot.transpose(), s=size, zorder=2, c='C0')
 
     return ax
 
