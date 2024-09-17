@@ -17,24 +17,24 @@ class ForwardModel:
 
         self.E = offset + (self.params[0] - offset) * sy.Heaviside(self.x)
         for i in range(n_params - 1):
-            # self.E += self.params[i] * sy.Piecewise((0, self.x < (i / self.n_params)),
-            #                                         (0.5, self.x == ((i+1) / self.n_params)),
-            #                                         (1, True))V
             self.E += (self.params[i + 1] - self.params[i]) * sy.Heaviside(self.x - (i + 1) / self.n_params)
         self.E = self.E.rewrite(sy.Piecewise)
         print(f"Young's modulus:\n{self.E}\n")
 
-        pdf = sy.Eq(self.E * sy.diff(self.u(self.x), self.x), self.F)
-        print(f"pdf:\n{pdf}\n")
-        w = sy.dsolve(pdf).rhs
+        u_i = []
+        conditions = []
 
-        init_cond = sy.Eq(w.subs(self.x, 0), 0)
-        constant = sy.solve(init_cond, 'C1')[0]
-        self.w = w.subs('C1', constant)
-        print(f"Solution:\n{self.w}\n")
-        self.w_np = sy.lambdify((self.x, self.F, *self.params), self.w, 'numpy')
+        for i in range(self.n_params):
+            u_i.append(sy.S((self.x - (i/self.n_params)) / self.params[i]))
+            conditions.append(sy.S(self.x < (i + 1) / self.n_params))
+            for j in range(i):
+                u_i[i] += (1 / self.n_params) / self.params[j]
 
-        gradient = [sy.diff(self.w, param) for param in self.params]
+        conditions[-1] = sy.S('1')
+        self.u = self.F * sy.Piecewise(*zip(u_i, conditions))
+        self.u_np = sy.lambdify((self.x, self.F, *self.params), self.u, 'numpy')
+
+        gradient = [sy.diff(self.u, param) for param in self.params]
         print("Gradient:\n")
         [print(grad) for grad in gradient]
         print("\n")
@@ -55,12 +55,12 @@ class ForwardModel:
             idx = 0
 
         if len(params) == self.n_params:
-            return self.w_np(x, self.F_vals[idx], *params)
+            return self.u_np(x, self.F_vals[idx], *params)
         else:
             if len(params.shape) == 1:
                 params=params[:, None]
             assert params.shape[1] == self.n_params, "Array dimensions do not match"
-            return self.w_np(x, self.F_vals[idx], *[param[:, None] for param in params.T])
+            return self.u_np(x, self.F_vals[idx], *[param[:, None] for param in params.T])
 
     def eval_grad(self, x, params, idx=0):
         if idx is None:
