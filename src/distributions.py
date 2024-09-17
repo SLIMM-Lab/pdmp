@@ -240,7 +240,7 @@ class GaussianLikelihood(Likelihood):
     ):
         super().__init__(rng=rng, seed=seed)
         self.model_ = model
-        self.n_params_ = model.getDim()
+        self.n_params_ = model.get_dim()
         self.x_obs_ = x_obs
         self.u_obs_ = u_obs
         self.n_obs_ = self.u_obs_.shape[0]

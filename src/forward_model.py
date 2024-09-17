@@ -79,7 +79,7 @@ class ForwardModel:
         return hessian
 
     # todo: remove camel case notation
-    def getDim(self):
+    def get_dim(self):
         return self.n_params
 
     def get_n_settings(self):
