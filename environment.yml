@@ -13,3 +13,7 @@ dependencies:
   - seaborn
   - pyvbmc
   - sympy
+  - pip
+  - pip:
+    - nbdime
+    - nbmerge
