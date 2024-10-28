@@ -3,16 +3,20 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.special import binom
+from typing import Union, List
 
 from src.distributions import Distribution, MultivariateNormal
 
 
-def get_2d_despined_figure(plot_limits: tuple[list[float], list[float]],
-                           nrows: int = 1, ncols: int = 1,
+def get_2d_despined_figure(plot_limits: tuple[list[float], list[float]] = None,
+                           nrows: int = 1,
+                           ncols: int = 1,
                            figsize: tuple[float, float] = (3., 4.),
                            constrained_layout: bool = True,
                            keep_ticks: bool = False,
-                           axis_label = '\\theta') -> tuple[plt.Figure, plt.Axes]:
+                           axes_label: Union[tuple[str, ...], str] = '\\theta',
+                           equal_axes = True)\
+        -> tuple[plt.Figure, plt.Axes]:
     """
     Create a 2D despined figure with specified plot limits and formatting.
 
@@ -32,15 +36,23 @@ def get_2d_despined_figure(plot_limits: tuple[list[float], list[float]],
     fig, ax = plt.subplots(nrows, ncols, figsize=figsize, constrained_layout=constrained_layout)
 
     # format the plot
-    ax.set_xlim(plot_limits[0])
-    ax.set_ylim(plot_limits[1])
-    ax.axis('equal')
+    if plot_limits is not None:
+        ax.set_xlim(plot_limits[0])
+        ax.set_ylim(plot_limits[1])
+
+    if equal_axes:
+        ax.axis('equal')
+        ax.autoscale(enable=False)
+
     ax.grid(False)
-    ax.autoscale(enable=False)
 
     # set labels
-    ax.set_xlabel(rf'${axis_label}_1$')
-    ax.set_ylabel(rf'${axis_label}_2$')
+    if isinstance(axes_label, tuple):
+        ax.set_xlabel(rf'${axes_label[0]}$')
+        ax.set_ylabel(rf'${axes_label[1]}$')
+    else:
+        ax.set_xlabel(rf'${axes_label}_1$')
+        ax.set_ylabel(rf'${axes_label}_2$')
 
     # despine the plot
     sns.despine()
