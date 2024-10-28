@@ -1,3 +1,5 @@
+import pickle
+import os
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
@@ -109,6 +111,23 @@ class StepSampler:
         Run the Metropolis-Hastings sampler.
         """
         raise NotImplementedError("The step method must be implemented in a subclass.")
+
+    def write_data(self, folder: str):
+        """
+        Write the chain data to a file.
+
+        Parameters:
+        filename (str): The name of the folder to write the data to.
+        """
+
+        data = {
+            'acceptance_rate': self.n_accept_ / self.n_samples_,
+        }
+
+        with open(os.path.join(folder, 'other.pkl'), 'wb') as f:
+            pickle.dump(data, f)
+
+        np.savetxt(os.path.join(folder, 'samples.dat'), self.chain_)
 
 
 class MetropolisHastingsSampler(StepSampler):
@@ -758,6 +777,25 @@ class ZigZagSampler:
                     break
 
         print(f"Done")
+
+    def write_data(self, folder: str):
+        """
+        Write the chain data to a file.
+
+        Parameters:
+        filename (str): The name of the folder to write the data to.
+        """
+
+        data = {}
+        if self.thinning_:
+            data['acceptance_rate'] = self.n_accepted_ / self.n_events_
+
+        with open(os.path.join(folder, 'other.pkl'), 'wb') as f:
+            pickle.dump(data, f)
+
+        np.savetxt(os.path.join(folder, 'positions.dat'), self.positions_)
+        np.savetxt(os.path.join(folder, 'times.dat'), self.times_)
+        np.savetxt(os.path.join(folder, 'velocities.dat'), self.velocities_)
 
 
 if __name__ == '__main__':
