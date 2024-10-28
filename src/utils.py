@@ -157,7 +157,8 @@ def plot_samples(samples: np.ndarray,
                  ax: plt.Axes,
                  color_code: bool = True,
                  n_vis: int = 500,
-                 size = 3) -> plt.Axes:
+                 size = 3,
+                 **kwargs) -> plt.Axes:
     """
     Plot samples on a given matplotlib axes object.
 
@@ -177,7 +178,7 @@ def plot_samples(samples: np.ndarray,
     if color_code:
         ax.scatter(*samples_plot.transpose(), s=size, zorder=2, c=np.linspace(0, 1, samples_plot.shape[0]))
     else:
-        ax.scatter(*samples_plot.transpose(), s=size, zorder=2, c='C0')
+        ax.scatter(*samples_plot.transpose(), s=size, zorder=2, **kwargs)
 
     return ax
 
