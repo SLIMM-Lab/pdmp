@@ -268,7 +268,6 @@ class LangevinDynamicsSampler(StepSampler):
         """
         Perform a single Langevin dynamics step.
         """
-        self.iter_ += 1
         self.randn_ = self.proposal_dist_.get_sample()
         # self.randn_ = np.array([0.8037, -1.715])
         prop = (self.state_ + self.sigma_ * self.prec_L_ @ self.randn_
