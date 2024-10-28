@@ -110,6 +110,49 @@ def plot_pdf_contours(
     return ax
 
 
+def plot_pfd_contour_slice(
+        distribution: Distribution,
+        ax: plt.Axes,
+        plot_limits: tuple[list[float], list[float]],
+        slice_loc: np.ndarray,
+        idcs_plane: tuple[int, int] = (0, 1),
+        n_grid: int = 100,
+        alpha: float = 0.6,
+        n_levels: int = 20,
+        cmap: matplotlib.colors.ListedColormap = sns.color_palette('rocket', as_cmap=True)
+) -> plt.Axes:
+    """
+    Plot the probability density function (PDF) contours of a multivariate normal distribution.
+
+    Parameters:
+    distribution (MultivariateNormal): The multivariate normal distribution to plot.
+    ax (plt.Axes): The matplotlib axes object to plot on.
+    plot_limits (tuple): A tuple containing two lists, each specifying the x and y axis limits respectively.
+    n_grid (int, optional): Number of grid points for the x and y axes. Default is 100.
+    alpha (float, optional): Transparency level of the contour plot. Default is 0.6.
+    n_levels (int, optional): Number of contour levels to plot. Default is 20.
+    cmap (sns.palettes._ColorPalette, optional): Colormap to use for the contour plot. Default is 'rocket' colormap.
+
+    Returns:
+    plt.Axes: The matplotlib axes object with the PDF contours plotted.
+    """
+
+    x = np.linspace(*plot_limits[0], n_grid)
+    y = np.linspace(*plot_limits[1], n_grid)
+    X, Y = np.meshgrid(x, y)
+    Z = np.zeros_like(X)
+
+    for i in range(n_grid):
+        for j in range(n_grid):
+            point = slice_loc.copy()
+            point[idcs_plane[0]] = X[i, j]
+            point[idcs_plane[1]] = Y[i, j]
+            Z[i, j] = np.exp(distribution.log_density(point))
+
+    ax.contour(X, Y, Z, levels=n_levels, zorder=1, alpha=alpha, cmap=cmap)
+
+    return ax
+
 def plot_samples(samples: np.ndarray,
                  ax: plt.Axes,
                  color_code: bool = True,
