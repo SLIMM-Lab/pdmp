@@ -61,7 +61,7 @@ class StepSampler:
 
         self.prec_L_ = np.linalg.cholesky(self.prec_)
 
-    def reset(self):
+    def reset(self, x_0: np.ndarray = None):
         """
         Reset the sampler state.
         """
@@ -70,7 +70,9 @@ class StepSampler:
         self.n_accept_last_ = 1
 
         # check if self.target_ has a method get_prior_sample, and if so, use it
-        if hasattr(self.target_, 'get_prior_sample'):
+        if x_0 is not None:
+            self.state_ = x_0
+        elif hasattr(self.target_, 'get_prior_sample'):
             self.state_ = self.target_.get_prior_sample()
         else:
             self.state_ = get_sample(self.target_.get_dim(), rng=self.rng_)
@@ -121,7 +123,8 @@ class MetropolisHastingsSampler(StepSampler):
                  rng: np.random.Generator = None,
                  seed: int = None,
                  prec: np.ndarray = None,
-                 cov_factor: float = 1.):
+                 cov_factor: float = 1.,
+                 x_0: np.ndarray = None):
         """
         Initialize the MetropolisHastingsSampler class.
 
@@ -136,13 +139,13 @@ class MetropolisHastingsSampler(StepSampler):
         super().__init__(target=target, n_samples=n_samples, rng=rng, seed=seed, prec=prec, cov_factor=cov_factor)
         self.sigma_ = sigma
         self.log_density_old_ = 0.
-        self.reset()
+        self.reset(x_0)
 
-    def reset(self):
+    def reset(self, x_0: np.ndarray = None):
         """
         Reset the sampler state.
         """
-        super().reset()
+        super().reset(x_0)
         self.log_density_old_ = self.target_.log_density(self.state_)
 
     def step(self):
@@ -198,7 +201,8 @@ class LangevinDynamicsSampler(StepSampler):
                  prec: np.ndarray = None,
                  rng: np.random.Generator = None,
                  seed: int = None,
-                 cov_factor: float = 1.):
+                 cov_factor: float = 1.,
+                 x_0: np.ndarray = None):
         """
         Initialize the LangevinDynamicsSampler class.
 
@@ -216,13 +220,13 @@ class LangevinDynamicsSampler(StepSampler):
         self.log_density_ = 0.
         self.grad_log_density_ = np.zeros(self.dim_, dtype=np.float64)
         self.adjusted_ = adjusted
-        self.reset()
+        self.reset(x_0)
 
-    def reset(self):
+    def reset(self, x_0: np.ndarray = None):
         """
         Reset the sampler state.
         """
-        super().reset()
+        super().reset(x_0)
         self.log_density_ = self.target_.log_density(self.state_)
         self.grad_log_density_ = self.target_.grad_log_density(self.state_)
 
@@ -304,6 +308,7 @@ class HamiltonianMonteCarlo(StepSampler):
                  rng: np.random.Generator = None,
                  seed: int = None,
                  plot: bool = False,
+                 x_0: np.ndarray = None,
                  plot_limits: Tuple[float, float] = None):
         """
         Initialize the HamiltonianMonteCarlo class.
@@ -330,7 +335,7 @@ class HamiltonianMonteCarlo(StepSampler):
         self.prec_inv_ = np.linalg.inv(self.prec_)
         self.prec_det_ = np.linalg.det(self.prec_)
 
-        self.reset()
+        super().reset(x_0)
 
         if plot and (self.dim_ == 1 or self.dim_ == 2):
             self.plot_ = True
@@ -542,8 +547,8 @@ class ZigZagSampler:
         else:
             self.rng_ = rng
 
-        if 'x0' in kwargs:
-            self.positions_[0] = kwargs['x0']
+        if 'x_0' in kwargs:
+            self.positions_[0] = kwargs['x_0']
         elif hasattr(self.target_, 'get_prior_sample'):
             self.positions_[0] = self.target_.get_prior_sample()
 
