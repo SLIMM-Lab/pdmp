@@ -262,7 +262,7 @@ class LangevinDynamicsSampler(StepSampler):
         float: The log proposal density.
         """
         diff = y - x - 0.5 * self.sigma_ ** 2 * self.prec_ @ grad_x
-        return - 0.5 * diff @ sp.linalg.solve(self.sigma_ ** 2 * self.prec_, diff)
+        return - 0.5 * np.linalg.norm(np.linalg.solve(self.sigma_ * self.prec_L_, diff))**2
 
     def step(self):
         """
