@@ -183,6 +183,66 @@ def plot_samples(samples: np.ndarray,
     return ax
 
 
+def plot_trace(samples: np.ndarray,
+               components: list[int] = None,
+               keep_ticks: bool = True,
+               axis_label = '\\theta'
+               ) -> tuple[plt.Figure, plt.Axes]:
+    """
+    Plot the trace of samples
+
+    Parameters:
+    samples (np.ndarray): The samples to plot, expected to be a 2D array.
+    components (list[int], optional): The components to plot. Default is None.
+    """
+
+    def plot_one_trace(ax: plt.Axes,
+                       samples: np.ndarray,
+                       component: int,
+                       axis_label: str):
+
+        ax.grid(False)
+
+        # get rid of the ticks and tick labels
+        if not keep_ticks:
+            ax.set_yticklabels([])
+            ax.set_xticklabels([])
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+        ax.set_ylabel(rf'${axis_label}_{component}$')
+
+        # make the axes linewidths bigger
+        for axis in ['top', 'bottom', 'left', 'right']:
+            ax.spines[axis].set_linewidth(1.)
+
+        ax.plot(samples[:, component])
+        ax.set_ylabel(rf'${axis_label}_{component}$')
+
+    n_params = samples.shape[1]
+    if components is None:
+        components = list(range(n_params))
+
+    # get figrue
+    fig, ax = plt.subplots(len(components), 1, figsize=(4, n_params * 2.5), constrained_layout=True,
+                           sharex=True)
+
+    # despine the plot
+    sns.despine()
+
+    if len(components) == 1:
+        plot_one_trace(ax, samples, components[0], axis_label)
+        ax.set_xlabel(f'Sample index')
+    else:
+        for i, comp in enumerate(components):
+            plot_one_trace(ax[i], samples, comp, axis_label)
+        ax[-1].set_xlabel(f'Sample index')
+
+    plt.show()
+
+    return fig, ax
+
+
 def central_moment_from_skeleton(t: np.ndarray, x: np.ndarray, v: np.ndarray, degree: int) -> np.ndarray:
     """
     Compute the central moment of a piecewise linear curve defined by its skeleton.
