@@ -520,6 +520,7 @@ class ZigZagSampler:
                  approximation: dict = None,
                  sub_sampling: bool = False,
                  n_events_accepted: int = None,
+                 verbose: bool = True,
                  **kwargs):
         """
         Initialize the ZigZagSampler class.
@@ -533,6 +534,7 @@ class ZigZagSampler:
         approximation (dict, optional): Approximation parameters. Default is None.
         sub_sampling (bool, optional): Whether to use sub-sampling. Default is False.
         n_events_accepted (int, optional): Number of accepted events. Default is None.
+        verbose (bool, optional): Whether to print verbose output. Default is True.
         kwargs: Additional keyword arguments.
         """
         self.target_ = target
@@ -552,6 +554,7 @@ class ZigZagSampler:
         self.n_accepted_0_ = n_events_accepted
         self.accepted_iters_ = np.zeros(self.n_accepted_0_, dtype=int)
         self.sub_sampling_ = sub_sampling
+        self.verbose_ = verbose
 
         # if 'ss' in kwargs:
         #     self.ss_ = kwargs['ss']
@@ -778,8 +781,10 @@ class ZigZagSampler:
         # print(f"{m/M}")
 
         if m > M:
-            print(f"upper bound too tight, m: {m:.5f}, M: {M:.5f}"
-                   "\n ...increasing offset")
+            if self.verbose_:
+                print(f"upper bound too tight, m: {m:.5f}, M: {M:.5f}"
+                       "\n ...increasing offset")
+                print(f"    current position: {self.positions_[self.iter_]}")
             self.offset_ += m - M
 
     def step(self):
@@ -804,16 +809,19 @@ class ZigZagSampler:
         Run the ZigZag sampler.
         """
         for i in range(1, self.n_events_):
-            if i % 50 == 0:
+            if i % 50 == 0 and self.verbose_:
                 print(f"Sampling event {i}")
             self.step()
             if self.thinning_:
                 if self.n_accepted_ == self.n_accepted_0_ - 1:
-                    print(f"Acceptance rate: {self.n_accepted_ / self.n_events_}")
-                    self.positions_ = self.positions_[self.accepted_iters_]
-                    self.times_ = self.times_[self.accepted_iters_]
-                    self.velocities_ = self.velocities_[self.accepted_iters_]
                     break
+
+        if self.thinning_:
+            print(f"Acceptance rate: {self.n_accepted_ / self.iter_}")
+            print(f"Final offset: {self.offset_}")
+            self.positions_ = self.positions_[self.accepted_iters_]
+            self.times_ = self.times_[self.accepted_iters_]
+            self.velocities_ = self.velocities_[self.accepted_iters_]
 
         print(f"Done")
 
