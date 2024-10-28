@@ -152,7 +152,6 @@ class MetropolisHastingsSampler(StepSampler):
         """
         Perform a single Metropolis-Hastings step.
         """
-        self.iter_ += 1
         proposal = self.state_ + self.sigma_ * self.prec_L_ @ self.proposal_dist_.get_sample()
         log_density_new = self.target_.log_density(proposal)
         # log_density_current = self.target_.log_density(self.state_)
@@ -164,12 +163,13 @@ class MetropolisHastingsSampler(StepSampler):
             self.n_accept_last_ += 1
 
         self.chain_[self.iter_, :] = self.state_
+        self.iter_ += 1
 
     def run(self):
         """
         Run the Metropolis-Hastings sampler.
         """
-        for i in range(1, self.n_samples_ - 1):
+        for i in range(1, self.n_samples_):
 
             if i == 1000:
                 self.set_preconditioner(self.cov_factor_ * 2.38**2/self.dim_ * self.get_sample_covariance())
@@ -269,12 +269,13 @@ class LangevinDynamicsSampler(StepSampler):
         else:
             self.chain_[self.iter_, :] = self.state_
 
+        self.iter_ += 1
 
     def run(self):
         """
         Run the Langevin dynamics sampler.
         """
-        for i in range(1, self.n_samples_ - 1):
+        for i in range(1, self.n_samples_):
             if i == 1000:
                 self.set_preconditioner(self.cov_factor_ * np.power(self.dim_, -1./3.) * self.get_sample_covariance())
 
