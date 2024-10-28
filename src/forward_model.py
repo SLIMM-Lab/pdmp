@@ -78,7 +78,6 @@ class ForwardModel:
                     hessian[i, j, k] = hess(x_i, self.F_vals[idx], *params)
         return hessian
 
-    # todo: remove camel case notation
     def get_dim(self):
         return self.n_params
 
