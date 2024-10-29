@@ -47,7 +47,7 @@ if __name__ == '__main__':
     figsize = scale * np.abs(plot_limits[0][1] - plot_limits[0][0]), scale * np.abs(plot_limits[1][1] - plot_limits[1][0])
 
     # set up the plot
-    fig, ax = get_2d_despined_figure(plot_limits=plot_limits, figsize=figsize, axis_label='E')
+    fig, ax = get_2d_despined_figure(plot_limits=plot_limits, figsize=figsize, axes_label='E')
 
     # plot the contours of the p_x
     plot_pdf_contours(prior, ax, plot_limits, n_levels=20)

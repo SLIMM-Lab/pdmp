@@ -87,8 +87,7 @@ if __name__ == '__main__':
     # get figure and plot pdfs
     scale = 1.2
     figsize = scale * np.abs(plot_limits[0][1] - plot_limits[0][0]), scale * np.abs(plot_limits[1][1] - plot_limits[1][0])
-    # fig, ax = get_2d_despined_figure(plot_limits, figsize=(scaling * 3, scaling *3.2))
-    fig, ax = get_2d_despined_figure(plot_limits, figsize=figsize, axis_label='E')
+    fig, ax = get_2d_despined_figure(plot_limits, figsize=figsize, axes_label='E')
     ax.plot(x_map[0], x_map[1], 'ro')
     plot_pdf_contours(target, ax, plot_limits, alpha=0.3)
     plot_pdf_contours(laplace_approx, ax, plot_limits, n_levels=10, alpha=1.0, cmap=sns.color_palette('mako', as_cmap=True))
@@ -97,39 +96,56 @@ if __name__ == '__main__':
 
     if save_fig:
         fig.savefig(os.path.join(fig_path, 'laplace_approx_contours.pdf'))
-
     plt.show()
 
     # ---------------------------------- zig zag sampler ----------------------------------------------
-    fig, ax = get_2d_despined_figure(plot_limits, figsize=figsize, keep_ticks=False, axis_label='E')
+    fig, ax = get_2d_despined_figure(plot_limits, figsize=figsize, keep_ticks=False, axes_label='E')
     plot_pdf_contours(target, ax, plot_limits)
+    if save_fig:
+        fig.savefig(os.path.join(fig_path, 'target_contours.pdf'))
 
-    n_events = 2000
+    n_events = 4000
     n_accepted = 200
     approx = {'mean': x_map, 'inv_cov': - hess_an}
-    x0 = np.array([3.5, 2.5])
-    sampler = ZigZagSampler(target, n_events=n_events, rng=rng, approximation=approx, x0=x0,
+    x_0 = np.array([3.5, 2.5])
+    sampler = ZigZagSampler(target, n_events=n_events, rng=rng, approximation=approx, x_0=x_0,
                             n_events_accepted=n_accepted)
     sampler.run()
 
     positions = sampler.positions_
     ax.plot(positions[:, 0], positions[:, 1], c='C0', alpha=0.75, linewidth=1.)
 
-    if save_fig:
-        fig.savefig(os.path.join(fig_path, f'zig_zag_thinning_{n_accepted}.pdf'))
+    # if save_fig:
+    #     fig.savefig(os.path.join(fig_path, f'zig_zag_thinning_{n_accepted}.pdf'))
 
+    plt.show()
+
+    # ---------------------------------- zig zag int ----------------------------------------------
+
+    fig, ax = get_2d_despined_figure(plot_limits, figsize=figsize, keep_ticks=False, axes_label='E')
+    plot_pdf_contours(target, ax, plot_limits)
+
+    x_0 = np.array([2.8, 3.5])
+    n_events = 200
+    sampler = ZigZagSampler(target, n_events=n_events, rng=rng, x_0=x_0)
+    sampler.run()
+
+    positions = sampler.positions_
+    ax.plot(positions[:, 0], positions[:, 1], c='C0', alpha=0.75, linewidth=1.)
+    if save_fig:
+        fig.savefig(os.path.join(fig_path, f'zig_zag_dt-{0.01}.pdf'))
     plt.show()
 
     # ------------------------- RWMH -------------------------
     # get 'true' mean and variance from mcmc
     n_samples = 2000
     mh_sampler = MetropolisHastingsSampler(target, n_samples=n_samples, sigma=np.sqrt(.5), rng=rng,
-                                           prec=cov, cov_factor=0.5)
+                                           prec=cov, cov_factor=0.5, x_0=x_0)
     mh_sampler.run()
     mh_samples = mh_sampler.chain_
 
     # get figure and plot pdfs
-    fig, ax = get_2d_despined_figure(plot_limits, figsize=figsize, axis_label='E')
+    fig, ax = get_2d_despined_figure(plot_limits, figsize=figsize, axes_label='E')
     plot_pdf_contours(target, ax, plot_limits)
     plot_samples(mh_samples, ax, color_code=False, n_vis=2000, size=1.5)
 
@@ -140,7 +156,7 @@ if __name__ == '__main__':
 
     # MH with 200 samples
     n_samples = 200
-    fig, ax = get_2d_despined_figure(plot_limits, figsize=figsize, axis_label='E')
+    fig, ax = get_2d_despined_figure(plot_limits, figsize=figsize, axes_label='E')
     plot_pdf_contours(target, ax, plot_limits)
     plot_samples(mh_samples[:n_samples], ax, color_code=False, n_vis=500, size=1.5)
 

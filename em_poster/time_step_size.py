@@ -70,7 +70,7 @@ if __name__ == '__main__':
 
     # set up the plot
     scaling = 0.9
-    fig, ax = get_2d_despined_figure(plot_limits=plot_limits, keep_ticks=False, figsize=(scaling * 3, scaling *3.2))
+    fig, ax = get_2d_despined_figure(plot_limits=plot_limits, figsize=(scaling * 3, scaling * 3.2), keep_ticks=False)
     plot_pdf_contours(target, ax, plot_limits)
 
     # set zig-zag parameters
