@@ -581,9 +581,9 @@ class ZigZagSampler:
             pass
         elif self.approximation_ is not None:
             self.thinning_ = True
-            self.generate_event_times = self.cinlars_method_linear
+            self.generate_event_times = self.inverse_cdf_linear
         else:
-            self.generate_event_times = self.cinlars_method
+            self.generate_event_times = self.inverse_cdf
         if 'dt' in kwargs:
             self.dt_ = kwargs['dt']
         else:
@@ -610,9 +610,9 @@ class ZigZagSampler:
         else:
             return np.maximum(0, -self.target_.grad_log_density(x)[idx_d] * self.velocities_[self.iter_, idx_d]) + self.gamma_
 
-    def cinlars_method(self) -> np.ndarray:
+    def inverse_cdf(self) -> np.ndarray:
         """
-        Generate event times using the Cinlar's method.
+        Generate event times using the inverse cdf method.
 
         Returns:
         np.ndarray: The generated event times.
@@ -653,9 +653,9 @@ class ZigZagSampler:
         # print(f"Final taus: {taus}")
         return taus
 
-    def cinlars_method_linear(self) -> np.ndarray:
+    def inverse_cdf_linear(self) -> np.ndarray:
         """
-        Generate event times using the linear approximation of Cinlar's method.
+        Generate event times using the inverse cdf method assuming a linear rate function.
 
         Returns:
         np.ndarray: The generated event times.
