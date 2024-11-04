@@ -514,7 +514,7 @@ class ZigZagSampler:
     def __init__(self,
                  target: Distribution,
                  n_events: int = 1000,
-                 gamma: float = 1.00,
+                 gamma: float = 1e-6,
                  rng: np.random.Generator = None,
                  seed: int = None,
                  approximation: dict = None,
@@ -528,7 +528,8 @@ class ZigZagSampler:
         Parameters:
         target (Distribution): The target distribution to sample from.
         n_events (int, optional): The number of events to sample. Default is 1000.
-        gamma (float, optional): The gamma parameter for the ZigZag process. Default is 1.00.
+        gamma (float, optional): The refresh rate parameter for the ZigZag process. Default is 1e-6 to avoid zero
+            division.
         rng (np.random.Generator, optional): Random number generator. Default is None.
         seed (int, optional): Seed for the random number generator. Default is None.
         approximation (dict, optional): Approximation parameters. Default is None.
