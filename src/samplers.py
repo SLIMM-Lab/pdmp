@@ -652,7 +652,7 @@ class ZigZagSampler:
 
     def inverse_cdf_linear(self) -> np.ndarray:
         """
-        Generate event times using the inverse cdf method assuming a linear rate function.
+        Generate event times using the inverse cdf method assuming b linear rate function.
 
         Returns:
         np.ndarray: The generated event times.
@@ -665,41 +665,41 @@ class ZigZagSampler:
             print(f"S:    {S}")
 
         # get the linear approximation of the rates
-        a = (self.velocities_[self.iter_] *
+        a = self.velocities_[self.iter_] * (self.approximation_['inv_cov'] @ self.velocities_[self.iter_])
+        b = (self.velocities_[self.iter_] *
              (self.approximation_['inv_cov'] @ (self.positions_[self.iter_] - self.approximation_['mean']))
              + self.offset_)
-        b = self.velocities_[self.iter_] * (self.approximation_['inv_cov'] @ self.velocities_[self.iter_])
 
         # init variables
         s = np.zeros(self.dim_)
         tau = np.zeros(self.dim_)
 
         # compute root
-        tau_0 = - a / b
+        tau_0 = - b / a
 
         # check for each component where the intersection with the x-axis is and compute integral accordingly
         for i in range(self.dim_):
 
             if (a[i] > 0) and (b[i] > 0):
-                a_i = a[i] + self.gamma_
-                tau[i] = (np.sqrt(a_i ** 2 + b[i] * S[i]) - a_i) / b[i]
-            elif (a[i] < 0) and (b[i] > 0):
+                b_i = b[i] + self.gamma_
+                tau[i] = (np.sqrt(b_i ** 2 + 2 * a[i] * S[i]) - b_i) / a[i]
+            elif (a[i] > 0) and (b[i] < 0):
                 tau_const = S[i] / self.gamma_
                 if tau_const < tau_0[i]:
                     tau[i] = tau_const
                 else:
                     s[i] += tau_0[i] * self.gamma_
                     d_s = S[i] - s[i]
-                    a_i = a[i] + self.gamma_
-                    tau[i] = tau_0[i] + (np.sqrt((a_i + b[i] * tau_0[i]) ** 2 + 2 * b[i] * d_s)
-                                         - (a_i + b[i] * tau_0[i])) / b[i]
-            elif (a[i] > 0) and (b[i] < 0):
-                s_0 = (0.5 * a[i] + self.gamma_) * tau_0[i]
+                    b_i = b[i] + self.gamma_
+                    tau[i] = tau_0[i] + (np.sqrt((b_i + a[i] * tau_0[i]) ** 2 + 2 * a[i] * d_s)
+                                         - (b_i + a[i] * tau_0[i])) / a[i]
+            elif (a[i] < 0) and (b[i] > 0):
+                s_0 = (0.5 * b[i] + self.gamma_) * tau_0[i]
                 if S[i] > s_0:
                     tau[i] = tau_0[i] + (S[i] - s_0) / self.gamma_
                 else:
-                    tau[i] = (np.sqrt((a[i] + self.gamma_) ** 2 + 2 * b[i] * S[i])
-                              - (a[i] + self.gamma_)) / b[i]
+                    tau[i] = (np.sqrt((b[i] + self.gamma_) ** 2 + 2 * a[i] * S[i])
+                              - (b[i] + self.gamma_)) / a[i]
             else:
                 tau[i] = S[i] / self.gamma_
 
@@ -742,12 +742,12 @@ class ZigZagSampler:
         np.ndarray: The calculated approximate bounds.
         """
 
-        a = (self.velocities_[self.iter_] *
+        a = self.velocities_[self.iter_] * (self.approximation_['inv_cov'] @ self.velocities_[self.iter_])
+        b = (self.velocities_[self.iter_] *
              (self.approximation_['inv_cov'] @ (self.positions_[self.iter_] - self.approximation_['mean']))
              + self.offset_)
-        b = self.velocities_[self.iter_] * (self.approximation_['inv_cov'] @ self.velocities_[self.iter_])
 
-        rates = a + b * T
+        rates = a * T + b
         rates = np.maximum(rates, 0) + self.gamma_
 
         if idx is None:
