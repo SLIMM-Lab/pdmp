@@ -520,7 +520,7 @@ class ZigZagSampler:
                  approximation: dict = None,
                  sub_sampling: bool = False,
                  n_events_accepted: int = None,
-                 verbose: bool = True,
+                 verbose: int = 1,
                  **kwargs):
         """
         Initialize the ZigZagSampler class.
@@ -534,7 +534,7 @@ class ZigZagSampler:
         approximation (dict, optional): Approximation parameters. Default is None.
         sub_sampling (bool, optional): Whether to use sub-sampling. Default is False.
         n_events_accepted (int, optional): Number of accepted events. Default is None.
-        verbose (bool, optional): Whether to print verbose output. Default is True.
+        verbose (int, optional): Level of verbosity: 0 is none, 1 is major, 2 is all outputs.
         kwargs: Additional keyword arguments.
         """
         self.target_ = target
@@ -640,17 +640,14 @@ class ZigZagSampler:
                 rate_t1 = self.rates(self.positions_[self.iter_] + (taus[i] + self.dt_) * self.velocities_[self.iter_],
                                      idx_d=i, idx_n=j)
 
-                # rate_t0_full = self.rates(self.positions_[self.iter_] + taus[i] * self.velocities_[self.iter_],
-                #                      idx_d=i)
-
-                # print(f"  rate_t0: {rate_t0:.5f}   rate_t0 full:{rate_t0_full:.5f}")
                 integral += np.trapz(np.array([rate_t0, rate_t1]), dx=self.dt_)
                 taus[i] += self.dt_
-                # print(f"      tau: {taus[i]:.5f},  integral: {integral:.5f}")
+
                 rate_t0 = rate_t1
 
-        # print(f"Initial s: {s}")
-        # print(f"Final taus: {taus}")
+        if self.verbose_ > 1:
+            print(f"S   : {s}")
+            print(f"taus: {taus}")
         return taus
 
     def inverse_cdf_linear(self) -> np.ndarray:
@@ -664,7 +661,8 @@ class ZigZagSampler:
         # get samples from the CDF
         S = -np.log(self.rng_.uniform(0, 1, self.dim_))
         # S = self.ss_[self.iter_]
-        # print(f"S: {S}")
+        if self.verbose_ > 1:
+            print(f"S:    {S}")
 
         # get the linear approximation of the rates
         a = (self.velocities_[self.iter_] *
@@ -705,7 +703,8 @@ class ZigZagSampler:
             else:
                 tau[i] = S[i] / self.gamma_
 
-        # print(f"Taus: {tau}")
+        if self.verbose_ > 1:
+            print(f"Taus: {tau}")
         return tau
 
     def approximate_rates(self, x: np.ndarray, idx=None) -> np.ndarray:
@@ -770,7 +769,8 @@ class ZigZagSampler:
         M = self.approximate_bounds(self.positions_[self.iter_], T, idx=j)
         u = self.rng_.uniform(0, 1)
         # u = self.us_[self.iter_]
-        # print(f"u: {u}")
+        if self.verbose_ > 1:
+            print(f"    u:    {u}")
         if u < (m / M):
             self.velocities_[self.iter_ + 1, j] = -self.velocities_[self.iter_, j]
             self.n_accepted_ += 1
@@ -778,10 +778,11 @@ class ZigZagSampler:
         else:
             self.velocities_[self.iter_ + 1, j] = self.velocities_[self.iter_, j]
 
-        # print(f"{m/M}")
+        if self.verbose_ > 1:
+            print(f"    ratio: {m/M}")
 
         if m > M:
-            if self.verbose_:
+            if self.verbose_ > 0:
                 print(f"upper bound too tight, m: {m:.5f}, M: {M:.5f}"
                        "\n ...increasing offset")
                 print(f"    current position: {self.positions_[self.iter_]}")
@@ -809,21 +810,22 @@ class ZigZagSampler:
         Run the ZigZag sampler.
         """
         for i in range(1, self.n_events_):
-            if i % 50 == 0 and self.verbose_:
+            if i % 50 == 0 and self.verbose_ > 0:
                 print(f"Sampling event {i}")
             self.step()
             if self.thinning_:
                 if self.n_accepted_ == self.n_accepted_0_ - 1:
                     break
 
-        if self.thinning_:
+        if self.thinning_ and self.verbose_ > 0:
             print(f"Acceptance rate: {self.n_accepted_ / self.iter_}")
             print(f"Final offset: {self.offset_}")
             self.positions_ = self.positions_[self.accepted_iters_]
             self.times_ = self.times_[self.accepted_iters_]
             self.velocities_ = self.velocities_[self.accepted_iters_]
 
-        print(f"Done")
+        if self.verbose_ > 0:
+            print(f"Done")
 
     def write_data(self, folder: str):
         """
@@ -834,7 +836,7 @@ class ZigZagSampler:
         """
 
         data = {}
-        if self.thinning_:
+        if self.thinning_ and self.verbose_ > 0:
             data['acceptance_rate'] = self.n_accepted_ / self.n_events_
 
         with open(os.path.join(folder, 'other.pkl'), 'wb') as f:
