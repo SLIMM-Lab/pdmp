@@ -791,6 +791,7 @@ class ZigZagSampler:
                        "\n ...increasing offset")
                 print(f"    current position: {self.positions_[self.iter_]}")
             self.offset_ += m - M
+            self.revert_step()
 
     def step(self):
         """
@@ -808,6 +809,16 @@ class ZigZagSampler:
             self.poisson_thinning(j, T)
 
         self.iter_ += 1
+
+    def revert_step(self):
+        """
+        Revert the last ZigZag step.
+        """
+        self.times_[self.iter_] = 0.
+        self.positions_[self.iter_] = 0.
+        self.velocities_[self.iter_] = 0.
+        self.iter_ -= 1
+
 
     def run(self):
         """
