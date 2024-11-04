@@ -646,6 +646,9 @@ class ZigZagSampler:
 
                 rate_t0 = rate_t1
 
+            taus[i] -= (integral - s[i]) / rate_t1
+            # taus[i] -= 0.5 * self.dt_
+
         if self.verbose_ > 1:
             print(f"S   : {s}")
             print(f"taus: {taus}")
