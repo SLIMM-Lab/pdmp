@@ -513,7 +513,8 @@ class ZigZagSampler:
 
     def __init__(self,
                  target: Distribution,
-                 n_events: int = 1000,
+                 n_max: int = None,
+                 t_max: float = None,
                  gamma: float = 1e-6,
                  rng: np.random.Generator = None,
                  seed: int = None,
@@ -541,10 +542,25 @@ class ZigZagSampler:
         self.target_ = target
         self.dim_ = self.target_.get_dim()
         self.n_obs_ = self.target_.get_n_obs()
-        self.n_events_ = n_events
-        self.times_ = np.zeros(self.n_events_)
-        self.positions_ = np.zeros((self.n_events_, self.dim_))
-        self.velocities_ = np.zeros((self.n_events_, self.dim_))
+
+        if n_max is not None:
+            self.n_max_ = n_max
+            self.run = self.run_budget
+
+        # make very large skeleton if algorithm is run with time limit
+        if t_max is not None:
+            self.t_max_ = t_max
+            self.n_max_ = 100000
+            n_events_accepted = self.n_max_
+            self.run = self.run_time
+
+        if n_max is None and t_max is None:
+            self.n_max_ = 1000
+            self.run = self.run_budget
+
+        self.times_ = np.zeros(self.n_max_)
+        self.positions_ = np.zeros((self.n_max_, self.dim_))
+        self.velocities_ = np.zeros((self.n_max_, self.dim_))
         self.iter_ = 0
         self.gamma_ = gamma
         self.offset_ = 0.
@@ -815,11 +831,27 @@ class ZigZagSampler:
         self.iter_ -= 1
 
 
-    def run(self):
+    def shutdown(self):
+        """
+        Shutdown the ZigZag sampler.
+        """
+        if self.thinning_ and self.verbose_ > 0:
+            print(f"Acceptance rate: {self.n_accepted_ / self.iter_}")
+            print(f"Final offset: {self.offset_}")
+
+            idx = self.n_accepted_ + 1
+            self.positions_ = self.positions_[self.accepted_iters_[:idx]]
+            self.times_ = self.times_[self.accepted_iters_[:idx]]
+            self.velocities_ = self.velocities_[self.accepted_iters_[:idx]]
+
+        if self.verbose_ > 0:
+            print(f"Done")
+
+    def run_budget(self):
         """
         Run the ZigZag sampler.
         """
-        for i in range(1, self.n_events_):
+        for i in range(1, self.n_max_):
             if i % 50 == 0 and self.verbose_ > 0:
                 print(f"Sampling event {i}")
             self.step()
@@ -827,15 +859,23 @@ class ZigZagSampler:
                 if self.n_accepted_ == self.n_accepted_0_ - 1:
                     break
 
-        if self.thinning_ and self.verbose_ > 0:
-            print(f"Acceptance rate: {self.n_accepted_ / self.iter_}")
-            print(f"Final offset: {self.offset_}")
-            self.positions_ = self.positions_[self.accepted_iters_]
-            self.times_ = self.times_[self.accepted_iters_]
-            self.velocities_ = self.velocities_[self.accepted_iters_]
+        self.shutdown()
 
-        if self.verbose_ > 0:
-            print(f"Done")
+    def run_time(self):
+        """
+        Run the ZigZag sampler.
+        """
+        while self.times_[self.iter_] < self.t_max_:
+            if self.iter_ + 1 % 50 == 0 and self.verbose_ > 0:
+                print(f"Sampling event {i}")
+            self.step()
+
+        # remove empty skeleton
+        self.times_ = self.times_[:self.iter_]
+        self.positions_ = self.positions_[:self.iter_]
+        self.velocities_ = self.velocities_[:self.iter_]
+
+        self.shutdown()
 
     def write_data(self, folder: str):
         """
@@ -846,8 +886,8 @@ class ZigZagSampler:
         """
 
         data = {}
-        if self.thinning_ and self.verbose_ > 0:
-            data['acceptance_rate'] = self.n_accepted_ / self.n_events_
+        if self.thinning_:
+            data['acceptance_rate'] = self.n_accepted_ / self.n_max_
 
         with open(os.path.join(folder, 'other.pkl'), 'wb') as f:
             pickle.dump(data, f)
