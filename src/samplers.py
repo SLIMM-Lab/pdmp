@@ -159,6 +159,10 @@ class MetropolisHastingsSampler(StepSampler):
         self.sigma_ = sigma
         self.log_density_old_ = 0.
         self.reset(x_0)
+        self.proposals_ = np.zeros_like(self.chain_)
+        self.proposals_[0, :] = self.state_
+        self.accepted_ = np.zeros(self.n_samples_, dtype=bool)
+        self.accepted_[0] = True
 
     def reset(self, x_0: np.ndarray = None):
         """
@@ -172,6 +176,7 @@ class MetropolisHastingsSampler(StepSampler):
         Perform a single Metropolis-Hastings step.
         """
         proposal = self.state_ + self.sigma_ * self.prec_L_ @ self.proposal_dist_.get_sample()
+        self.proposals_[self.iter_, :] = proposal
         log_density_new = self.target_.log_density(proposal)
         # log_density_current = self.target_.log_density(self.state_)
 
@@ -180,6 +185,7 @@ class MetropolisHastingsSampler(StepSampler):
             self.log_density_old_ = log_density_new
             self.n_accept_ += 1
             self.n_accept_last_ += 1
+            self.accepted_[self.iter_] = True
 
         self.chain_[self.iter_, :] = self.state_
         self.iter_ += 1
