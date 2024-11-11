@@ -814,9 +814,11 @@ class ZigZagSampler:
         """
         Revert the last ZigZag step.
         """
-        self.times_[self.iter_] = 0.
-        self.positions_[self.iter_] = 0.
-        self.velocities_[self.iter_] = 0.
+        self.times_[self.iter_ + 1] = 0.
+        self.positions_[self.iter_ + 1] = 0.
+        self.velocities_[self.iter_ + 1] = 0.
+        self.accepted_iters_[self.n_accepted_] = 0
+        self.n_accepted_ -= 1
         self.iter_ -= 1
 
 
