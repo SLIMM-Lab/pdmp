@@ -611,7 +611,7 @@ class ZigZagSampler:
         else:
             return np.maximum(0, -self.target_.grad_log_density(x)[idx_d] * self.velocities_[self.iter_, idx_d]) + self.gamma_
 
-    def inverse_cdf(self) -> np.ndarray:
+    def inverse_cdf(self) -> tuple[np.ndarray, int]:
         """
         Generate event times using the inverse cdf method.
 
@@ -628,33 +628,27 @@ class ZigZagSampler:
 
         # print(f"Sampling likelihood component {j}")
 
-        for i in range(self.dim_):
+        integral = np.zeros(self.dim_)
+        rate_t0 = self.rates(self.positions_[self.iter_], idx_n=j)
 
-            # print(f"Sampling dimension {i}")
-            integral = 0.
+        # advance all process until one reaches s
+        while np.all(integral < s):
+            rate_t1 = self.rates(self.positions_[self.iter_] + (taus + self.dt_) * self.velocities_[self.iter_], idx_n=j)
+            integral += np.trapezoid(np.array([rate_t0, rate_t1]), dx=self.dt_, axis=0)
+            taus += self.dt_
+            rate_t0 = rate_t1
 
-            rate_t0 = self.rates(self.positions_[self.iter_], idx_d=i, idx_n=j)
-
-            while integral < s[i]:
-                # rate_t0 = self.rates(self.positions_[self.iter_] + taus[i] * self.velocities_[self.iter_],
-                #                      idx_d=i, idx_n=j)
-                rate_t1 = self.rates(self.positions_[self.iter_] + (taus[i] + self.dt_) * self.velocities_[self.iter_],
-                                     idx_d=i, idx_n=j)
-
-                integral += np.trapz(np.array([rate_t0, rate_t1]), dx=self.dt_)
-                taus[i] += self.dt_
-
-                rate_t0 = rate_t1
-
-            taus[i] -= (integral - s[i]) / rate_t1
-            # taus[i] -= 0.5 * self.dt_
+        # linear correction to last step
+        taus -= (integral - s) / rate_t1
 
         if self.verbose_ > 1:
             print(f"S   : {s}")
             print(f"taus: {taus}")
-        return taus
 
-    def inverse_cdf_linear(self) -> np.ndarray:
+        i = np.argmin(taus)
+        return taus[i], i
+
+    def inverse_cdf_linear(self) -> tuple[np.ndarray, int]:
         """
         Generate event times using the inverse cdf method assuming b linear rate function.
 
@@ -676,40 +670,42 @@ class ZigZagSampler:
 
         # init variables
         s = np.zeros(self.dim_)
-        tau = np.zeros(self.dim_)
+        taus = np.zeros(self.dim_)
 
         # compute root
-        tau_0 = - b / a
+        taus_0 = - b / a
 
         # check for each component where the intersection with the x-axis is and compute integral accordingly
         for i in range(self.dim_):
 
             if (a[i] > 0) and (b[i] > 0):
                 b_i = b[i] + self.gamma_
-                tau[i] = (np.sqrt(b_i ** 2 + 2 * a[i] * S[i]) - b_i) / a[i]
+                taus[i] = (np.sqrt(b_i ** 2 + 2 * a[i] * S[i]) - b_i) / a[i]
             elif (a[i] > 0) and (b[i] < 0):
-                tau_const = S[i] / self.gamma_
-                if tau_const < tau_0[i]:
-                    tau[i] = tau_const
+                taus_const = S[i] / self.gamma_
+                if taus_const < taus_0[i]:
+                    taus[i] = taus_const
                 else:
-                    s[i] += tau_0[i] * self.gamma_
+                    s[i] += taus_0[i] * self.gamma_
                     d_s = S[i] - s[i]
                     b_i = b[i] + self.gamma_
-                    tau[i] = tau_0[i] + (np.sqrt((b_i + a[i] * tau_0[i]) ** 2 + 2 * a[i] * d_s)
-                                         - (b_i + a[i] * tau_0[i])) / a[i]
+                    taus[i] = taus_0[i] + (np.sqrt((b_i + a[i] * taus_0[i]) ** 2 + 2 * a[i] * d_s)
+                                         - (b_i + a[i] * taus_0[i])) / a[i]
             elif (a[i] < 0) and (b[i] > 0):
-                s_0 = (0.5 * b[i] + self.gamma_) * tau_0[i]
+                s_0 = (0.5 * b[i] + self.gamma_) * taus_0[i]
                 if S[i] > s_0:
-                    tau[i] = tau_0[i] + (S[i] - s_0) / self.gamma_
+                    taus[i] = taus_0[i] + (S[i] - s_0) / self.gamma_
                 else:
-                    tau[i] = (np.sqrt((b[i] + self.gamma_) ** 2 + 2 * a[i] * S[i])
+                    taus[i] = (np.sqrt((b[i] + self.gamma_) ** 2 + 2 * a[i] * S[i])
                               - (b[i] + self.gamma_)) / a[i]
             else:
-                tau[i] = S[i] / self.gamma_
+                taus[i] = S[i] / self.gamma_
 
         if self.verbose_ > 1:
-            print(f"Taus: {tau}")
-        return tau
+            print(f"Taus: {taus}")
+
+        j = np.argmin(taus)
+        return taus[j], j
 
     def approximate_rates(self, x: np.ndarray, idx=None) -> np.ndarray:
         """
@@ -759,14 +755,13 @@ class ZigZagSampler:
         else:
             return rates[idx]
 
-
-    def poisson_thinning(self, j: int, T: float):
+    def poisson_thinning(self, j: int, T: np.ndarray):
         """
         Perform Poisson thinning for the ZigZag process.
 
         Parameters:
         j (int): Dimension index.
-        T (float): Time increment.
+        T (np.ndarray): Time increment.
         """
         m = self.rates(self.positions_[self.iter_] + T * self.velocities_[self.iter_], idx_d=j)
         # m = self.approximate_rates(self.positions_[self.iter_] + T * self.velocities_[self.iter_], idx=j)
@@ -797,9 +792,7 @@ class ZigZagSampler:
         """
         Perform a single ZigZag step.
         """
-        taus = self.generate_event_times()
-        j = np.argmin(taus)
-        T = taus[j]
+        T, j = self.generate_event_times()
         self.times_[self.iter_ + 1] = self.times_[self.iter_] + T
         self.positions_[self.iter_ + 1] = self.positions_[self.iter_] + T * self.velocities_[self.iter_]
         self.velocities_[self.iter_ + 1] = self.velocities_[self.iter_]
