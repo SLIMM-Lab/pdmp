@@ -592,7 +592,10 @@ class ZigZagSampler:
             self.positions_[0] = self.target_.get_prior_sample()
 
         # draw initial velocity from binomial distribution
-        self.velocities_[0] = 2 * self.rng_.binomial(1, 0.5, self.dim_) - 1
+        if 'v_0' in kwargs:
+            self.velocities_[0] = kwargs['v_0']
+        else:
+            self.velocities_[0] = 2 * self.rng_.binomial(1, 0.5, self.dim_) - 1
 
         if hasattr(self.target_, 'get_bounds'):
             pass
