@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from os.path import join
 
-from src.samplers import ZigZagSampler
+from src.pdmp import ZigZagSampler
 from src.distributions import MultivariateNormal, Posterior, FlatLikelihood
 from src.utils import plot_pdf_contours
 
