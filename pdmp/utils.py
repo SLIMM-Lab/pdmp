@@ -5,7 +5,7 @@ import seaborn as sns
 from scipy.special import binom
 from typing import Union, List
 
-from src.distributions import Distribution, MultivariateNormal
+from pdmp.distributions import Distribution, MultivariateNormal
 
 
 def get_2d_despined_figure(plot_limits: tuple[list[float], list[float]] = None,

@@ -5,9 +5,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from os.path import join
 
-from src.pdmp import ZigZagSampler
-from src.distributions import Posterior, FlatLikelihood, Distribution
-from src.utils import get_2d_despined_figure, grad_fd
+from pdmp.pdmp import ZigZagSampler
+from pdmp.distributions import Posterior, FlatLikelihood, Distribution
+from pdmp.utils import get_2d_despined_figure, grad_fd
 
 
 class EMLogo(Distribution):

@@ -6,9 +6,9 @@ import scipy as sp
 from typing import Tuple
 from tqdm import tqdm
 
-from src.distributions import Distribution, MultivariateNormal
-from src.distributions import get_sample
-from src import logger
+from pdmp.distributions import Distribution, MultivariateNormal
+from pdmp.distributions import get_sample
+from pdmp import logger
 
 import seaborn as sns
 

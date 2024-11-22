@@ -5,7 +5,7 @@ import numpy as np
 import scipy as sp
 from datetime import datetime
 
-from src.forward_model import ForwardModel
+from pdmp.forward_model import ForwardModel
 
 small = 1e-12
 large = 1e20

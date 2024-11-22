@@ -4,11 +4,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.optimize import minimize
 
-from src.forward_model import ForwardModel
-from src.project_field import compute_coefficients, squared_exponential_kernel, PiecewiseConstantBasis
-from src.distributions import MultivariateNormal, GaussianLikelihood, Posterior
-from src.samplers import ZigZagSampler
-from src.utils import plot_pdf_contours, get_2d_despined_figure, grad_fd, hessian_fd
+from pdmp.forward_model import ForwardModel
+from pdmp.project_field import compute_coefficients, squared_exponential_kernel, PiecewiseConstantBasis
+from pdmp.distributions import MultivariateNormal, GaussianLikelihood, Posterior
+from pdmp.pdmp import ZigZagSampler
+from pdmp.utils import plot_pdf_contours, get_2d_despined_figure, grad_fd, hessian_fd
 
 
 sns.set_style('white')

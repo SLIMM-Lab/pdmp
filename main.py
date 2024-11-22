@@ -1,10 +1,10 @@
 import os.path
 
-from src.forward_model import ForwardModel
-from src.project_field import compute_coefficients, squared_exponential_kernel, PiecewiseConstantBasis
-from src.samplers import MetropolisHastingsSampler, LangevinDynamicsSampler, ZigZagSampler
-from src.distributions import MultivariateNormal, GaussianLikelihood, Posterior
-from src.utils import plot_pdf_contours, plot_samples, central_moment_from_skeleton
+from pdmp.forward_model import ForwardModel
+from pdmp.project_field import compute_coefficients, squared_exponential_kernel, PiecewiseConstantBasis
+from pdmp.mcmc import MetropolisHastingsSampler, LangevinDynamicsSampler, ZigZagSampler
+from pdmp.distributions import MultivariateNormal, GaussianLikelihood, Posterior
+from pdmp.utils import plot_pdf_contours, plot_samples, central_moment_from_skeleton
 
 import numpy as np
 import matplotlib.pyplot as plt
