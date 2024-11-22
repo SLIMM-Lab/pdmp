@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from os.path import join
 
-from src.samplers import ZigZagSampler
+from src.pdmp import ZigZagSampler
 from src.distributions import MultivariateNormal, GaussianLikelihood, Posterior
 from src.utils import plot_pdf_contours, get_2d_despined_figure
 from src.forward_model import ForwardModel

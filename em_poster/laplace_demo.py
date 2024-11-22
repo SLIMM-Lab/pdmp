@@ -7,7 +7,8 @@ from scipy.optimize import minimize
 from src.forward_model import ForwardModel
 from src.project_field import compute_coefficients, squared_exponential_kernel, PiecewiseConstantBasis
 from src.distributions import MultivariateNormal, GaussianLikelihood, Posterior
-from src.samplers import ZigZagSampler, MetropolisHastingsSampler
+from src.mcmc import MetropolisHastingsSampler
+from src.pdmp import ZigZagSampler
 from src.utils import plot_pdf_contours, plot_samples, get_2d_despined_figure
 
 
