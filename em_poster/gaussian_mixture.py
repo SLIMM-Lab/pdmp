@@ -5,9 +5,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from os.path import join
 
-from src.pdmp import ZigZagSampler
-from src.distributions import Posterior, FlatLikelihood, GaussianMixture
-from src.utils import plot_pdf_contours, get_2d_despined_figure
+from pdmp.pdmp import ZigZagSampler
+from pdmp.distributions import Posterior, FlatLikelihood, GaussianMixture
+from pdmp.utils import plot_pdf_contours, get_2d_despined_figure
 
 sns.set_style('white')
 

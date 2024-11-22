@@ -6,13 +6,13 @@ import scipy as sp
 from typing import Tuple
 from tqdm import tqdm
 
-from src.distributions import Distribution, MultivariateNormal
-from src.distributions import get_sample
-from src import logger
+from pdmp.distributions import Distribution, MultivariateNormal
+from pdmp.distributions import get_sample
+from pdmp import logger
 
 import seaborn as sns
 
-from src.utils import get_2d_despined_figure, plot_pdf_contours
+from pdmp.utils import get_2d_despined_figure, plot_pdf_contours
 
 
 class ZigZagSampler:
