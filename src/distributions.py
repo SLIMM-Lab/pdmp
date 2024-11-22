@@ -216,6 +216,27 @@ class MultivariateLogNormal(Distribution):
         return -(1 + sp.linalg.solve_triangular(self.covL_.transpose(),
                                                 sp.linalg.solve_triangular(self.covL_, diff, lower=True)))/x
 
+
+class CubicDistribution(Distribution):
+
+    def __init__(self, mean: np.ndarray, cov: np.ndarray, a: float, rng: np.random.Generator=None, seed: int=None):
+        super().__init__(rng=rng, seed=seed)
+        self.normal_ = MultivariateNormal(mean, cov, rng=rng, seed=seed)
+        self.a_ = a
+
+    def get_sample(self) -> np.ndarray:
+        raise Exception("Cannot sample directly from Cubic. Use MCMC instead")
+
+    def log_density(self, x: np.ndarray) -> np.ndarray:
+        return (1 - 2*(x>0)) * self.a_/3 * (x**3) + self.normal_.log_density(x)
+
+    def grad_log_density(self, x: np.ndarray) -> np.ndarray:
+        return (1 - 2*(x>0)) * (self.a_ * x**2) + self.normal_.grad_log_density(x)
+
+    def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
+        return (1 - 2*(x>0)) * (2 * self.a_ * x) + self.normal_.hessian_log_density(x)
+
+
 class Likelihood(Distribution):
     def __init__(self, rng: np.random.Generator = None, seed: int = None):
         super().__init__(rng=rng, seed=seed)
