@@ -8,12 +8,10 @@ dependencies:
   - jupyterlab
   - jupyterlab_vim
   - matplotlib
-  - numpy
+  - numpy>=2.0
   - scipy
   - seaborn
   - pyvbmc
   - sympy
   - pip
-  - pip:
-    - nbdime
-    - nbmerge
+  - tqdm
