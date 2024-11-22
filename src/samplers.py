@@ -4,9 +4,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
 from typing import Tuple
+from tqdm import tqdm
 
 from src.distributions import Distribution, MultivariateNormal
 from src.distributions import get_sample
+from src import logger
 
 import seaborn as sns
 
@@ -194,23 +196,26 @@ class MetropolisHastingsSampler(StepSampler):
         """
         Run the Metropolis-Hastings sampler.
         """
-        for i in range(1, self.n_samples_):
 
-            if i == 1000:
-                self.set_preconditioner(self.cov_factor_ * 2.38**2/self.dim_ * self.get_sample_covariance())
+        with tqdm(total=self.n_samples_) as pbar:
+            for i in range(1, self.n_samples_):
 
-            if i % self.rescale_interval_ == 0:
-                print(f"Iteration: {i}")
-                print(f"Acceptance rate: {self.n_accept_last_ / self.rescale_interval_}")
-                if self.n_accept_last_ / self.rescale_interval_ < 0.2:
-                    self.set_preconditioner(0.9 * self.prec_)
-                    print("Decrease")
-                elif self.n_accept_last_ / self.rescale_interval_ > 0.25:
-                    self.set_preconditioner(1.1 * self.prec_)
-                    print("Increase")
-                self.n_accept_last_ = 0
-            self.step()
-        print(f"Total acceptance rate: {self.n_accept_ / self.n_samples_}")
+                if i == 1000:
+                    self.set_preconditioner(self.cov_factor_ * 2.38**2/self.dim_ * self.get_sample_covariance())
+
+                if i % self.rescale_interval_ == 0:
+                    logger.info(f"Iteration: {i}")
+                    logger.info(f"Acceptance rate: {self.n_accept_last_ / self.rescale_interval_}")
+                    if self.n_accept_last_ / self.rescale_interval_ < 0.2:
+                        self.set_preconditioner(0.9 * self.prec_)
+                        logger.info("Decrease")
+                    elif self.n_accept_last_ / self.rescale_interval_ > 0.25:
+                        self.set_preconditioner(1.1 * self.prec_)
+                        logger.info("Increase")
+                    self.n_accept_last_ = 0
+                self.step()
+                pbar.update()
+        logger.info(f"Total acceptance rate: {self.n_accept_ / self.n_samples_}")
 
 
 class LangevinDynamicsSampler(StepSampler):
@@ -299,24 +304,24 @@ class LangevinDynamicsSampler(StepSampler):
         """
         Run the Langevin dynamics sampler.
         """
-        for i in range(1, self.n_samples_):
-            if i == 1000:
-                self.set_preconditioner(self.cov_factor_ * np.power(self.dim_, -1./3.) * self.get_sample_covariance())
+        with tqdm(total=self.n_samples_) as pbar:
+            for i in range(1, self.n_samples_):
+                if i == 1000:
+                    self.set_preconditioner(self.cov_factor_ * np.power(self.dim_, -1./3.) * self.get_sample_covariance())
 
-            if i % self.rescale_interval_ == 0:
-                print(f"Iteration: {i}")
-                print(f"Acceptance rate: {self.n_accept_last_ / self.rescale_interval_}")
-                if self.n_accept_last_ / self.rescale_interval_ < 0.5:
-                    self.set_preconditioner(0.9 * self.prec_)
-                    print("Decrease")
-                elif self.n_accept_last_ / self.rescale_interval_ > 0.6:
-                    self.set_preconditioner(1.1 * self.prec_)
-                    print("Increase")
-                self.n_accept_last_ = 0
-            self.step()
-            # if i % 1000 == 0:
-            #     print(f"Iteration: {i}")
-        print(f"Acceptance rate: {self.n_accept_ / self.n_samples_}")
+                if i % self.rescale_interval_ == 0:
+                    logger.info(f"Iteration: {i}")
+                    logger.info(f"Acceptance rate: {self.n_accept_last_ / self.rescale_interval_}")
+                    if self.n_accept_last_ / self.rescale_interval_ < 0.5:
+                        self.set_preconditioner(0.9 * self.prec_)
+                        logger.info("Decrease")
+                    elif self.n_accept_last_ / self.rescale_interval_ > 0.6:
+                        self.set_preconditioner(1.1 * self.prec_)
+                        logger.info("Increase")
+                    self.n_accept_last_ = 0
+                self.step()
+                pbar.update()
+        logger.info(f"Acceptance rate: {self.n_accept_ / self.n_samples_}")
 
 
 class HamiltonianMonteCarlo(StepSampler):
@@ -448,15 +453,17 @@ class HamiltonianMonteCarlo(StepSampler):
         """
         Run the HMC sampler.
         """
-        for i in range(1, self.n_samples_):
-            self.step_()
-            if self.plot_:
-                print(f"Iteration: {i}")
+        with tqdm(total=self.n_samples_) as pbar:
+            for i in range(1, self.n_samples_):
+                self.step_()
+                pbar.update()
+                if self.plot_:
+                    logger.info(f"Iteration: {i}")
 
-                # self.fig_.fig.show()
-            elif i % 1000 == 0:
-                print(f"Iteration: {i}")
-        print(f"Acceptance rate: {self.n_accepted_ / self.n_samples_}")
+                    # self.fig_.fig.show()
+                elif i % 1000 == 0:
+                    logger.info(f"Iteration: {i}")
+        logger.info(f"Acceptance rate: {self.n_accepted_ / self.n_samples_}")
 
         if self.plot_:
             self.fig_.fig.show()
@@ -528,6 +535,7 @@ class ZigZagSampler:
                  sub_sampling: bool = False,
                  n_events_accepted: int = None,
                  verbose: int = 1,
+                 print_every: int = 100,
                  **kwargs):
         """
         Initialize the ZigZagSampler class.
@@ -543,8 +551,10 @@ class ZigZagSampler:
         sub_sampling (bool, optional): Whether to use sub-sampling. Default is False.
         n_events_accepted (int, optional): Number of accepted events. Default is None.
         verbose (int, optional): Level of verbosity: 0 is none, 1 is major, 2 is all outputs.
+        print_every (int, optional): Interval to print outputs.
         kwargs: Additional keyword arguments.
         """
+
         self.target_ = target
         self.dim_ = self.target_.get_dim()
         self.n_obs_ = self.target_.get_n_obs()
@@ -578,6 +588,7 @@ class ZigZagSampler:
         self.accepted_iters_ = np.zeros(self.n_accepted_0_, dtype=int)
         self.sub_sampling_ = sub_sampling
         self.verbose_ = verbose
+        self.print_every_ = print_every
 
         # if 'ss' in kwargs:
         #     self.ss_ = kwargs['ss']
@@ -618,6 +629,8 @@ class ZigZagSampler:
         if 'plot' in kwargs:
             self.plot_ = kwargs['plot']
             self.ax_ = kwargs['ax']
+
+        logger.info("ZigZagSampler initialized.")
 
     def rates(self, x: np.ndarray, idx_d: int = None, idx_n: int = None) -> np.ndarray:
         """
@@ -666,9 +679,8 @@ class ZigZagSampler:
         # linear correction to last step
         taus -= (integral - s) / rate_t1
 
-        if self.verbose_ > 1:
-            print(f"S   : {s}")
-            print(f"taus: {taus}")
+        logger.debug(f"S    : {s}")
+        logger.debug(f"taus : {taus}")
 
         i = np.argmin(taus)
         return taus[i], i
@@ -684,8 +696,7 @@ class ZigZagSampler:
         # get samples from the CDF
         S = -np.log(self.rng_.uniform(0, 1, self.dim_))
         # S = self.ss_[self.iter_]
-        if self.verbose_ > 1:
-            print(f"S:    {S}")
+        logger.debug(f"S:    {S}")
 
         # get the linear approximation of the rates
         a = self.velocities_[self.iter_] * (self.approximation_['inv_cov'] @ self.velocities_[self.iter_])
@@ -726,8 +737,7 @@ class ZigZagSampler:
             else:
                 taus[i] = S[i] / self.gamma_
 
-        if self.verbose_ > 1:
-            print(f"Taus: {taus}")
+        logger.debug(f"taus: {taus}")
 
         j = np.argmin(taus)
         return taus[j], j
@@ -793,8 +803,7 @@ class ZigZagSampler:
         M = self.approximate_bounds(self.positions_[self.iter_], T, idx=j)
         u = self.rng_.uniform(0, 1)
         # u = self.us_[self.iter_]
-        if self.verbose_ > 1:
-            print(f"    u:    {u}")
+        logger.debug(f"    u:    {u}")
         if u < (m / M):
             self.velocities_[self.iter_ + 1, j] = -self.velocities_[self.iter_, j]
             self.n_accepted_ += 1
@@ -802,16 +811,14 @@ class ZigZagSampler:
         else:
             self.velocities_[self.iter_ + 1, j] = self.velocities_[self.iter_, j]
 
-        if self.verbose_ > 1:
-            print(f"    ratio: {m/M}")
+        logger.debug(f"    ratio: {m/M}")
 
         if m > M:
-            if self.verbose_ > 0:
-                print(f"upper bound too tight, m: {m:.5f}, M: {M:.5f}"
-                       "\n ...increasing offset")
-                print(f"    current position: {self.positions_[self.iter_]}")
             self.offset_ += m - M
             self.revert_step()
+            logger.info(f"upper bound too tight, m: {m:.5f}, M: {M:.5f}")
+            logger.info(f"    ...increasing offset to: {self.offset_:.5f}")
+            logger.debug(f"       current position: {self.positions_[self.iter_]}")
 
     def step(self):
         """
@@ -844,29 +851,33 @@ class ZigZagSampler:
         """
         Shutdown the ZigZag sampler.
         """
-        if self.thinning_ and self.verbose_ > 0:
-            print(f"Acceptance rate: {self.n_accepted_ / self.iter_}")
-            print(f"Final offset: {self.offset_}")
+        if self.thinning_:
+            logger.info(f"Acceptance rate: {self.n_accepted_ / self.iter_}")
+            logger.info(f"Final offset: {self.offset_}")
 
             idx = self.n_accepted_ + 1
             self.positions_ = self.positions_[self.accepted_iters_[:idx]]
             self.times_ = self.times_[self.accepted_iters_[:idx]]
             self.velocities_ = self.velocities_[self.accepted_iters_[:idx]]
 
-        if self.verbose_ > 0:
-            print(f"Done")
+        logger.info("Done")
 
     def run_budget(self):
         """
         Run the ZigZag sampler.
         """
-        for i in range(1, self.n_max_):
-            if i % 50 == 0 and self.verbose_ > 0:
-                print(f"Sampling event {i}")
-            self.step()
-            if self.thinning_:
-                if self.n_accepted_ == self.n_accepted_0_ - 1:
-                    break
+
+        with tqdm(total=self.n_max_) as pbar:
+            for i in range(1, self.n_max_):
+                if i % self.print_every_ == 0:
+                    pbar.clear()
+                    logger.debug(f"Sampling event {i}")
+                    pbar.refresh()
+                self.step()
+                pbar.update()
+                if self.thinning_:
+                    if self.n_accepted_ == self.n_accepted_0_ - 1:
+                        break
 
         self.shutdown()
 
@@ -874,15 +885,24 @@ class ZigZagSampler:
         """
         Run the ZigZag sampler.
         """
-        while self.times_[self.iter_] < self.t_max_:
-            if self.iter_ + 1 % 50 == 0 and self.verbose_ > 0:
-                print(f"Sampling event {i}")
-            self.step()
+
+        time = 0.
+        with tqdm(total=self.t_max_, leave=True, bar_format='{l_bar}{bar}| {n:.2f}/{total:.2f} [{elapsed}<{remaining}, {rate_fmt}{postfix}]') as pbar:
+
+            while self.times_[self.iter_] < self.t_max_:
+                if self.iter_ % self.print_every_ == 0:
+                    pbar.clear()
+                    logger.debug(f"Sampling event {self.iter_}")
+                    pbar.refresh()
+                self.step()
+                incr = min(self.t_max_, self.times_[max(0, self.iter_)]) - time
+                time = self.times_[max(0, self.iter_)]
+                pbar.update(incr)
 
         # remove empty skeleton
-        self.times_ = self.times_[:self.iter_]
-        self.positions_ = self.positions_[:self.iter_]
-        self.velocities_ = self.velocities_[:self.iter_]
+        self.times_ = self.times_[:self.iter_ + 1]
+        self.positions_ = self.positions_[:self.iter_ + 1]
+        self.velocities_ = self.velocities_[:self.iter_ + 1]
 
         self.shutdown()
 
