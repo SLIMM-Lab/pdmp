@@ -53,7 +53,7 @@ class ZigZagSampler:
 
         self.target_ = target
         self.dim_ = self.target_.get_dim()
-        self.n_obs_ = self.target_.get_n_obs()
+        # self.n_obs_ = self.target_.get_n_obs()
 
         if n_max is not None:
             self.n_max_ = n_max
@@ -157,9 +157,9 @@ class ZigZagSampler:
 
         j = None
 
-        if self.sub_sampling_:
-            j = self.rng_.integers(self.n_obs_)
-
+        # if self.sub_sampling_:
+        #     j = self.rng_.integers(self.n_obs_)
+        #
         # print(f"Sampling likelihood component {j}")
 
         integral = np.zeros(self.dim_)
