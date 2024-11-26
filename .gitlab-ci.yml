@@ -1,21 +1,29 @@
 # Define the stages of the pipeline
 
 stages:
-  - setup
+#  - setup
   - test
 
-setup_env:
-  stage: setup
-  script:
-    - conda --version
-    - conda env create -f environment.yml -y
-    - source activate pdmp
-    - python --version
+#setup_env:
+#  stage: setup
+#  script:
+#    - conda --version
+#    - conda env create -f environment.yml -y
+#    - source activate pdmp
+#    - python --version
+#  artifacts:
+#    paths:
+#      - ./pdmp
+#    expire_in: 30 days
 
 # Define a job for running tests
 pytest:
   stage: test
   before_script:
+    - conda --version
+    - conda env create -f environment.yml -y
+    - source activate pdmp
+    - python --version
     - source activate pdmp # Activate the conda environment
   script:
 #    - echo "Hello, world!"  # Print a message to the console
