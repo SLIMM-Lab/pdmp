@@ -29,7 +29,5 @@ pytest:
 #    - echo "Hello, world!"  # Print a message to the console
 #    - conda list
     - pytest --cov=pdmp  # Run tests with coverage reporting
-  dependencies:
-    - setup_env
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
