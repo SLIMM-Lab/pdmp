@@ -15,11 +15,13 @@ setup_env:
 # Define a job for running tests
 pytest:
   stage: test
-#  before_script:
-#    - conda activate pdmp # Activate the conda environment
+  before_script:
+    - source activate pdmp # Activate the conda environment
   script:
-    - echo "Hello, world!"  # Print a message to the console
+#    - echo "Hello, world!"  # Print a message to the console
 #    - conda list
-#     - pytest --cov=pdmp  # Run tests with coverage reporting
+    - pytest --cov=pdmp  # Run tests with coverage reporting
+  dependencies:
+    - setup_env
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
