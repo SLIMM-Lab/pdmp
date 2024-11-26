@@ -1,17 +1,22 @@
 # Define the stages of the pipeline
 
 stages:
+  - setup
   - test
+
+setup_env:
+  stage: setup
+  script:
+    - conda --version
 
 # Define a job for running tests
 pytest:
   stage: test
-  before_script:
-    - source activate base
+#  before_script:
 #    - conda activate pdmp # Activate the conda environment
   script:
     - echo "Hello, world!"  # Print a message to the console
-    - conda list
+#    - conda list
 #     - pytest --cov=pdmp  # Run tests with coverage reporting
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
