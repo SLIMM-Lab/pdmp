@@ -8,6 +8,9 @@ setup_env:
   stage: setup
   script:
     - conda --version
+    - conda env create -f environment.yml -y
+    - source activate pdmp
+    - python --version
 
 # Define a job for running tests
 pytest:
