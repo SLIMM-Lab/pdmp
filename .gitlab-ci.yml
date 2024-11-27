@@ -10,9 +10,12 @@ setup_env:
     - conda --version
     - conda env create --prefix ./conda_env -f environment.yml
     - echo "source activate ./conda_env" >> activate_env.sh
-  artifacts:
+  cache:
     paths:
       - ./conda_env
+  artifacts:
+    paths:
+      # - ./conda_env
       - ./activate_env.sh
     expire_in: 1 day
 
