@@ -10,11 +10,12 @@ setup_env:
     - conda --version
     - ls -la
     - conda env list
-    - if [ -d "./conda_env" ]
-      then
+    - |
+      if [ -d "./conda_env" ]; then
         echo "Environment already exists."
         conda env update --prefix ./conda_env -f environment.yml --prune
       else
+        echo "Cearing new environment."
         conda env create --prefix ./conda_env -f environment.yml
       fi
     - conda env list
@@ -37,7 +38,6 @@ pytest:
     paths:
       - conda_env
     policy: pull
-  before_script:
   script:
     - ls ./conda_env
     - source activate_env.sh
