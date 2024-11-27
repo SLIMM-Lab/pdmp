@@ -1,33 +1,35 @@
 # Define the stages of the pipeline
 
 stages:
-#  - setup
+  - setup
   - test
 
-#setup_env:
-#  stage: setup
-#  script:
-#    - conda --version
-#    - conda env create -f environment.yml -y
-#    - source activate pdmp
-#    - python --version
-#  artifacts:
-#    paths:
-#      - ./pdmp
-#    expire_in: 30 days
+setup_env:
+  stage: setup
+  script:
+    - conda --version
+    - conda env create --prefix ./conda_env -f environment.yml
+    - echo "source activate ./conda_env" >> activate_env.sh
+  artifacts:
+    paths:
+      - ./conda_env
+      - ./activate_env.sh
+    expire_in: 1 day
 
 # Define a job for running tests
 pytest:
   stage: test
-  before_script:
-    - conda --version
-    - conda env create -f environment.yml -y
-    - source activate pdmp
-    - python --version
-    - source activate pdmp # Activate the conda environment
+  # before_script:
+    # - conda --version
+    # - conda env create -f environment.yml -y
+    # - source activate pdmp
+    # - python --version
+    # - source activate pdmp # Activate the conda environment
   script:
-#    - echo "Hello, world!"  # Print a message to the console
-#    - conda list
+    - source activate_env.sh
+    - conda list
     - pytest --cov=pdmp  # Run tests with coverage reporting
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  dependencies:
+    - setup_env
