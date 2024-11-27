@@ -299,7 +299,7 @@ class ZigZagSampler:
         M = self.approximate_bounds(self.positions_[self.iter_], T, idx=j)
         u = self.rng_.uniform(0, 1)
         # u = self.us_[self.iter_]
-        logger.debug(f"    u:    {u}")
+        logger.debug(f"      u:    {u}")
         if u < (m / M):
             self.velocities_[self.iter_ + 1, j] = -self.velocities_[self.iter_, j]
             self.n_accepted_ += 1
@@ -307,14 +307,14 @@ class ZigZagSampler:
         else:
             self.velocities_[self.iter_ + 1, j] = self.velocities_[self.iter_, j]
 
-        logger.debug(f"    ratio: {m/M}")
+        logger.debug(f"      ratio: {m/M}")
 
         if m > M:
             self.offset_ += m - M
             self.revert_step()
-            logger.info(f"upper bound too tight, m: {m:.5f}, M: {M:.5f}")
-            logger.info(f"    ...increasing offset to: {self.offset_:.5f}")
-            logger.debug(f"       current position: {self.positions_[self.iter_]}")
+            logger.info(f"  Action at time {self.times_[self.iter_]:.2f}; current position: {self.positions_[self.iter_]}")
+            logger.info(f"     upper bound too tight, m: {m:.4f}, M: {M:.4f}")
+            logger.info(f"      ...increasing offset to: {self.offset_:.4f}")
 
     def step(self):
         """
@@ -347,16 +347,18 @@ class ZigZagSampler:
         """
         Shutdown the ZigZag sampler.
         """
+
+        logger.info("Shutting down ZigZag sampler. Summary:")
         if self.thinning_:
-            logger.info(f"Acceptance rate: {self.n_accepted_ / self.iter_}")
-            logger.info(f"Final offset: {self.offset_}")
+            logger.info(f"    Acceptance rate : {self.n_accepted_ / self.iter_:.3f}")
+            logger.info(f"    Final offset    : {self.offset_:.3f}")
 
             idx = self.n_accepted_ + 1
             self.positions_ = self.positions_[self.accepted_iters_[:idx]]
             self.times_ = self.times_[self.accepted_iters_[:idx]]
             self.velocities_ = self.velocities_[self.accepted_iters_[:idx]]
 
-        logger.info("Done")
+        logger.info("Run successfully completed.")
 
     def run_budget(self):
         """
