@@ -14,7 +14,7 @@ setup_env:
         then echo "Environment already exists.";
         else conda env create --prefix ./conda_env -f environment.yml;
       fi
-    - conda env create --prefix ./conda_env -f environment.yml
+    # - conda env create --prefix ./conda_env -f environment.yml
     - conda env list
     - echo "source activate ./conda_env" >> activate_env.sh
     # - echo "source activate pdmp" >> activate_env.sh
