@@ -219,22 +219,37 @@ class MultivariateLogNormal(Distribution):
 
 class CubicDistribution(Distribution):
 
-    def __init__(self, mean: np.ndarray, cov: np.ndarray, a: float, rng: np.random.Generator=None, seed: int=None):
+    def __init__(self, mean: np.ndarray, cov: np.ndarray, a: float, *, cubic_diag: np.ndarray=None,
+                 rng: np.random.Generator=None, seed: int=None):
         super().__init__(rng=rng, seed=seed)
+        self.dim_ = mean.shape[0]
         self.normal_ = MultivariateNormal(mean, cov, rng=rng, seed=seed)
         self.a_ = a
+        if cubic_diag is not None:
+            self.cubic_diag = cubic_diag
+        else:
+            self.cubic_diag = np.ones(self.dim_)
+
+    def get_dim(self) -> int:
+        return self.dim_
 
     def get_sample(self) -> np.ndarray:
         raise Exception("Cannot sample directly from Cubic. Use MCMC instead")
 
-    def log_density(self, x: np.ndarray) -> np.ndarray:
-        return (1 - 2*(x>0)) * self.a_/3 * (x**3) + self.normal_.log_density(x)
+    def log_density(self, x: np.ndarray) -> float:
+        d = x - self.normal_.get_mean()
+        return (np.sum((1 - 2*(d>0)) * self.a_/3 * self.cubic_diag * d**3)
+                + self.normal_.log_density(x))
 
     def grad_log_density(self, x: np.ndarray) -> np.ndarray:
-        return (1 - 2*(x>0)) * (self.a_ * x**2) + self.normal_.grad_log_density(x)
+        d = x - self.normal_.get_mean()
+        return ((1 - 2 * (d > 0)) * (self.a_ * self.cubic_diag * d**2)
+                + self.normal_.grad_log_density(x))
 
     def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
-        return (1 - 2*(x>0)) * (2 * self.a_ * x) + self.normal_.hessian_log_density(x)
+        d = x - self.normal_.get_mean()
+        return ((1 - 2 * (d > 0)) * (2 * self.a_ * np.diag(self.cubic_diag * d))
+                + self.normal_.hessian_log_density(x))
 
 
 class Likelihood(Distribution):
