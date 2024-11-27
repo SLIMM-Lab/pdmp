@@ -8,6 +8,8 @@ setup_env:
   stage: setup
   script:
     - conda --version
+    - ls -la
+    - conda env list
     - conda env create --prefix ./conda_env -f environment.yml
     # - echo "source activate ./conda_env" >> activate_env.sh
     - echo "source activate pdmp" >> activate_env.sh
