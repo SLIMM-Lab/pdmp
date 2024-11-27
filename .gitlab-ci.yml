@@ -14,9 +14,9 @@ setup_env:
     - conda env create -f environment.yml
     # - echo "source activate ./conda_env" >> activate_env.sh
     # - echo "source activate pdmp" >> activate_env.sh
-  # cache:
-    # paths:
-      # - ./conda_env
+  cache:
+    paths:
+      - /opt/conda
   # artifacts:
     # paths:
       # - ./conda_env
