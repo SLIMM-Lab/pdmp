@@ -10,14 +10,15 @@ setup_env:
     - conda --version
     - ls -la
     - conda env list
-    - if [ -d "./conda_env" ];
-        then echo "Environment already exists.";
-        else conda env create --prefix ./conda_env -f environment.yml;
+    - if [ -d "./conda_env" ]
+      then
+        echo "Environment already exists."
+        conda env update --prefix ./conda_env -f environment.yml --prune
+      else
+        conda env create --prefix ./conda_env -f environment.yml
       fi
-    # - conda env create --prefix ./conda_env -f environment.yml
     - conda env list
     - echo "source activate ./conda_env" >> activate_env.sh
-    # - echo "source activate pdmp" >> activate_env.sh
   cache:
     key: conda
     paths:
@@ -25,7 +26,6 @@ setup_env:
     policy: pull-push
   artifacts:
     paths:
-      # - ./conda_env
       - ./activate_env.sh
     expire_in: 1 day
 
@@ -38,16 +38,9 @@ pytest:
       - conda_env
     policy: pull
   before_script:
-    - conda --version
-    - conda env list
-    # - conda env create -f environment.yml -y
-    # - source activate pdmp
-    # - python --version
-    # - source activate pdmp # Activate the conda environment
   script:
     - ls ./conda_env
     - source activate_env.sh
-    # - source activate pdmp
     - conda list
     - pytest --cov=pdmp  # Run tests with coverage reporting
   rules:
