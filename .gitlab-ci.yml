@@ -19,16 +19,17 @@ setup_env:
         conda env create --prefix ./conda_env -f environment.yml
       fi
     - conda env list
-    - echo "source activate ./conda_env" >> activate_env.sh
+    # - echo "source activate ./conda_env" >> activate_env.sh
   cache:
     key: conda
     paths:
       - conda_env
     policy: pull-push
-  artifacts:
-    paths:
-      - ./activate_env.sh
-    expire_in: 1 day
+    expire_in: 30 days
+  # artifacts:
+    # paths:
+      # - ./activate_env.sh
+    # expire_in: 1 day
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
@@ -42,7 +43,8 @@ pytest:
     policy: pull
   script:
     - ls ./conda_env
-    - source activate_env.sh
+    # - source activate_env.sh
+    - source activate ./conda_env
     - conda list
     - pytest --cov=pdmp  # Run tests with coverage reporting
   rules:
