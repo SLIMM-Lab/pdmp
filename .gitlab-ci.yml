@@ -25,7 +25,6 @@ setup_env:
     paths:
       - conda_env
     policy: pull-push
-    expire_in: 30 days
   # artifacts:
     # paths:
       # - ./activate_env.sh
