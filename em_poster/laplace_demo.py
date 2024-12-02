@@ -108,9 +108,11 @@ if __name__ == '__main__':
     n_events = 4000
     n_accepted = 200
     approx = {'mean': x_map, 'inv_cov': - hess_an}
-    x_0 = np.array([3.5, 2.5])
-    sampler = ZigZagSampler(target, n_events=n_events, rng=rng, approximation=approx, x_0=x_0,
-                            n_events_accepted=n_accepted)
+    # x_0 = np.array([3.5, 2.5])
+    x_0 = np.array([2.8, 3.5])
+    x_0 = x_map
+    sampler = ZigZagSampler(target, n_max=n_events, rng=rng, approximation=approx, x_0=x_0,
+                            n_events_accepted=n_accepted, gamma=0.02)
     sampler.run()
 
     positions = sampler.positions_
@@ -128,7 +130,7 @@ if __name__ == '__main__':
 
     x_0 = np.array([2.8, 3.5])
     n_events = 200
-    sampler = ZigZagSampler(target, n_events=n_events, rng=rng, x_0=x_0)
+    sampler = ZigZagSampler(target, n_max=n_events, rng=rng, x_0=x_0)
     sampler.run()
 
     positions = sampler.positions_
