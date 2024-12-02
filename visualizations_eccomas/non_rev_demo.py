@@ -4,9 +4,9 @@ import seaborn as sns
 import os
 from os.path import join
 
-from src.samplers import MetropolisHastingsSampler, LangevinDynamicsSampler, ZigZagSampler
-from src.distributions import MultivariateNormal, GaussianLikelihood, Posterior
-from src.utils import plot_pdf_contours, plot_samples, central_moment_from_skeleton
+from pdmp.mcmc import MetropolisHastingsSampler, LangevinDynamicsSampler, ZigZagSampler
+from pdmp.distributions import MultivariateNormal, GaussianLikelihood, Posterior
+from pdmp.utils import plot_pdf_contours, plot_samples, central_moment_from_skeleton
 
 sns.set_style('white')
 
