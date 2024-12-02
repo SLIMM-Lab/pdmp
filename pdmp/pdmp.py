@@ -2,15 +2,11 @@ import pickle
 import os
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy as sp
-from typing import Tuple
+
 from tqdm import tqdm
 
 from pdmp.distributions import Distribution, MultivariateNormal
-from pdmp.distributions import get_sample
 from pdmp import logger
-
-import seaborn as sns
 
 from pdmp.utils import get_2d_despined_figure, plot_pdf_contours
 
@@ -61,7 +57,7 @@ class ZigZagSampler:
 
         # make very large skeleton if algorithm is run with time limit
         if t_max is not None:
-            self.t_max_ = t_max
+            self.t_max_ = float(t_max)
             self.n_max_ = 100000
             n_events_accepted = self.n_max_
             self.run = self.run_time
@@ -164,6 +160,7 @@ class ZigZagSampler:
 
         integral = np.zeros(self.dim_)
         rate_t0 = self.rates(self.positions_[self.iter_], idx_n=j)
+        rate_t1 = np.zeros_like(rate_t0)
 
         # advance all process until one reaches s
         while np.all(integral < s):
@@ -393,7 +390,7 @@ class ZigZagSampler:
                     logger.debug(f"Sampling event {self.iter_}")
                     pbar.refresh()
                 self.step()
-                incr = min(self.t_max_, self.times_[max(0, self.iter_)]) - time
+                incr = np.min((self.t_max_, self.times_[max(0, self.iter_)])) - time
                 time = self.times_[max(0, self.iter_)]
                 pbar.update(incr)
 
