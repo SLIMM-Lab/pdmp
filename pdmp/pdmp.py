@@ -72,6 +72,7 @@ class ZigZagSampler:
         self.iter_ = 0
         self.gamma_ = gamma
         self.offset_ = 0.
+        self.offset_history_ = [[0.0, 0.0]] # [[time, offset]]
         self.plot_ = False
         self.approximation_ = approximation
         self.thinning_ = False
@@ -308,6 +309,7 @@ class ZigZagSampler:
 
         if m > M:
             self.offset_ += m - M
+            self.offset_history_.append([self.times_[self.iter_], self.offset_])
             self.revert_step()
             logger.info(f"  Action at time {self.times_[self.iter_]:.2f}; current position: {self.positions_[self.iter_]}")
             logger.info(f"     upper bound too tight, m: {m:.4f}, M: {M:.4f}")
@@ -354,6 +356,7 @@ class ZigZagSampler:
             self.positions_ = self.positions_[self.accepted_iters_[:idx]]
             self.times_ = self.times_[self.accepted_iters_[:idx]]
             self.velocities_ = self.velocities_[self.accepted_iters_[:idx]]
+            self.offset_history_ = np.array(self.offset_history_)
 
         logger.info("Run successfully completed.")
 
@@ -401,7 +404,7 @@ class ZigZagSampler:
 
         self.shutdown()
 
-    def write_data(self, folder: str):
+    def write_data(self, folder: str, precision: int = 6):
         """
         Write the chain data to a file.
 
@@ -409,16 +412,21 @@ class ZigZagSampler:
         filename (str): The name of the folder to write the data to.
         """
 
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+
         data = {}
         if self.thinning_:
             data['acceptance_rate'] = self.n_accepted_ / self.n_max_
+            data['offset'] = self.offset_
+            data['offset_history'] = self.offset_history_
 
         with open(os.path.join(folder, 'other.pkl'), 'wb') as f:
             pickle.dump(data, f)
 
-        np.savetxt(os.path.join(folder, 'positions.dat'), self.positions_)
-        np.savetxt(os.path.join(folder, 'times.dat'), self.times_)
-        np.savetxt(os.path.join(folder, 'velocities.dat'), self.velocities_)
+        np.savetxt(os.path.join(folder, 'positions.dat'), self.positions_, fmt=f'%.{precision}e')
+        np.savetxt(os.path.join(folder, 'times.dat'), self.times_, fmt=f'%.{precision}e')
+        np.savetxt(os.path.join(folder, 'velocities.dat'), self.velocities_, fmt='%d')
 
 if __name__ == '__main__':
 
