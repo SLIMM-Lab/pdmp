@@ -91,9 +91,9 @@ class StepSampler:
         np.ndarray: The sample covariance matrix.
         """
         if self.dim_ == 1:
-            return np.array([[np.var(self.chain_)]])
+            return np.array([[np.var(self.chain_[:self.iter_])]])
         else:
-            return np.cov(self.chain_, rowvar=True)
+            return np.cov(self.chain_[:self.iter_], rowvar=False)
 
     def set_preconditioner(self, cov):
         """
