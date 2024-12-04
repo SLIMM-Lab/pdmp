@@ -28,8 +28,8 @@ class ZigZagSampler:
                  approximation: dict = None,
                  sub_sampling: bool = False,
                  n_events_accepted: int = None,
-                 verbose: int = 1,
                  print_every: int = 100,
+                 update_bar_every: int = 1,
                  **kwargs):
         """
         Initialize the ZigZagSampler class.
@@ -44,7 +44,6 @@ class ZigZagSampler:
         approximation (dict, optional): Approximation parameters. Default is None.
         sub_sampling (bool, optional): Whether to use sub-sampling. Default is False.
         n_events_accepted (int, optional): Number of accepted events. Default is None.
-        verbose (int, optional): Level of verbosity: 0 is none, 1 is major, 2 is all outputs.
         print_every (int, optional): Interval to print outputs.
         kwargs: Additional keyword arguments.
         """
@@ -82,8 +81,8 @@ class ZigZagSampler:
         self.n_accepted_0_ = n_events_accepted
         self.accepted_iters_ = np.zeros(self.n_accepted_0_, dtype=int)
         self.sub_sampling_ = sub_sampling
-        self.verbose_ = verbose
         self.print_every_ = print_every
+        self.update_bar_every = update_bar_every
 
         # if 'ss' in kwargs:
         #     self.ss_ = kwargs['ss']
@@ -396,9 +395,10 @@ class ZigZagSampler:
                     logger.debug(f"Sampling event {self.iter_}")
                     pbar.refresh()
                 self.step()
-                incr = np.min((self.t_max_, self.times_[max(0, self.iter_)])) - time
-                time = self.times_[max(0, self.iter_)]
-                pbar.update(incr)
+                if self.iter_ % self.update_bar_every == 0:
+                    incr = np.min((self.t_max_, self.times_[max(0, self.iter_)])) - time
+                    time = self.times_[max(0, self.iter_)]
+                    pbar.update(incr)
 
         # remove empty skeleton
         self.times_ = self.times_[:self.iter_ + 1]
