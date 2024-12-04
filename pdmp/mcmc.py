@@ -1,9 +1,11 @@
 import pickle
 import os
+import sys
+
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy as sp
 from typing import Tuple
+
 from tqdm import tqdm
 
 from pdmp.distributions import Distribution, MultivariateNormal
@@ -200,7 +202,7 @@ class MetropolisHastingsSampler(StepSampler):
         Run the Metropolis-Hastings sampler.
         """
 
-        with tqdm(total=self.n_samples_) as pbar:
+        with tqdm(total=self.n_samples_, file=sys.stdout, dynamic_ncols=False) as pbar:
             for i in range(1, self.n_samples_):
 
                 if i == 1000:
@@ -307,7 +309,7 @@ class LangevinDynamicsSampler(StepSampler):
         """
         Run the Langevin dynamics sampler.
         """
-        with tqdm(total=self.n_samples_) as pbar:
+        with tqdm(total=self.n_samples_, file=sys.stdout, dynamic_ncols=False) as pbar:
             for i in range(1, self.n_samples_):
                 if i == 1000:
                     self.set_preconditioner(self.cov_factor_ * np.power(self.dim_, -1./3.) * self.get_sample_covariance())
@@ -456,7 +458,7 @@ class HamiltonianMonteCarlo(StepSampler):
         """
         Run the HMC sampler.
         """
-        with tqdm(total=self.n_samples_) as pbar:
+        with tqdm(total=self.n_samples_, file=sys.stdout, dynamic_ncols=False) as pbar:
             for i in range(1, self.n_samples_):
                 self.step_()
                 pbar.update()

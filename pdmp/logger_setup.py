@@ -1,5 +1,6 @@
 # logger.py
 import logging
+import sys
 
 
 def setup_logger(name):
@@ -7,7 +8,7 @@ def setup_logger(name):
     logger.setLevel(logging.DEBUG)
 
     # Create the console handler
-    console_handler = logging.StreamHandler()
+    console_handler = logging.StreamHandler(stream=sys.stdout)
     console_handler.setLevel("WARNING")
 
     # Create a formatter

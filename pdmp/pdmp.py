@@ -1,5 +1,7 @@
 import pickle
 import os
+import sys
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -365,7 +367,7 @@ class ZigZagSampler:
         Run the ZigZag sampler.
         """
 
-        with tqdm(total=self.n_max_) as pbar:
+        with tqdm(total=self.n_max_, file=sys.stdout, dynamic_ncols=False) as pbar:
             for i in range(1, self.n_max_):
                 if i % self.print_every_ == 0:
                     pbar.clear()
@@ -385,7 +387,8 @@ class ZigZagSampler:
         """
 
         time = 0.
-        with tqdm(total=self.t_max_, leave=True, bar_format='{l_bar}{bar}| {n:.2f}/{total:.2f} [{elapsed}<{remaining}, {rate_fmt}{postfix}]') as pbar:
+        with tqdm(total=self.t_max_, leave=True, file=sys.stdout, dynamic_ncols=False,
+                  bar_format='{l_bar}{bar}| {n:.2f}/{total:.2f} [{elapsed}<{remaining}, {rate_fmt}{postfix}]') as pbar:
 
             while self.times_[self.iter_] < self.t_max_:
                 if self.iter_ % self.print_every_ == 0:
