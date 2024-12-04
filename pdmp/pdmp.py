@@ -58,7 +58,7 @@ class ZigZagSampler:
         # make very large skeleton if algorithm is run with time limit
         if t_max is not None:
             self.t_max_ = float(t_max)
-            self.n_max_ = 100000
+            self.n_max_ = 10000000 #TODO this might be too large, find a better way to handle this
             n_events_accepted = self.n_max_
             self.run = self.run_time
 
