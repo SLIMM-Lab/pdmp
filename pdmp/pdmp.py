@@ -19,7 +19,7 @@ class ZigZagSampler:
     """
 
     def __init__(self,
-                 target: Distribution,
+                 target: Distribution, *,
                  n_max: int = None,
                  t_max: float = None,
                  gamma: float = 1e-6,
