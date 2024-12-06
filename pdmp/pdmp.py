@@ -420,7 +420,7 @@ class ZigZagSampler:
 
         data = {}
         if self.thinning_:
-            data['acceptance_rate'] = self.n_accepted_ / self.n_max_
+            data['acceptance_rate'] = self.n_accepted_ / self.iter_
             data['offset'] = self.offset_
             data['offset_history'] = self.offset_history_
 
@@ -430,6 +430,24 @@ class ZigZagSampler:
         np.savetxt(os.path.join(folder, 'positions.dat'), self.positions_, fmt=f'%.{precision}e')
         np.savetxt(os.path.join(folder, 'times.dat'), self.times_, fmt=f'%.{precision}e')
         np.savetxt(os.path.join(folder, 'velocities.dat'), self.velocities_, fmt='%d')
+
+    def get_acceptance_rate(self):
+        """
+        Get the acceptance rate.
+
+        Returns:
+        float: The acceptance rate.
+        """
+        return self.n_accepted_ / self.iter_
+
+    def get_offset(self):
+        """
+        Get the offset.
+
+        Returns:
+        float: The offset.
+        """
+        return self.offset_
 
 if __name__ == '__main__':
 
