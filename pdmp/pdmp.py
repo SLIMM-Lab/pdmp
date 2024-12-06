@@ -209,10 +209,10 @@ class ZigZagSampler:
         # check for each component where the intersection with the x-axis is and compute integral accordingly
         for i in range(self.dim_):
 
-            if (a[i] > 0) and (b[i] > 0):
+            if (a[i] >= 0) and (b[i] >= 0):
                 b_i = b[i] + self.gamma_
                 taus[i] = (np.sqrt(b_i ** 2 + 2 * a[i] * S[i]) - b_i) / a[i]
-            elif (a[i] > 0) and (b[i] < 0):
+            elif (a[i] >= 0) and (b[i] < 0):
                 taus_const = S[i] / self.gamma_
                 if taus_const < taus_0[i]:
                     taus[i] = taus_const
@@ -222,7 +222,7 @@ class ZigZagSampler:
                     b_i = b[i] + self.gamma_
                     taus[i] = taus_0[i] + (np.sqrt((b_i + a[i] * taus_0[i]) ** 2 + 2 * a[i] * d_s)
                                            - (b_i + a[i] * taus_0[i])) / a[i]
-            elif (a[i] < 0) and (b[i] > 0):
+            elif (a[i] < 0) and (b[i] >= 0):
                 s_0 = (0.5 * b[i] + self.gamma_) * taus_0[i]
                 if S[i] > s_0:
                     taus[i] = taus_0[i] + (S[i] - s_0) / self.gamma_
