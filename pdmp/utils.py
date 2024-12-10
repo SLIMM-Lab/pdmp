@@ -78,7 +78,7 @@ def plot_pdf_contours(
         n_grid: int = 100,
         alpha: float = 0.6,
         n_levels: int = 20,
-        cmap: matplotlib.colors.ListedColormap = sns.color_palette('rocket', as_cmap=True)
+        cmap: matplotlib.colors.Colormap = sns.color_palette('rocket', as_cmap=True)
 ) -> plt.Axes:
     """
     Plot the probability density function (PDF) contours of a multivariate normal distribution.
