@@ -5,7 +5,7 @@ import numpy as np
 import scipy as sp
 from datetime import datetime
 
-from pdmp.forward_model import ForwardModel
+from pdmp.forward_model import Model
 
 small = 1e-12
 large = 1e20
@@ -266,18 +266,11 @@ class Likelihood(Distribution):
         pass
 
 class GaussianLikelihood(Likelihood):
-    def __init__(
-            self,
-            model: ForwardModel,
-            x_obs: np.ndarray,
-            u_obs: np.ndarray,
-            sigma_obs: float,
-            rng: np.random.Generator = None, seed: int = None
-    ):
+    def __init__(self, model: Model, u_obs: np.ndarray, sigma_obs: float, rng: np.random.Generator = None,
+                 seed: int = None):
         super().__init__(rng=rng, seed=seed)
         self.model_ = model
         self.n_params_ = model.get_dim()
-        self.x_obs_ = x_obs
         self.u_obs_ = u_obs
         self.n_obs_ = self.u_obs_.shape[0]
         self.dim_ = self.u_obs_.shape[1]
@@ -300,30 +293,30 @@ class GaussianLikelihood(Likelihood):
         if idx is None:
             log_p = 0.
             for i in range(self.n_obs_):
-                log_p += self.dists_[i].log_density(self.model_.eval(self.x_obs_, params))
+                log_p += self.dists_[i].log_density(self.model_.eval(params))
             return log_p
         else:
-            return self.dists_[idx].log_density(self.model_.eval(self.x_obs_, params))
+            return self.dists_[idx].log_density(self.model_.eval(params))
 
     def grad_log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
         if idx is None:
             grad = np.zeros(self.n_params_)
             for i in range(self.n_obs_):
-                m = self.model_.eval(self.x_obs_, params, idx=i)
-                grad_m = self.model_.eval_grad(self.x_obs_, params, idx=i)
+                m = self.model_.eval(params, idx=i)
+                grad_m = self.model_.eval_grad(params, idx=i)
                 grad += self.dists_[i].grad_log_density(m) @ grad_m
             return grad
         else:
-            m = self.model_.eval(self.x_obs_, params, idx=idx)
-            grad_m = self.model_.eval_grad(self.x_obs_, params, idx=idx)
+            m = self.model_.eval(params, idx=idx)
+            grad_m = self.model_.eval_grad(params, idx=idx)
             return self.dists_[idx].grad_log_density(m) @ grad_m
 
     def hessian_log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
 
         def hess_comp(hess, i):
-            m = self.model_.eval(self.x_obs_, params, idx=i)
-            grad_m = self.model_.eval_grad(self.x_obs_, params, idx=i)
-            hess_m = self.model_.eval_hessian(self.x_obs_, params, idx=i)
+            m = self.model_.eval(params, idx=i)
+            grad_m = self.model_.eval_grad(params, idx=i)
+            hess_m = self.model_.eval_hessian(params, idx=i)
             hess += np.einsum('ij,jk,il', self.dists_[i].hessian_log_density(m), grad_m, grad_m)
             hess += np.einsum('i,ijk->jk', self.dists_[i].grad_log_density(m), hess_m)
 
