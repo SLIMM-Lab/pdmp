@@ -1,6 +1,6 @@
 import os.path
 
-from pdmp.forward_model import ForwardModel
+from pdmp.forward_model import PiecewiseConstantModel
 from pdmp.project_field import compute_coefficients, squared_exponential_kernel, PiecewiseConstantBasis
 from pdmp.mcmc import MetropolisHastingsSampler, LangevinDynamicsSampler
 from pdmp.pdmp import ZigZagSampler
@@ -27,12 +27,16 @@ if __name__ == '__main__':
     mean = 4.
     prior = MultivariateNormal(mean * np.ones(n_b), prior_cov, rng=rng)
 
+    # define observation and test locations
+    x_obs = np.linspace(0, 1, 3)[1:]
+    x_test = np.linspace(0, 1, 100)
+
     # set up the forward model
     n_obs = 2
     F = [1.]
-    F = [item for item in F for i in range(n_obs)]
+    F = np.array([item for item in F for i in range(n_obs)])
     n_params = 2
-    model = ForwardModel(F, n_params)
+    model = PiecewiseConstantModel(F, n_params, x_obs)
 
     # generate ground truth from a multi-variate normal distribution
     mean = 3 * np.ones(n_params)
@@ -43,24 +47,20 @@ if __name__ == '__main__':
     # plot_limits = ([params_gt[0] - margins, params_gt[0] + margins], [params_gt[1] - margins, params_gt[1] + margins])
     plot_limits = ([2.3, 4.5], [2.7, 5.8])
 
-    # define observation and test locations
-    x_obs = np.linspace(0, 1, 3)[1:]
-    x_test = np.linspace(0, 1, 100)
-
     sigma_obs = 0.025
     # sigma_obs = 0.05
 
     # evaluate the ground truth at the observation and test locations
-    u_gt = model.eval(x_obs, params_gt)
-    u_gt_test = model.eval(x_test, params_gt)
+    u_gt = model.eval(params_gt, x_obs)
+    u_gt_test = model.eval(params_gt, x_test)
     u_obs = np.zeros((len(F), u_gt.shape[0]))
 
     for i in range(len(F)):
-        u_gt = model.eval(x_obs, params_gt, idx=i)
+        u_gt = model.eval(params_gt, x_obs, idx=i)
         u_obs[i] = u_gt + rng.normal(0, sigma_obs, (1, u_gt.shape[0]))
 
     # define likelihood and posterior
-    likelihood = GaussianLikelihood(model, x_obs, u_obs, sigma_obs)
+    likelihood = GaussianLikelihood(model, u_obs, sigma_obs)
     target = Posterior(prior, likelihood)
 
     # get 'true' mean and variance from mcmc

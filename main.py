@@ -1,8 +1,8 @@
 import os.path
 
-from pdmp.forward_model import ForwardModel
+from pdmp.forward_model import PiecewiseConstantModel
 from pdmp.project_field import compute_coefficients, squared_exponential_kernel, PiecewiseConstantBasis
-from pdmp.mcmc import MetropolisHastingsSampler, LangevinDynamicsSampler, ZigZagSampler
+from pdmp.pdmp import ZigZagSampler
 from pdmp.distributions import MultivariateNormal, GaussianLikelihood, Posterior
 from pdmp.utils import plot_pdf_contours, plot_samples, central_moment_from_skeleton
 
@@ -26,12 +26,16 @@ if __name__ == '__main__':
     mean = 4.
     prior = MultivariateNormal(mean * np.ones(n_b), prior_cov, rng=rng)
 
+    # define observation and test locations
+    x_obs = np.linspace(0, 1, 3)[1:]
+    x_test = np.linspace(0, 1, 100)
+
     # set up the forward model
     n_obs = 2
     F = [1.]
-    F = [item for item in F for i in range(n_obs)]
+    F = np.array([item for item in F for i in range(n_obs)])
     n_params = 2
-    model = ForwardModel(F, n_params)
+    model = PiecewiseConstantModel(F, n_params, x_obs)
 
     # generate ground truth from a multi-variate normal distribution
     mean = 3 * np.ones(n_params)
@@ -41,10 +45,6 @@ if __name__ == '__main__':
     margins = 1.5
     # plot_limits = ([params_gt[0] - margins, params_gt[0] + margins], [params_gt[1] - margins, params_gt[1] + margins])
     plot_limits = ([2.3, 4.6], [2.8, 5.9])
-
-    # define observation and test locations
-    x_obs = np.linspace(0, 1, 3)[1:]
-    x_test = np.linspace(0, 1, 100)
 
     # # plot the ground truth and the obsevations
     # u_gt_test_1 = model.eval(x_test, params_gt, idx=0)
@@ -61,12 +61,12 @@ if __name__ == '__main__':
     # sigma_obs = 0.05
 
     # evaluate the ground truth at the observation and test locations
-    u_gt = model.eval(x_obs, params_gt)
-    u_gt_test = model.eval(x_test, params_gt)
+    u_gt = model.eval(params_gt, x_obs)
+    u_gt_test = model.eval(params_gt, x_test)
     u_obs = np.zeros((len(F), u_gt.shape[0]))
 
     for i in range(len(F)):
-        u_gt = model.eval(x_obs, params_gt, idx=i)
+        u_gt = model.eval(params_gt, x_obs, idx=i)
         u_obs[i] = u_gt + rng.normal(0, sigma_obs, (1, u_gt.shape[0]))
 
     # # plot the ground truth and the observations
@@ -85,7 +85,7 @@ if __name__ == '__main__':
     # plt.show()
 
     # define likelihood and posterior
-    likelihood = GaussianLikelihood(model, x_obs, u_obs, sigma_obs)
+    likelihood = GaussianLikelihood(model, u_obs, sigma_obs)
     target = Posterior(prior, likelihood)
 
     # plot the posterior
@@ -171,7 +171,7 @@ if __name__ == '__main__':
 
     # ax.plot(x_map[0], x_map[1], 'ro')
 
-    model.eval_hessian(x_obs, x_map)
+    model.eval_hessian(x_map, x_obs)
 
     def grad(f, x, h):
         grad = np.zeros_like(x)
