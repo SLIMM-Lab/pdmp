@@ -3,10 +3,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from os.path import join
 
-from pdmp.mcmc import MetropolisHastingsSampler, LangevinDynamicsSampler
 from pdmp.zigzag import ZigZagSampler
-from pdmp.distributions import MultivariateNormal, GaussianLikelihood, Posterior, FlatLikelihood
-from pdmp.utils import plot_pdf_contours, plot_samples, central_moment_from_skeleton
+from pdmp.distributions import MultivariateNormal, Posterior, FlatLikelihood, plot_pdf_contours
 
 sns.set_style('white')
 

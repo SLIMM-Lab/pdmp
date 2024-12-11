@@ -4,8 +4,7 @@ import seaborn as sns
 from os.path import join
 
 from pdmp.zigzag import ZigZagSampler
-from pdmp.distributions import MultivariateNormal, Posterior, FlatLikelihood
-from pdmp.utils import plot_pdf_contours
+from pdmp.distributions import MultivariateNormal, Posterior, FlatLikelihood, plot_pdf_contours
 
 sns.set_style('white')
 
