@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sympy as sy
 
+from pdmp.utils import grad_fd, hessian_fd
+
 
 class Model:
     """
@@ -76,7 +78,7 @@ class PiecewiseConstantModel(Model):
         self.F = sy.symbols('F')  # Symbolic representation of F
         self.F_vals = F  # Actual values of F
         self.n_settings_ = self.F_vals.shape[0]  # Number of settings
-        assert self.n_settings_ == len(x_obs), "Number of settings does not match number of observations"
+        # assert self.n_settings_ == len(x_obs), "Number of settings does not match number of observations"
         self.x_obs_ = x_obs  # Observations
 
         self.n_params = n_params  # Number of parameters
@@ -214,9 +216,69 @@ class PiecewiseConstantModel(Model):
         return self.n_settings_  # Return number of settings
 
 
+class LinearModel:
+    """
+    Forward model for a linear system (mainly for testing purposes)
+    """
+    def __init__(self, A: np.ndarray, b: np.ndarray):
+        """
+        Initialize the model
+        Args:
+            A (np.ndarray): matrix A
+            b (np.ndarray): vector b
+        """
+        super().__init__()
+        assert A.shape[0] == b.shape[0], "Dimensions do not match"
+        self.dim_ = A.shape[0]
+        self.A_ = A
+        self.b_ = b
+
+    def eval(self, params: np.ndarray, **kwargs) -> np.ndarray:
+        """
+        Evaluate the forward model
+        Args:
+            params (np.ndarray): parameter values
+            **kwargs: additional arguments
+        Returns:
+            np.ndarray: model evaluation
+        """
+        return self.A_ @ params + self.b_
+
+    def eval_grad(self, params: np.ndarray, **kwargs) -> np.ndarray:
+        """
+        Evaluate the gradient (jacobian) of the forward model outputs with respect to the parameters
+        Args:
+            params (np.ndarray): parameter values
+            **kwargs: additional arguments
+        Returns:
+            np.ndarray: gradient of model evaluation
+        """
+        return self.A_
+
+    def eval_hessian(self, params: np.ndarray, **kwargs) -> np.ndarray:
+        """
+        Evaluate the hessian of the forward model outputs with respect to the parameters
+        Args:
+            params (np.ndarray): parameter values
+            **kwargs: additional arguments
+        Returns:
+            np.ndarray: hessian of model evaluation
+        """
+        s = self.A_.shape
+        return np.zeros((s[0], s[1], s[1]))
+
+    def get_dim(self) -> int:
+        """
+        Get dimension of the model outputs
+        Returns:
+            int: dimension of the model
+        """
+        return self.dim_
+
+
 if __name__ == '__main__':
 
-    # Example usage
+    # Example piecewise constant model
     F = np.array([1., 2.])
     x_obs = np.array([0.1, 0.2])
     n_params = 2
@@ -247,3 +309,37 @@ if __name__ == '__main__':
         plt.show()
 
     print('Done!')
+
+    # Example linear model
+    rng = np.random.default_rng(0)
+
+    n = 2
+    m = 3
+    A = rng.random((m, n))
+    b = rng.random(m)
+    model = LinearModel(A, b)
+    # model = get_linear_model()
+    # n = model.get_dim()
+    # m = n
+
+    x_true = rng.random(n)
+    y_true = model.eval(x_true)
+    print(f"True output: {y_true}")
+
+    # # create a noisy observation
+    # noise = 0.1 * np.random.randn(m)
+    # y_obs = y_true + noise
+    # print(f"Noisy observation: {y_obs}")
+
+    # evaluate the model on a grid and plot contours
+    x = np.linspace(0, 1, 100)
+    y = np.linspace(0, 1, 100)
+    X, Y = np.meshgrid(x, y)
+    Z = np.zeros_like(X)
+    for i in range(len(x)):
+        for j in range(len(y)):
+            Z[j, i] = model.eval(np.array([x[i], y[j]]))[0]
+
+    fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+    ax.contourf(X, Y, Z, 100)
+    plt.show()
