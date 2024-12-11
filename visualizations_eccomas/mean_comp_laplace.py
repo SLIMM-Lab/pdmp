@@ -3,7 +3,7 @@ import os.path
 from pdmp.forward_model import PiecewiseConstantModel
 from pdmp.project_field import compute_coefficients, squared_exponential_kernel, PiecewiseConstantBasis
 from pdmp.mcmc import MetropolisHastingsSampler, LangevinDynamicsSampler
-from pdmp.pdmp import ZigZagSampler
+from pdmp.zigzag import ZigZagSampler
 from pdmp.distributions import MultivariateNormal, GaussianLikelihood, Posterior
 from pdmp.utils import plot_pdf_contours, plot_samples, central_moment_from_skeleton
 
