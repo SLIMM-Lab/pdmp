@@ -22,19 +22,19 @@ class Distribution:
             self.rng_ = rng
 
     def get_sample(self) -> np.ndarray:
-        pass
+        raise NotImplementedError
 
     def get_dim(self) -> int:
-        pass
+        raise NotImplementedError
 
     def log_density(self, x: np.ndarray) -> float:
-        pass
+        raise NotImplementedError
 
     def grad_log_density(self, x: np.ndarray) -> np.ndarray:
-        pass
+        raise NotImplementedError
 
     def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
-        pass
+        raise NotImplementedError
 
 
 class MultivariateNormal(Distribution):
