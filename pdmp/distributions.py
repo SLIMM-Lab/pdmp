@@ -324,10 +324,10 @@ class GaussianLikelihood(Likelihood):
         if idx is None:
             log_p = 0.
             for i in range(self.n_obs_):
-                log_p += self.dists_[i].log_density(self.model_.eval(params))
+                log_p += self.dists_[i].log_density(self.model_.eval(params, idx=i))
             return log_p
         else:
-            return self.dists_[idx].log_density(self.model_.eval(params))
+            return self.dists_[idx].log_density(self.model_.eval(params, idx=idx))
 
     def grad_log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
         if idx is None:
