@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from os.path import join
 
-from pdmp.pdmp import ZigZagSampler
+from pdmp.zigzag import ZigZagSampler
 from pdmp.distributions import Posterior, FlatLikelihood, GaussianMixture
 from pdmp.utils import plot_pdf_contours, get_2d_despined_figure
 

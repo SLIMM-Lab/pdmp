@@ -4,7 +4,7 @@ import seaborn as sns
 from os.path import join
 
 from pdmp.mcmc import MetropolisHastingsSampler, LangevinDynamicsSampler
-from pdmp.pdmp import ZigZagSampler
+from pdmp.zigzag import ZigZagSampler
 from pdmp.distributions import MultivariateNormal, GaussianLikelihood, Posterior, FlatLikelihood
 from pdmp.utils import plot_pdf_contours, plot_samples, central_moment_from_skeleton
 

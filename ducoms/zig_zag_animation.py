@@ -5,7 +5,7 @@ import seaborn as sns
 from pdmp.forward_model import PiecewiseConstantModel
 from pdmp.project_field import compute_coefficients, squared_exponential_kernel, PiecewiseConstantBasis
 from pdmp.distributions import MultivariateNormal, GaussianLikelihood, Posterior
-from pdmp.pdmp import ZigZagSampler
+from pdmp.zigzag import ZigZagSampler
 from pdmp.utils import plot_pdf_contours, get_2d_despined_figure
 from bisect import bisect_right
 
