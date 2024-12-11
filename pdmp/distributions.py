@@ -257,13 +257,41 @@ class Likelihood(Distribution):
         super().__init__(rng=rng, seed=seed)
 
     def get_n_obs(self) -> int:
-        pass
+        raise NotImplementedError
 
-    def grad_log_density(self, x: np.ndarray, idx: int = None) -> np.ndarray:
-        pass
+    def log_density(self, params: np.ndarray, idx: int = None) -> float:
+        raise NotImplementedError
 
-    def hessian_log_density(self, x: np.ndarray, idx: int = None) -> np.ndarray:
-        pass
+    def grad_log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
+        raise NotImplementedError
+
+    def hessian_log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
+        raise NotImplementedError
+
+
+class TemperedLikelihood(Likelihood):
+    def __init__(self,
+                 likelihood: Likelihood,
+                 *,
+                 beta: float = 1.0,
+                 rng: np.random.Generator = None,
+                 seed: int = None):
+        super().__init__(rng=rng, seed=seed)
+        self.likelihood_ = likelihood
+        self.beta_ = beta
+
+    def get_n_obs(self) -> int:
+        return self.likelihood_.get_n_obs()
+
+    def log_density(self, params: np.ndarray, idx: int = None) -> float:
+        return self.beta_ * self.likelihood_.log_density(params, idx=idx)
+
+    def grad_log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
+        return self.beta_ * self.likelihood_.grad_log_density(params, idx=idx)
+
+    def hessian_log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
+        return self.beta_ * self.likelihood_.hessian_log_density(params, idx=idx)
+
 
 class GaussianLikelihood(Likelihood):
     def __init__(self, model: Model, u_obs: np.ndarray, sigma_obs: float, rng: np.random.Generator = None,
@@ -354,6 +382,7 @@ class FlatLikelihood(Likelihood):
             return np.zeros(self.dim_)
         else:
             return np.zeros(1)
+
 
 class Posterior(Distribution):
     def __init__(self, prior: Distribution, likelihood: Likelihood, rng: np.random.Generator = None, seed: int = None):
