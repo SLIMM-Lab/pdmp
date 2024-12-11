@@ -199,7 +199,7 @@ def central_moment_from_skeleton(t: np.ndarray, x: np.ndarray, v: np.ndarray, de
     return total_integral / t[-1]
 
 
-def grad_fd(f: callable, x: np.ndarray, h: float = 1e-5) -> np.ndarray:
+def grad_fd(f: callable, x: np.ndarray, h: float = 1e-5, n: int = None) -> np.ndarray:
     """
     Compute the gradient of a function using finite differences.
 
@@ -207,18 +207,26 @@ def grad_fd(f: callable, x: np.ndarray, h: float = 1e-5) -> np.ndarray:
     f (callable): The function for which the gradient is to be computed. It should take a numpy array as input and return a scalar.
     x (np.ndarray): The point at which the gradient is to be computed. It should be a 1D numpy array.
     h (float, optional): The step size for the finite difference approximation. Default is 1e-5.
+    n (int, optional): The number of outputs of the function. Default is None.
 
     Returns:
     np.ndarray: The gradient of the function at the point x. It will be a 1D numpy array of the same length as x.
     """
-    n = len(x)
-    grad = np.zeros(n)
-    for i in range(n):
-        grad[i] = (f(x + h * np.eye(n)[i]) - f(x - h * np.eye(n)[i])) / (2 * h)
+    if n is None:
+        y = f(x)
+        if isinstance(y, float):
+            n = 1
+        else:
+            n = len(y)
+
+    m = len(x)
+    grad = np.zeros((n, m))
+    for i in range(m):
+        grad[:,i] = (f(x + h * np.eye(m)[i]) - f(x - h * np.eye(m)[i])) / (2 * h)
     return grad
 
 
-def hessian_fd(f: callable, x: np.ndarray, h: float = 1e-5) -> np.ndarray:
+def hessian_fd(f: callable, x: np.ndarray, h: float = 1e-5, n: int = None) -> np.ndarray:
     """
     Compute the Hessian matrix of a function using finite differences.
 
@@ -226,18 +234,26 @@ def hessian_fd(f: callable, x: np.ndarray, h: float = 1e-5) -> np.ndarray:
     f (callable): The function for which the Hessian is to be computed. It should take a numpy array as input and return a scalar.
     x (np.ndarray): The point at which the Hessian is to be computed. It should be a 1D numpy array.
     h (float, optional): The step size for the finite difference approximation. Default is 1e-5.
+    n (int, optional): The number of outputs of the function. Default is None.
 
     Returns:
     np.ndarray: The Hessian matrix of the function at the point x. It will be a 2D numpy array of shape (n, n) where n is the length of x.
     """
-    n = len(x)
-    hess = np.zeros((n, n))
-    for i in range(n):
-        for j in range(n):
-            hess[i, j] = (f(x + h * np.eye(n)[i] + h * np.eye(n)[j]) -
-                          f(x - h * np.eye(n)[i] + h * np.eye(n)[j]) -
-                          f(x + h * np.eye(n)[i] - h * np.eye(n)[j]) +
-                          f(x - h * np.eye(n)[i] - h * np.eye(n)[j])) / (4 * h**2)
+    if n is None:
+        y = f(x)
+        if isinstance(y, float):
+            n = 1
+        else:
+            n = len(y)
+
+    m = len(x)
+    hess = np.zeros((n, m, m))
+    for i in range(m):
+        for j in range(m):
+            hess[:, i, j] = (f(x + h * np.eye(m)[i] + h * np.eye(m)[j]) -
+                             f(x - h * np.eye(m)[i] + h * np.eye(m)[j]) -
+                             f(x + h * np.eye(m)[i] - h * np.eye(m)[j]) +
+                             f(x - h * np.eye(m)[i] - h * np.eye(m)[j])) / (4 * h**2)
     return hess
 
 
