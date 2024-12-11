@@ -1,11 +1,14 @@
-from timeit import timeit
-
+import matplotlib.colors
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
+import seaborn as sns
+
 from datetime import datetime
+from timeit import timeit
 
 from pdmp.forward_model import Model
+from pdmp.utils import get_2d_despined_figure, plot_samples
 
 small = 1e-12
 large = 1e20
@@ -416,6 +419,88 @@ class Posterior(Distribution):
     def hessian_log_density(self, params: np.ndarray) -> np.ndarray:
         return self.likelihood_.hessian_log_density(params) + self.prior_.hessian_log_density(params)
 
+
+def plot_pdf_contours(
+        distribution: Distribution,
+        ax: plt.Axes,
+        plot_limits: tuple[list[float], list[float]],
+        n_grid: int = 100,
+        alpha: float = 0.6,
+        n_levels: int = 20,
+        cmap: matplotlib.colors.Colormap = sns.color_palette('rocket', as_cmap=True)
+) -> plt.Axes:
+    """
+    Plot the probability density function (PDF) contours of a multivariate normal distribution.
+
+    Parameters:
+    distribution (MultivariateNormal): The multivariate normal distribution to plot.
+    ax (plt.Axes): The matplotlib axes object to plot on.
+    plot_limits (tuple): A tuple containing two lists, each specifying the x and y axis limits respectively.
+    n_grid (int, optional): Number of grid points for the x and y axes. Default is 100.
+    alpha (float, optional): Transparency level of the contour plot. Default is 0.6.
+    n_levels (int, optional): Number of contour levels to plot. Default is 20.
+    cmap (sns.palettes._ColorPalette, optional): Colormap to use for the contour plot. Default is 'rocket' colormap.
+
+    Returns:
+    plt.Axes: The matplotlib axes object with the PDF contours plotted.
+    """
+
+    x = np.linspace(*plot_limits[0], n_grid)
+    y = np.linspace(*plot_limits[1], n_grid)
+    X, Y = np.meshgrid(x, y)
+    Z = np.zeros_like(X)
+
+    for i in range(n_grid):
+        for j in range(n_grid):
+            Z[i, j] = np.exp(distribution.log_density(np.array([X[i, j], Y[i, j]])))
+
+    ax.contour(X, Y, Z, levels=n_levels, zorder=1, alpha=alpha, cmap=cmap)
+
+    return ax
+
+def plot_pfd_contour_slice(
+        distribution: Distribution,
+        ax: plt.Axes,
+        plot_limits: tuple[list[float], list[float]],
+        slice_loc: np.ndarray,
+        idcs_plane: tuple[int, int] = (0, 1),
+        n_grid: int = 100,
+        alpha: float = 0.6,
+        n_levels: int = 20,
+        cmap: matplotlib.colors.ListedColormap = sns.color_palette('rocket', as_cmap=True)
+) -> plt.Axes:
+    """
+    Plot the probability density function (PDF) contours of a multivariate normal distribution.
+
+    Parameters:
+    distribution (MultivariateNormal): The multivariate normal distribution to plot.
+    ax (plt.Axes): The matplotlib axes object to plot on.
+    plot_limits (tuple): A tuple containing two lists, each specifying the x and y axis limits respectively.
+    n_grid (int, optional): Number of grid points for the x and y axes. Default is 100.
+    alpha (float, optional): Transparency level of the contour plot. Default is 0.6.
+    n_levels (int, optional): Number of contour levels to plot. Default is 20.
+    cmap (sns.palettes._ColorPalette, optional): Colormap to use for the contour plot. Default is 'rocket' colormap.
+
+    Returns:
+    plt.Axes: The matplotlib axes object with the PDF contours plotted.
+    """
+
+    x = np.linspace(*plot_limits[0], n_grid)
+    y = np.linspace(*plot_limits[1], n_grid)
+    X, Y = np.meshgrid(x, y)
+    Z = np.zeros_like(X)
+
+    for i in range(n_grid):
+        for j in range(n_grid):
+            point = slice_loc.copy()
+            point[idcs_plane[0]] = X[i, j]
+            point[idcs_plane[1]] = Y[i, j]
+            Z[i, j] = np.exp(distribution.log_density(point))
+
+    ax.contour(X, Y, Z, levels=n_levels, zorder=1, alpha=alpha, cmap=cmap)
+
+    return ax
+
 def get_sample(dim, rng=None):
     if rng is None:
         dist = MultivariateNormal(np.zeros(dim), np.eye(dim), seed=datetime.now().microsecond)
@@ -502,3 +587,23 @@ if __name__ == '__main__':
     # print(f"Method 1 (Matmul with A_inv): {matmul_time:.6f} seconds")
     # print(f"Method 2 (Solving L y = x): {cholesky_time:.6f} seconds")
     # print(f"Method 2 (cho_solve from scipy): {cho_solve_time:.6f} seconds")
+
+    # ---------------------------- test visualization ----------------------------
+    # normal 2d
+    rng = np.random.default_rng(0)
+    mean, cov = np.array([0, 0]), np.array([[1, 0.3], [0.3, 1.]])
+    posterior = MultivariateNormal(mean, cov, rng=rng)
+    plot_limits = ([-3, 3], [-3, 3])
+
+    fig, ax = get_2d_despined_figure(plot_limits, figsize=(5, 3.5))
+    plot_pdf_contours(posterior, ax, plot_limits)
+
+    n_samples = 5000
+
+    samples = np.zeros((n_samples, 2))
+    for i in range(n_samples):
+        samples[i] = posterior.get_sample()
+
+    plot_samples(samples, ax, color_code=True)
+
+    plt.show()

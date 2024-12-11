@@ -1,14 +1,11 @@
-import os.path
-
 from pdmp.forward_model import PiecewiseConstantModel
 from pdmp.project_field import compute_coefficients, squared_exponential_kernel, PiecewiseConstantBasis
 from pdmp.mcmc import MetropolisHastingsSampler, LangevinDynamicsSampler
 from pdmp.zigzag import ZigZagSampler
 from pdmp.distributions import MultivariateNormal, GaussianLikelihood, Posterior
-from pdmp.utils import plot_pdf_contours, plot_samples, central_moment_from_skeleton
+from pdmp.utils import central_moment_from_skeleton
 
 import numpy as np
-import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.optimize import minimize
 

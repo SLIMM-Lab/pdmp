@@ -7,10 +7,9 @@ import numpy as np
 
 from tqdm import tqdm
 
-from pdmp.distributions import Distribution, MultivariateNormal
 from pdmp import logger
-
-from pdmp.utils import get_2d_despined_figure, plot_pdf_contours
+from pdmp.distributions import Distribution, MultivariateNormal, plot_pdf_contours
+from pdmp.utils import get_2d_despined_figure
 
 
 class ZigZagSampler:

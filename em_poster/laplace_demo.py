@@ -6,10 +6,10 @@ from scipy.optimize import minimize
 
 from pdmp.forward_model import PiecewiseConstantModel
 from pdmp.project_field import compute_coefficients, squared_exponential_kernel, PiecewiseConstantBasis
-from pdmp.distributions import MultivariateNormal, GaussianLikelihood, Posterior
+from pdmp.distributions import MultivariateNormal, GaussianLikelihood, Posterior, plot_pdf_contours
 from pdmp.mcmc import MetropolisHastingsSampler
 from pdmp.zigzag import ZigZagSampler
-from pdmp.utils import plot_pdf_contours, plot_samples, get_2d_despined_figure
+from pdmp.utils import plot_samples, get_2d_despined_figure
 
 
 sns.set_style('white')
