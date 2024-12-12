@@ -55,9 +55,13 @@ class MultivariateNormal(Distribution):
         self.logDet_ = np.log(self.covL_.diagonal()).sum()
         self.constant_ = - 0.5 * np.log(2.0 * np.pi) * self.dim_
 
-    def get_sample(self) -> np.ndarray:
-        z = self.rng_.standard_normal(self.dim_)
-        return self.covL_ @ z + self.mean_
+    def get_sample(self, n: int = 1) -> np.ndarray:
+        if n == 1:
+            z = self.rng_.standard_normal(size=self.dim_)
+            return self.covL_ @ z + self.mean_
+        else:
+            z = self.rng_.standard_normal(size=(n, self.dim_))
+            return z @ self.covL_ + self.mean_
 
     def get_dim(self) -> int:
         return self.dim_
