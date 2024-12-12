@@ -216,7 +216,7 @@ class PiecewiseConstantModel(Model):
         return self.n_settings_  # Return number of settings
 
 
-class LinearModel:
+class LinearModel(Model):
     """
     Forward model for a linear system (mainly for testing purposes)
     """
@@ -229,7 +229,7 @@ class LinearModel:
         """
         super().__init__()
         assert A.shape[0] == b.shape[0], "Dimensions do not match"
-        self.dim_ = A.shape[0]
+        self.dim_ = A.shape[1]
         self.A_ = A
         self.b_ = b
 
