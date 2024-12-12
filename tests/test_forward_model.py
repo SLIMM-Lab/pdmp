@@ -12,7 +12,6 @@ def test_linear_model():
     rng = np.random.default_rng(0)
 
     n, m = rng.integers(2, 10, size=2)
-    # n, m = 3, 2
     A = rng.random((n, m))
     b = rng.random(n)
     model = LinearModel(A, b)
@@ -47,7 +46,3 @@ def test_piecewise_constant_model():
     hess = model.eval_hessian(params)
     hess_finite_diff = hessian_fd(model.eval, params, n=n_loc, h=1e-5)
     assert np.allclose(hess, hess_finite_diff, atol=1e-5)
-
-if __name__ == '__main__':
-    # test_linear_model()
-    test_piecewise_constant_model()
