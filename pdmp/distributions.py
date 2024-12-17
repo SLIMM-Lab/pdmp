@@ -435,10 +435,10 @@ def plot_pdf_contours(
         cmap: matplotlib.colors.Colormap = sns.color_palette('rocket', as_cmap=True)
 ) -> plt.Axes:
     """
-    Plot the probability density function (PDF) contours of a multivariate normal distribution.
+    Plot the probability density function (PDF) contours of a distribution.
 
     Parameters:
-    distribution (MultivariateNormal): The multivariate normal distribution to plot.
+    distribution (Distribution): The distribution to plot.
     ax (plt.Axes): The matplotlib axes object to plot on.
     plot_limits (tuple): A tuple containing two lists, each specifying the x and y axis limits respectively.
     n_grid (int, optional): Number of grid points for the x and y axes. Default is 100.
@@ -463,11 +463,11 @@ def plot_pdf_contours(
 
     return ax
 
-def plot_pfd_contour_slice(
+def plot_pfd_contour_conditional(
         distribution: Distribution,
         ax: plt.Axes,
         plot_limits: tuple[list[float], list[float]],
-        slice_loc: np.ndarray,
+        slice: np.ndarray,
         idcs_plane: tuple[int, int] = (0, 1),
         n_grid: int = 100,
         alpha: float = 0.6,
@@ -475,12 +475,14 @@ def plot_pfd_contour_slice(
         cmap: matplotlib.colors.ListedColormap = sns.color_palette('rocket', as_cmap=True)
 ) -> plt.Axes:
     """
-    Plot the probability density function (PDF) contours of a multivariate normal distribution.
+    Plot the conditional probability density function (PDF) contours of a distribution.
 
     Parameters:
-    distribution (MultivariateNormal): The multivariate normal distribution to plot.
+    distribution (Distribution): The distribution to plot.
     ax (plt.Axes): The matplotlib axes object to plot on.
     plot_limits (tuple): A tuple containing two lists, each specifying the x and y axis limits respectively.
+    slice_loc (np.ndarray): The coordinates to condition on.
+    idcs (tuple, optional): The indices of the plane to condition on. Default is (0, 1).
     n_grid (int, optional): Number of grid points for the x and y axes. Default is 100.
     alpha (float, optional): Transparency level of the contour plot. Default is 0.6.
     n_levels (int, optional): Number of contour levels to plot. Default is 20.
@@ -497,7 +499,7 @@ def plot_pfd_contour_slice(
 
     for i in range(n_grid):
         for j in range(n_grid):
-            point = slice_loc.copy()
+            point = slice.copy()
             point[idcs_plane[0]] = X[i, j]
             point[idcs_plane[1]] = Y[i, j]
             Z[i, j] = np.exp(distribution.log_density(point))
