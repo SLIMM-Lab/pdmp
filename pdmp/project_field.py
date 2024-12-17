@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy.integrate as integrate
 
+from pdmp import logger
+
 SMALL = 1e-10
 LARGE = 1e10
 
@@ -162,16 +164,16 @@ def compute_coefficients(kernel: Callable[[np.ndarray, np.ndarray, float, float]
     coefficients = np.zeros((n, n))
     coefficients_norm = np.zeros((n, n))
 
-    print(f"Computing coefficients for basis functions")
+    logger.debug("Computing coefficients for basis functions")
     for i in range(n):
         for j in range(i, n):
-            print(f"   {i} and {j}")
+            logger.debug(f"   {i} and {j}")
             int_x = (np.max([interval[0], basis.get_support(i)[0]]),
                      np.min([interval[1], basis.get_support(i)[1]]))
             int_y = (np.max([interval[0], basis.get_support(j)[0]]),
                      np.min([interval[1], basis.get_support(j)[1]]))
             coefficients[i, j], tol = integrate.nquad(integrand, [int_x, int_y], args=(i, j))
-            print(f"     {coefficients[i, j]:.4}")
+            logger.debug(f"     {coefficients[i, j]:.4}")
 
     # normalize the coefficients
     for i in range(n):
@@ -179,7 +181,7 @@ def compute_coefficients(kernel: Callable[[np.ndarray, np.ndarray, float, float]
             coefficients_norm[i, j] = coefficients_norm[j, i] = coefficients[i, j] / np.sqrt(
                 coefficients[i, i] * coefficients[j, j])
 
-    print("Normalized coefficientes:\n", coefficients_norm)
+    logger.debug("Normalized coefficientes:\n  ", coefficients_norm)
 
     return coefficients_norm
 
