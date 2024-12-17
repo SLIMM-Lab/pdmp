@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sympy as sy
 
-from pdmp.utils import grad_fd, hessian_fd
+from pdmp import logger
 
 
 class Model:
@@ -93,7 +93,8 @@ class PiecewiseConstantModel(Model):
         for i in range(n_params - 1):
             self.E += (self.params[i + 1] - self.params[i]) * sy.Heaviside(self.x - (i + 1) / self.n_params)
         self.E = self.E.rewrite(sy.Piecewise)
-        print(f"Young's modulus:\n{self.E}\n")
+        logger.debug("Young's modulus:")
+        logger.debug(f"  {self.E}")
 
         u_i = []  # List to store piecewise functions for u
         conditions = []  # List to store conditions for piecewise functions
@@ -111,16 +112,14 @@ class PiecewiseConstantModel(Model):
 
         # Compute gradient of u with respect to parameters
         gradient = [sy.diff(self.u, param) for param in self.params]
-        print("Gradient:\n")
-        [print(grad) for grad in gradient]
-        print("\n")
+        logger.debug("Gradient:")
+        [logger.debug("  " + grad.__str__()) for grad in gradient]
         self.gradient = [sy.lambdify((self.x, self.F, *self.params), grad, 'numpy') for grad in gradient]
 
         # Compute Hessian of u with respect to parameters
         hessian = [[sy.diff(grad, param) for param in self.params] for grad in gradient]
-        print("Hessian:\n")
-        [[print(hess) for hess in hessian_row] for hessian_row in hessian]
-        print("\n")
+        logger.debug("Hessian:")
+        [[logger.debug("  " + hess.__str__()) for hess in hessian_row] for hessian_row in hessian]
         self.hessian = [[sy.lambdify((self.x, self.F, *self.params), hess, 'numpy') for hess in hessian_row] for hessian_row in hessian]
 
     def eval_E(self, params: np.ndarray,x: np.ndarray) -> np.ndarray:
