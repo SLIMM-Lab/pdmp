@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sympy as sy
 
+from pdmp.project_field import compute_coefficients, squared_exponential_kernel, PiecewiseConstantBasis
 from pdmp import logger
 
 
@@ -213,6 +214,59 @@ class PiecewiseConstantModel(Model):
             int: number of settings
         """
         return self.n_settings_  # Return number of settings
+
+def get_piececwise_constant_model(
+        n_params: int,
+        n_obs_loc: int,
+        n_obs: int = 1,
+        sigma_obs: float = 0.025,
+        mean: float = 4.,
+        rng: np.random.Generator = np.random.default_rng(0),
+        kernel_params: dict[str, float]=None
+) -> tuple[PiecewiseConstantModel, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Get a piecewise constant model with noisy observations
+    Args:
+        n_params (int): number of parameters
+        n_obs_loc (int): number of observation locations
+        n_obs (int): number of observations
+        sigma_obs (float): observation noise
+        mean (float): mean for the prior
+        rng (np.random.Generator): random number generator
+        kernel_params (dict[str, float]): kernel parameters
+    Returns:
+        tuple[PiecewiseConstantModel, np.ndarray, np.ndarray, np.ndarray]:
+            model, observations, ground truth, prior_cov
+    """
+
+    if kernel_params is None:
+        kernel_params = {'sigma': 1., 'l': 0.3}
+
+    # get the prior field
+    interval = (0, 1)
+    basis = PiecewiseConstantBasis(n_params, interval)
+    prior_cov = compute_coefficients(squared_exponential_kernel, basis, interval, kernel_params=kernel_params)
+
+    # define observation locations
+    x_obs = np.linspace(0, 1, n_obs_loc + 1)[1:]
+
+    # set up the forward model
+    F = [1.]
+    F = np.array([item for item in F for i in range(n_obs)])
+    model = PiecewiseConstantModel(F, n_params, x_obs)
+
+    # generate ground truth from a multi-variate normal distribution
+    params_gt = rng.multivariate_normal(mean * np.ones(n_params), prior_cov)
+    logger.info(f"Ground truth: {params_gt}")
+
+    # generate n_obs noisy observations of u_gt
+    u_obs = np.zeros((len(F), len(x_obs)))
+
+    for i in range(len(F)):
+        u_gt = model.eval(params_gt, x_obs, idx=i)
+        u_obs[i] = u_gt + rng.normal(0, sigma_obs, (1, u_gt.shape[0]))
+
+    return model, u_obs, params_gt, prior_cov
 
 
 class LinearModel(Model):
