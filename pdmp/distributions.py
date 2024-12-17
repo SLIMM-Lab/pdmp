@@ -508,6 +508,35 @@ def plot_pfd_contour_conditional(
 
     return ax
 
+def plot_pfd_contour_marginal(
+        samples: np.ndarray,
+        ax: plt.Axes,
+        idcs: tuple[int, int] = (0, 1),
+        alpha: float = 0.6,
+        n_levels: int = 15,
+        cmap: matplotlib.colors.ListedColormap = sns.color_palette('rocket', as_cmap=True),
+        **kde_kwargs
+) -> plt.Axes:
+    """
+    Plot the probability density function (PDF) contours of a multivariate normal distribution.
+
+    Parameters:
+    distribution (MultivariateNormal): The multivariate normal distribution to plot.
+    ax (plt.Axes): The matplotlib axes object to plot on.
+    idcs (tuple, optional): The indices of the dimensions to plot. Default is (0, 1).
+    alpha (float, optional): Transparency level of the contour plot. Default is 0.6.
+    n_levels (int, optional): Number of contour levels to plot. Default is 20.
+    cmap (sns.palettes._ColorPalette, optional): Colormap to use for the contour plot. Default is 'rocket' colormap.
+
+    Returns:
+    plt.Axes: The matplotlib axes object with the PDF contours plotted.
+    """
+
+    sns.kdeplot(x=samples[:, idcs[0]], y=samples[:, idcs[1]],
+                ax=ax, cmap=cmap, levels=n_levels, alpha=alpha, zorder=1, **kde_kwargs)
+
+    return ax
+
 def get_sample(dim, rng=None):
     if rng is None:
         dist = MultivariateNormal(np.zeros(dim), np.eye(dim), seed=datetime.now().microsecond)
