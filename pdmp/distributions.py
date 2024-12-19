@@ -526,7 +526,7 @@ def plot_pfd_contour_marginal(
     idcs (tuple, optional): The indices of the dimensions to plot. Default is (0, 1).
     alpha (float, optional): Transparency level of the contour plot. Default is 0.6.
     n_levels (int, optional): Number of contour levels to plot. Default is 20.
-    cmap (sns.palettes._ColorPalette, optional): Colormap to use for the contour plot. Default is 'rocket' colormap.
+    cmap (matplotlib.colors.ListedColormap, optional): Colormap to use for the contour plot. Default is 'rocket' colormap.
 
     Returns:
     plt.Axes: The matplotlib axes object with the PDF contours plotted.

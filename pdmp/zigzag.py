@@ -412,6 +412,7 @@ class ZigZagSampler:
 
         Parameters:
         filename (str): The name of the folder to write the data to.
+        precision (int, optional): The precision of the data. Default is 6.
         """
 
         if not os.path.exists(folder):
@@ -430,7 +431,7 @@ class ZigZagSampler:
         np.savetxt(os.path.join(folder, 'times.dat'), self.times_, fmt=f'%.{precision}e')
         np.savetxt(os.path.join(folder, 'velocities.dat'), self.velocities_, fmt='%d')
 
-    def get_acceptance_rate(self):
+    def get_acceptance_rate(self) -> float:
         """
         Get the acceptance rate.
 
