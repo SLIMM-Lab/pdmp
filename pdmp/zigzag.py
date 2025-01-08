@@ -258,32 +258,6 @@ class ZigZagSampler:
             # return np.maximum(rate, 0) + self.gamma_ + self.offset_
             return np.maximum(rate, 0) + self.gamma_
 
-    def approximate_bounds(self, x: np.ndarray, T: np.ndarray, idx=None) -> np.ndarray:
-        """
-        Calculate the approximate bounds for the ZigZag process.
-
-        Parameters:
-        x (np.ndarray): The current position.
-        T (np.ndarray): The time increment.
-        idx (int, optional): Dimension index. Default is None.
-
-        Returns:
-        np.ndarray: The calculated approximate bounds.
-        """
-
-        a = self.velocities_[self.iter_] * (self.approximation_['inv_cov'] @ self.velocities_[self.iter_])
-        b = (self.velocities_[self.iter_] *
-             (self.approximation_['inv_cov'] @ (self.positions_[self.iter_] - self.approximation_['mean']))
-             + self.offset_)
-
-        rates = a * T + b
-        rates = np.maximum(rates, 0) + self.gamma_
-
-        if idx is None:
-            return rates
-        else:
-            return rates[idx]
-
     def poisson_thinning(self, j: int, T: np.ndarray):
         """
         Perform Poisson thinning for the ZigZag process.
@@ -292,9 +266,9 @@ class ZigZagSampler:
         j (int): Dimension index.
         T (np.ndarray): Time increment.
         """
-        m = self.rates(self.positions_[self.iter_] + T * self.velocities_[self.iter_], idx_d=j)
-        # m = self.approximate_rates(self.positions_[self.iter_] + T * self.velocities_[self.iter_], idx=j)
-        M = self.approximate_bounds(self.positions_[self.iter_], T, idx=j)
+        pos = self.positions_[self.iter_] + T * self.velocities_[self.iter_]
+        m = self.rates(pos, idx_d=j)
+        M = self.approximate_rates(pos, idx=j)
         u = self.rng_.uniform(0, 1)
         # u = self.us_[self.iter_]
         # logger.debug(f"      u:    {u}")
