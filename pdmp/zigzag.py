@@ -9,6 +9,7 @@ from tqdm import tqdm
 
 from pdmp import logger
 from pdmp.distributions import Distribution, MultivariateNormal, plot_pdf_contours
+from pdmp.surrogates import SurrogateModel
 from pdmp.utils import get_2d_despined_figure
 
 
@@ -19,6 +20,7 @@ class ZigZagSampler:
 
     def __init__(self,
                  target: Distribution, *,
+                 surrogate: SurrogateModel = None,
                  n_max: int = None,
                  t_max: float = None,
                  gamma: float = 1e-6,
@@ -112,6 +114,7 @@ class ZigZagSampler:
         elif self.approximation_ is not None:
             self.thinning_ = True
             self.generate_event_times = self.inverse_cdf_linear
+            self.surrogate_ = surrogate
         else:
             self.generate_event_times = self.inverse_cdf
         if 'dt' in kwargs:
@@ -247,15 +250,12 @@ class ZigZagSampler:
         Returns:
         np.ndarray: The calculated approximate rates.
         """
+
         if idx is None:
-            rates = self.velocities_[self.iter_] * (self.approximation_['inv_cov']
-                                                    @ (x - self.approximation_['mean'])) + self.offset_
-            # return np.maximum(rates, 0) + self.gamma_ + self.offset_
+            rates = - self.velocities_[self.iter_] * self.surrogate_.grad(x) + self.offset_ + self.offset_
             return np.maximum(rates, 0) + self.gamma_
         else:
-            rate = self.velocities_[self.iter_, idx] * (self.approximation_['inv_cov'][idx]
-                                                        @ (x - self.approximation_['mean'])) + self.offset_
-            # return np.maximum(rate, 0) + self.gamma_ + self.offset_
+            rate = - self.velocities_[self.iter_, idx] * self.surrogate_.grad(x, idx) + self.offset_
             return np.maximum(rate, 0) + self.gamma_
 
     def poisson_thinning(self, j: int, T: np.ndarray):
