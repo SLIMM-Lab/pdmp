@@ -88,7 +88,8 @@ class MultivariateNormal(Distribution):
     def grad_log_density(self, x: np.ndarray) -> np.ndarray:
         diff =  x - self.mean_
         return - sp.linalg.solve_triangular(self.covL_.transpose(),
-                                            sp.linalg.solve_triangular(self.covL_, diff, lower=True))
+                                            sp.linalg.solve_triangular(self.covL_, diff, lower=True, check_finite=False),
+                                            check_finite=False, lower=False)
 
     def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
         return - self.invC_

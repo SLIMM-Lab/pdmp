@@ -173,8 +173,8 @@ class ZigZagSampler:
         # linear correction to last step
         taus -= (integral - s) / rate_t1
 
-        logger.debug(f"S    : {s}")
-        logger.debug(f"taus : {taus}")
+        # logger.debug(f"S    : {s}")
+        # logger.debug(f"taus : {taus}")
 
         i = np.argmin(taus)
         return taus[i], i
@@ -190,17 +190,17 @@ class ZigZagSampler:
         # get samples from the CDF
         S = -np.log(self.rng_.uniform(0, 1, self.dim_))
         # S = self.ss_[self.iter_]
-        logger.debug(f"S:    {S}")
+        # logger.debug(f"S:    {S}")
+
+        # init variables
+        s = np.zeros(self.dim_)
+        taus = S / ( self.gamma_ + self.offset_ )
 
         # get the linear approximation of the rates
         a = self.velocities_[self.iter_] * (self.approximation_['inv_cov'] @ self.velocities_[self.iter_])
         b = (self.velocities_[self.iter_] *
              (self.approximation_['inv_cov'] @ (self.positions_[self.iter_] - self.approximation_['mean']))
              + self.offset_)
-
-        # init variables
-        s = np.zeros(self.dim_)
-        taus = np.zeros(self.dim_)
 
         # compute root
         taus_0 = - b / a
@@ -231,7 +231,7 @@ class ZigZagSampler:
             else:
                 taus[i] = S[i] / self.gamma_
 
-        logger.debug(f"taus: {taus}")
+            # logger.debug(f"taus: {taus}")
 
         j = np.argmin(taus)
         return taus[j], j
@@ -297,7 +297,7 @@ class ZigZagSampler:
         M = self.approximate_bounds(self.positions_[self.iter_], T, idx=j)
         u = self.rng_.uniform(0, 1)
         # u = self.us_[self.iter_]
-        logger.debug(f"      u:    {u}")
+        # logger.debug(f"      u:    {u}")
         if u < (m / M):
             self.velocities_[self.iter_ + 1, j] = -self.velocities_[self.iter_, j]
             self.n_accepted_ += 1
@@ -305,7 +305,7 @@ class ZigZagSampler:
         else:
             self.velocities_[self.iter_ + 1, j] = self.velocities_[self.iter_, j]
 
-        logger.debug(f"      ratio: {m/M}")
+        # logger.debug(f"      ratio: {m/M}")
 
         if m > M:
             self.offset_ += m - M
