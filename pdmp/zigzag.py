@@ -4,12 +4,13 @@ import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
+from typing import cast
 
 from tqdm import tqdm
 
 from pdmp import logger
 from pdmp.distributions import Distribution, MultivariateNormal, plot_pdf_contours
-from pdmp.surrogates import SurrogateModel
+from pdmp.surrogates import SurrogateModel, LaplaceSurrogate
 from pdmp.utils import get_2d_despined_figure
 
 
@@ -26,7 +27,6 @@ class ZigZagSampler:
                  gamma: float = 1e-6,
                  rng: np.random.Generator = None,
                  seed: int = None,
-                 approximation: dict = None,
                  sub_sampling: bool = False,
                  n_events_accepted: int = None,
                  print_every: int = 100,
@@ -76,7 +76,6 @@ class ZigZagSampler:
         self.offset_ = 0.
         self.offset_history_ = [[0.0, 0.0]] # [[time, offset]]
         self.plot_ = False
-        self.approximation_ = approximation
         self.thinning_ = False
         self.n_accepted_ = 0
         self.n_accepted_0_ = n_events_accepted
@@ -111,10 +110,11 @@ class ZigZagSampler:
 
         if hasattr(self.target_, 'get_bounds'):
             pass
-        elif self.approximation_ is not None:
+        elif surrogate is not None:
             self.thinning_ = True
-            self.generate_event_times = self.inverse_cdf_linear
-            self.surrogate_ = surrogate
+            if isinstance(surrogate, LaplaceSurrogate):
+                self.surrogate_ = cast(LaplaceSurrogate, surrogate)
+                self.generate_event_times = self.inverse_cdf_linear
         else:
             self.generate_event_times = self.inverse_cdf
         if 'dt' in kwargs:
@@ -200,9 +200,10 @@ class ZigZagSampler:
         taus = S / ( self.gamma_ + self.offset_ )
 
         # get the linear approximation of the rates
-        a = self.velocities_[self.iter_] * (self.approximation_['inv_cov'] @ self.velocities_[self.iter_])
+        a = self.velocities_[self.iter_] * (self.surrogate_.gaussian.get_inv_cov() @ self.velocities_[self.iter_])
         b = (self.velocities_[self.iter_] *
-             (self.approximation_['inv_cov'] @ (self.positions_[self.iter_] - self.approximation_['mean']))
+             (self.surrogate_.gaussian.get_inv_cov()
+              @ (self.positions_[self.iter_] - self.surrogate_.gaussian.get_mean()))
              + self.offset_)
 
         # compute root

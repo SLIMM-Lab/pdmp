@@ -15,6 +15,18 @@ class SurrogateModel(object):
         Initialize the surrogate model.
         """
 
+    def eval(self, x: np.ndarray) -> np.ndarray:
+        """
+        Evaluate the surrogate model at a point.
+
+        Parameters:
+        x (np.ndarray): The point at which the surrogate model is to be evaluated.
+
+        Returns:
+        float: The value of the surrogate model at the point x.
+        """
+        raise NotImplementedError
+
     def grad(self, x: np.ndarray, idx: int = None) -> np.ndarray:
         """
         Compute the gradient of the surrogate model at a point.
@@ -83,6 +95,18 @@ class LaplaceSurrogate(SurrogateModel):
 
         self.gaussian = MultivariateNormal(self.mean, self.cov)
 
+    def eval(self, x: np.ndarray) -> np.ndarray:
+        """
+        Evaluate the Laplace approximation at a point.
+
+        Parameters:
+        x (np.ndarray): The point at which the Laplace approximation is to be evaluated.
+
+        Returns:
+        float: The value of the Laplace approximation at the point x.
+        """
+        return self.gaussian.log_density(x)
+
     def grad(self, x: np.ndarray, idx: int = None) -> np.ndarray:
         """
         Compute the gradient of the Laplace approximation at a point.
@@ -114,4 +138,3 @@ class LaplaceSurrogate(SurrogateModel):
         :return: None
         """
         pass
-
