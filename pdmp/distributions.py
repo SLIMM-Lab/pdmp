@@ -6,8 +6,10 @@ import seaborn as sns
 
 from datetime import datetime
 from timeit import timeit
+from typing import Union, Any
 
-from pdmp.forward_model import Model
+from pdmp.forward_model import Model, get_model
+from pdmp.project_field import get_gaussian_random_field_projection_from_dict
 from pdmp.utils import get_2d_despined_figure, plot_samples
 
 small = 1e-12
@@ -23,6 +25,13 @@ class Distribution:
             self.rng_ = np.random.default_rng(seed)
         else:
             self.rng_ = rng
+
+
+    def get_mean(self) -> np.ndarray:
+        raise NotImplementedError
+
+    def get_cov(self) -> np.ndarray:
+        raise NotImplementedError
 
     def get_sample(self) -> np.ndarray:
         raise NotImplementedError
@@ -54,6 +63,17 @@ class MultivariateNormal(Distribution):
         self.invC_ = sp.linalg.cho_solve((self.covL_, True), np.eye(self.dim_))
         self.logDet_ = np.log(self.covL_.diagonal()).sum()
         self.constant_ = - 0.5 * np.log(2.0 * np.pi) * self.dim_
+
+    @classmethod
+    def from_dict(cls, params: dict[str, np.ndarray], rng: np.random.Generator = None, seed: int = None):
+        if 'mean' not in params or 'cov' not in params:
+            raise ValueError("Parameters must include 'mean' and 'cov'.")
+        return cls(
+            mean=params['mean'],
+            cov=params['cov'],
+            rng=rng,
+            seed=seed
+        )
 
     def get_sample(self, n: int = 1) -> np.ndarray:
         if n == 1:
@@ -110,6 +130,18 @@ class GaussianMixture(Distribution):
             self.dists_.append(MultivariateNormal(means[i], covs[i], rng=rng))
         # self.constant_ = - 0.5 * np.log(2.0 * np.pi) * self.dim_
 
+    @classmethod
+    def from_dict(cls, params: dict[str, np.ndarray], rng: np.random.Generator = None, seed: int = None):
+        if 'means' not in params or 'covs' not in params or 'weights' not in params:
+            raise ValueError("Parameters must include 'means', 'covs', and 'weights'.")
+        return cls(
+            means=params['means'],
+            covs=params['covs'],
+            weights=params['weights'],
+            rng=rng,
+            seed=seed
+        )
+
     def get_sample(self) -> np.ndarray:
         idx = self.rng_.choice(self.n_components_, p=self.weights_)
         return self.dists_[idx].get_sample()
@@ -164,12 +196,25 @@ class BananaDistribution(Distribution):
         self.b_ = b
         self.gaussian_ = MultivariateNormal(mean, cov, rng=rng, seed=seed)
 
+    @classmethod
+    def from_dict(cls, params: dict[str, Union[np.ndarray, float]], rng: np.random.Generator = None, seed: int = None):
+        if 'mean' not in params or 'cov' not in params:
+            raise ValueError("Parameters must include 'mean' and 'cov'.")
+        return cls(
+            mean=params['mean'],
+            cov=params['cov'],
+            a=params.get('a', 2.0),
+            b=params.get('b', 0.2),
+            rng=rng,
+            seed=seed
+        )
+
     def transform(self, x: np.ndarray) -> np.ndarray:
         return np.array([x[0] / self.a_,
                          x[1] * self.a_ + self.a_ * self.b_ * (x[0] ** 2 + self.a_ ** 2)])
 
     def get_sample(self) -> np.ndarray:
-        raise Exception("Cannot sample directly from Banana. Use MCMC instead")
+        raise NotImplementedError("Cannot sample directly from Banana. Use MCMC instead")
 
     def get_dim(self) -> int:
         return self.gaussian_.get_dim()
@@ -199,6 +244,17 @@ class MultivariateLogNormal(Distribution):
 
         self.dim_ = mean.shape[0]
         self.constant_ = - 0.5 * np.log(2.0 * np.pi) * self.dim_
+
+    @classmethod
+    def from_dict(cls, params: dict[str, np.ndarray], rng: np.random.Generator = None, seed: int = None):
+        if 'mean' not in params or 'cov' not in params:
+            raise ValueError("Parameters must include 'mean' and 'cov'.")
+        return cls(
+            mean=params['mean'],
+            cov=params['cov'],
+            rng=rng,
+            seed=seed
+        )
 
     def get_dim(self) -> int:
         return self.dim_
@@ -236,11 +292,27 @@ class CubicDistribution(Distribution):
         else:
             self.cubic_diag = np.ones(self.dim_)
 
+    @classmethod
+    def from_dict(cls, params: dict[str, Union[np.ndarray, float]], rng: np.random.Generator = None, seed: int = None):
+        if 'mean' not in params or 'cov' not in params or 'a' not in params:
+            raise ValueError("Parameters must include 'mean', 'cov', and 'a'.")
+        return cls(
+            mean=np.array(params['mean']),
+            cov=np.array(params['cov']),
+            a=params['a'],
+            cubic_diag=params.get('cubic_diag', None),
+            rng=rng,
+            seed=seed
+        )
+
     def get_dim(self) -> int:
         return self.dim_
 
     def get_sample(self) -> np.ndarray:
-        raise Exception("Cannot sample directly from Cubic. Use MCMC instead")
+        raise NotImplementedError("Cannot sample directly from Cubic. Use MCMC instead")
+
+    def get_mean(self) -> np.ndarray:
+        return self.normal_.get_mean()
 
     def log_density(self, x: np.ndarray) -> np.ndarray:
         d = x - self.normal_.get_mean()
@@ -300,7 +372,7 @@ class TemperedLikelihood(Likelihood):
 
 
 class GaussianLikelihood(Likelihood):
-    def __init__(self, model: Model, u_obs: np.ndarray, sigma_obs: float, rng: np.random.Generator = None,
+    def __init__(self, model: Model, u_obs: np.ndarray, sigma: float, rng: np.random.Generator = None,
                  seed: int = None):
         super().__init__(rng=rng, seed=seed)
         self.model_ = model
@@ -308,17 +380,17 @@ class GaussianLikelihood(Likelihood):
         self.u_obs_ = u_obs
         self.n_obs_ = self.u_obs_.shape[0]
         self.dim_ = self.u_obs_.shape[1]
-        self.sigma_obs_ = sigma_obs
+        self.sigma_ = sigma
         self.dists_ = []
         for i in range(self.n_obs_):
             self.dists_.append(MultivariateNormal(self.u_obs_[i],
-                                                  sigma_obs**2 * np.eye(self.dim_)))
+                                                  sigma ** 2 * np.eye(self.dim_)))
 
     def get_dim(self) -> int:
         return self.dim_
 
     def get_sample(self) -> np.ndarray:
-        raise Exception("Cannot sample directly from GaussianLikelihood. Use MCMC instead")
+        raise NotImplementedError("Cannot sample directly from GaussianLikelihood. Use MCMC instead")
 
     def get_n_obs(self) -> int:
         return self.n_obs_
@@ -375,7 +447,7 @@ class FlatLikelihood(Likelihood):
         return self.dim_
 
     def get_sample(self) -> np.ndarray:
-        raise Exception("Cannot sample directly from Flat GaussianLikelihood. Use MCMC instead")
+        raise NotImplementedError("Cannot sample directly from Flat GaussianLikelihood. Use MCMC instead")
 
     def get_n_obs(self) -> int:
         return 0
@@ -392,6 +464,72 @@ class FlatLikelihood(Likelihood):
     def hessian_log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
         return np.zeros((self.dim_, self.dim_))
 
+def get_prior(
+        config: dict[str, Union[str, np.ndarray, float]],
+        rng: np.random.Generator = None,
+    ) -> Distribution:
+
+    if 'name' not in config:
+        raise ValueError("Prior config must include 'name'.")
+    if config['name'] == 'MultivariateNormal':
+        return MultivariateNormal.from_dict(config, rng=rng)
+    elif config['name'] == 'GaussianMixture':
+        return GaussianMixture.from_dict(config, rng=rng)
+    elif config['name'] == 'Banana':
+        return BananaDistribution.from_dict(config, rng=rng)
+    elif config['name'] == 'Cubic':
+        return CubicDistribution.from_dict(config, rng=rng)
+    elif config['name'] == 'MultivariateLogNormal':
+        return MultivariateLogNormal.from_dict(config, rng=rng)
+    elif config['name'] == 'GaussianRandomField':
+        mean, cov = get_gaussian_random_field_projection_from_dict(config)
+        return MultivariateNormal(mean, cov, rng=rng)
+    else:
+        raise ValueError(f"Prior {config['name']} not recognized.")
+
+def get_likelihood(
+        config: dict[str, Any],
+        model: Model,
+        obs: np.ndarray,
+        rng: np.random.Generator = None,
+    ) -> Likelihood:
+
+    if 'name' not in config:
+        raise ValueError("Likelihood config must include 'name'.")
+
+
+    if config['name'] == 'GaussianLikelihood':
+        sigma = config['sigma']
+        return GaussianLikelihood(model=model, u_obs=obs, sigma=sigma, rng=rng)
+    elif config['name'] == 'TemperedLikelihood':
+        likelihood = get_likelihood(config['likelihood'], model, obs, rng=rng)
+        beta = config['beta']
+        return TemperedLikelihood(likelihood, beta=beta, rng=rng)
+    elif config['name'] == 'FlatLikelihood':
+        return FlatLikelihood(dim=model.get_dim(), rng=rng)
+    else:
+        raise ValueError(f"Likelihood {config['name']} not recognized.")
+
+def gen_observations(
+        config: dict[str, Any],
+        model: Model,
+        ground_truth: np.ndarray,
+        rng: np.random.Generator = None
+    ) -> np.ndarray:
+
+    # read keys
+    n_obs = config['n_obs']
+    sigma = config['sigma']
+
+    # init arrays
+    output = model.eval(ground_truth)
+    obs = np.zeros((config['n_obs'], output.shape[0]))
+
+    # generate observations
+    for i in range(n_obs):
+        obs[i] = model.eval(ground_truth, idx=i) + rng.normal(0, sigma, (1, output.shape[0]))
+
+    return obs
 
 class Posterior(Distribution):
     def __init__(self, prior: Distribution, likelihood: Likelihood, rng: np.random.Generator = None, seed: int = None):
@@ -400,11 +538,43 @@ class Posterior(Distribution):
         self.prior_ = prior
         self.likelihood_ = likelihood
 
+    @classmethod
+    def from_dict(
+            cls,
+            config: dict[str, Any],
+            rng: np.random.Generator = None,
+        ):
+
+        # check if config has the necessary keys
+        if 'prior' not in config or 'likelihood' not in config or 'observations' not in config:
+            raise ValueError("Parameters must include 'prior', 'likelihood', and 'observations'.")
+
+        config['prior']['dim'] = config['dim']
+        config['model']['dim'] = config['dim']
+
+        # get prior and model
+        prior = get_prior(config['prior'], rng=rng)
+        model = get_model(config['model'])
+        # model = Model.from_dict(config['model'])
+
+        # generate or get observations
+        if config['observations']['name'] == 'synthetic':
+            ground_truth = prior.get_sample()
+            obs = gen_observations(config['observations'], model, ground_truth, rng=rng)
+            config['observations']['ground_truth'] = ground_truth
+            config['observations']['observation_data'] = obs
+        else:
+            obs = np.genfromtxt(config['observations']['observation_file'])
+
+        # get likelihood and posterior
+        likelihood = get_likelihood(config['likelihood'], model, obs, rng=rng)
+        return cls(prior, likelihood, rng=rng)
+
     def get_dim(self) -> int:
         return self.dim_
 
     def get_sample(self) -> np.ndarray:
-        raise Exception("Cannot sample directly from Posterior. Use MCMC instead")
+        raise NotImplementedError("Cannot sample directly from Posterior. Use MCMC instead")
 
     def get_n_obs(self) -> int:
         return self.likelihood_.get_n_obs()

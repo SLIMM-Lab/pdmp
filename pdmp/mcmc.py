@@ -8,6 +8,7 @@ from typing import Tuple
 
 from tqdm import tqdm
 
+from pdmp.sampler import Sampler
 from pdmp.distributions import Distribution, MultivariateNormal
 from pdmp.distributions import get_sample
 from pdmp import logger
@@ -15,7 +16,7 @@ from pdmp import logger
 import seaborn as sns
 
 
-class StepSampler:
+class StepSampler(Sampler):
 
     def __init__(self,
                  target: Distribution,
@@ -34,6 +35,8 @@ class StepSampler:
         seed (int, optional): Seed for the random number generator. Default is None.
         prec (np.ndarray, optional): Preconditioner matrix. Default is None.
         """
+        super().__init__()
+
         self.target_ = target
         self.dim_ = self.target_.get_dim()
         self.n_samples_ = n_samples

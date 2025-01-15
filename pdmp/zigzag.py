@@ -4,17 +4,18 @@ import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import cast
+from typing import cast, Any
 
 from tqdm import tqdm
 
 from pdmp import logger
+from pdmp.sampler import Sampler
 from pdmp.distributions import Distribution, MultivariateNormal, plot_pdf_contours
 from pdmp.surrogates import SurrogateModel, LaplaceSurrogate
 from pdmp.utils import get_2d_despined_figure
 
 
-class ZigZagSampler:
+class ZigZagSampler(Sampler):
     """
     ZigZagSampler class for sampling from a target distribution using the ZigZag process.
     """
@@ -48,6 +49,7 @@ class ZigZagSampler:
         print_every (int, optional): Interval to print outputs.
         kwargs: Additional keyword arguments.
         """
+        super().__init__()
 
         self.target_ = target
         self.dim_ = self.target_.get_dim()
@@ -127,6 +129,27 @@ class ZigZagSampler:
             self.ax_ = kwargs['ax']
 
         logger.info("ZigZagSampler initialized.")
+
+    @classmethod
+    def from_dict(cls, config: dict[str, Any], target: Distribution, rng: np.random.Generator):
+        """
+        Initialize the ZigZagSampler class from a dictionary.
+
+        Parameters:
+        config (dict): The configuration dictionary.
+        target (Distribution): The target distribution to sample from.
+        rng (np.random.Generator, optional): Random number generator. Default is None.
+
+        Returns:
+        ZigZagSampler: The initialized ZigZagSampler class.
+        """
+        my_config = config.copy()
+        surrogate = None
+        if 'surrogate' in config:
+            surrogate = LaplaceSurrogate.from_dict(my_config['surrogate'], target=target, rng=rng)
+            my_config.pop('surrogate')
+
+        return ZigZagSampler(target, surrogate=surrogate, rng=rng, **my_config)
 
     def rates(self, x: np.ndarray, idx_d: int = None, idx_n: int = None) -> np.ndarray:
         """
