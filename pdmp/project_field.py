@@ -209,6 +209,35 @@ def monte_carlo_2d(func: Callable[[np.ndarray, np.ndarray], np.ndarray],
     return np.mean(sample_values) * area
 
 
+def get_gaussian_random_field_projection_from_dict(
+        config: Dict[str, Any],
+        **kwargs
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Load the projection configuration.
+
+    Parameters:
+    projection_config (Dict[str, Any]): The projection configuration.
+    **kwargs: Additional keyword arguments.
+
+    Returns:
+    Callable[[np.ndarray], np.ndarray]: The projection function.
+    """
+
+    kernel_params = config['kernel_params']
+    interval = config.get('interval', (0, 1))
+    d = config['dim']
+    mean = np.ones(d) * config['mean']
+    cov = compute_coefficients(
+        squared_exponential_kernel,
+        PiecewiseConstantBasis(d, interval),
+        interval,
+        kernel_params=kernel_params
+    )
+
+    return mean, cov
+
+
 if __name__ == '__main__':
 
     kernel_params = {'sigma': 1., 'l': 0.5}

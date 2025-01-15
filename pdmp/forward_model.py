@@ -63,6 +63,17 @@ class Model:
         """
         return 1
 
+    @classmethod
+    def from_dict(cls, config: dict):
+        """
+        Create a model from a dictionary configuration.
+        Args:
+            config (dict): configuration dictionary
+        Returns:
+            Model: model
+        """
+        raise NotImplementedError
+
 class PiecewiseConstantModel(Model):
     """
     Forward model for deformation of a 1d bar with piecewise constant Young's modulus
@@ -215,6 +226,28 @@ class PiecewiseConstantModel(Model):
         """
         return self.n_settings_  # Return number of settings
 
+    @classmethod
+    def from_dict(cls, config: dict):
+        """
+        Create a PiecewiseConstantModel from a dictionary configuration.
+        Args:
+            config (dict): configuration dictionary
+        Returns:
+            PiecewiseConstantModel: piecewise constant model
+        """
+        F = np.array(config['F'])
+        n_params = config['dim']
+
+        if 'x_obs' in config:
+            x_obs = np.array(config['x_obs'])
+        elif 'n_obs_loc' in config:
+            x_obs = np.linspace(0, 1, config['n_obs_loc'] + 1)[1:]
+        else:
+            raise ValueError("Observation locations not provided")
+
+        return cls(F, n_params, x_obs)
+
+
 def get_piececwise_constant_model(
         n_params: int,
         n_obs_loc: int,
@@ -286,6 +319,19 @@ class LinearModel(Model):
         self.A_ = A
         self.b_ = b
 
+    @classmethod
+    def from_dict(cls, config: dict):
+        """
+        Create a LinearModel from a dictionary configuration.
+        Args:
+            config (dict): configuration dictionary
+        Returns:
+            LinearModel: linear model
+        """
+        A = np.array(config['A'])
+        b = np.array(config['b'])
+        return cls(A, b)
+
     def eval(self, params: np.ndarray, **kwargs) -> np.ndarray:
         """
         Evaluate the forward model
@@ -328,6 +374,20 @@ class LinearModel(Model):
         """
         return self.dim_
 
+def get_model(config: dict):
+    """
+    Get a model from a configuration dictionary
+    Args:
+        config (dict): configuration dictionary
+    Returns:
+        Model: model
+    """
+    if config['name'] == 'PiecewiseConstant':
+        return PiecewiseConstantModel.from_dict(config)
+    elif config['name'] == 'Linear':
+        return LinearModel.from_dict(config)
+    else:
+        raise ValueError(f"Model {config['name']} not recognized.")
 
 if __name__ == '__main__':
 

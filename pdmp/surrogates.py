@@ -1,8 +1,9 @@
 import numpy as np
 
+from typing import cast
 from scipy.optimize import minimize
 
-from pdmp.distributions import Distribution, MultivariateNormal
+from pdmp.distributions import Distribution, MultivariateNormal, Posterior
 from pdmp import logger
 
 
@@ -76,17 +77,54 @@ class LaplaceSurrogate(SurrogateModel):
         """
         super().__init__()
 
+        if isinstance(target, Posterior):
+            target = cast(Posterior, target)
+
         if mean is None or cov is None:
             assert target is not None, "Target distribution must be provided if mean and cov are not provided."
             n_log_post = lambda x: - target.log_density(x)
             n_grad_log_post = lambda x: - target.grad_log_density(x)
 
             if mean is None:
+                if x_0 is None:
+                    logger.warning("No initial point provided ... attempting to get sample from target.")
+                    success = False
+
+                    if hasattr(target, 'get_sample'):
+                        try:
+                            x_0 = target.get_sample()
+                            success = True
+                        except NotImplementedError as e:
+                            logger.warning("  Method get_sample not implemented for target.")
+
+                    if hasattr(target, 'get_mean'):
+                        try:
+                            x_0 = target.get_mean()
+                            success = True
+                        except NotImplementedError as e:
+                            logger.warning("  Method get_mean not implemented for target.")
+
+                    if not success and hasattr(target, 'prior_') and hasattr(target.prior_, 'get_sample'):
+                        try:
+                            x_0 = target.prior_.get_sample()
+                            success = True
+                        except NotImplementedError as e:
+                            logger.warning("  Method get_sample not implemented for prior.")
+
+                    if not success and hasattr(target, 'prior_') and hasattr(target.prior_, 'get_mean'):
+                        try:
+                            x_0 = target.prior_.get_mean()
+                        except NotImplementedError as e:
+                            logger.warning("  Method get_mean not implemented for prior.")
+
+                    if not success:
+                        x_0 = np.zeros(target.get_dim())
+
                 self.mean = minimize(n_log_post, x_0, jac=n_grad_log_post, method='BFGS').x
             else:
                 self.mean = mean
             if cov is None:
-                self.cov = np.linalg.inv(target.hessian_log_density(self.mean))
+                self.cov = - np.linalg.inv(target.hessian_log_density(self.mean))
             else:
                 self.cov = cov
         else:
@@ -94,6 +132,26 @@ class LaplaceSurrogate(SurrogateModel):
             self.cov = cov
 
         self.gaussian = MultivariateNormal(self.mean, self.cov)
+
+    @classmethod
+    def from_dict(cls, config: dict, target = None, rng: np.random.Generator = None):
+        """
+        Create a Laplace approximation from a dictionary.
+
+        Parameters:
+        config (dict): The configuration dictionary.
+        rng (np.random.Generator, optional): The random number generator. Default is None.
+
+        Returns:
+        LaplaceSurrogate: The Laplace approximation.
+        """
+        mean = np.array(config['mean']) if 'mean' in config else None
+        cov = np.array(config['cov']) if 'cov' in config else None
+        return cls(
+            mean=mean,
+            cov=cov,
+            target=target
+        )
 
     def eval(self, x: np.ndarray) -> np.ndarray:
         """

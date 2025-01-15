@@ -1,9 +1,10 @@
 # logger.py
 import logging
 import sys
+import os
 
 
-def setup_logger(name):
+def setup_logger(name: str) -> logging.Logger:
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
 
@@ -26,9 +27,19 @@ def setup_logger(name):
 
     return logger
 
-def setup_file_handler(fname, logger, level="INFO"):
+def setup_file_handler(
+        logger: logging.Logger,
+        log_dir: str,
+        log_file: str = "mcmc_run.log",
+        level="INFO"
+):
+
+    # create log dir
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, log_file)
+
     # set up file_handler
-    file_handler = logging.FileHandler(fname)
+    file_handler = logging.FileHandler(log_path)
     file_handler.setLevel(level)
     if logger.hasHandlers():
         formatter = logger.handlers[0].formatter
@@ -36,3 +47,5 @@ def setup_file_handler(fname, logger, level="INFO"):
         formatter = logging.Formatter('[%(asctime)s][%(levelname)s] %(name)s: %(message)s', datefmt='%Y-%m-%d %H:%M')
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
+
+    logger.info("Custom logging initialized. Log file: %s", log_path)
