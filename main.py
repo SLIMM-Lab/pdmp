@@ -1,10 +1,12 @@
 import yaml
+import pickle
+import os
 import argparse
 
 import numpy as np
 import seaborn as sns
 
-from typing import Any, Union
+from typing import Any, Iterable
 
 from pdmp import logger
 from pdmp.logger_setup import setup_file_handler
@@ -106,6 +108,77 @@ def yaml_to_numpy(data: Any):
         # Return the data as is for non-list, non-dict types
         return data
 
+def numpy_to_yaml(data: Any):
+    """
+    Convert numpy arrays in the configuration dictionary back to lists.
+
+    Parameters:
+    data (Any): The data to convert.
+
+    Returns:
+    Any: The data with numpy arrays converted to lists.
+    """
+
+    if isinstance(data, dict):
+        # Process dictionaries recursively
+        return {key: numpy_to_yaml(value) for key, value in data.items()}
+    elif isinstance(data, np.ndarray):
+        # Convert numpy arrays to lists
+        return data.tolist()
+    elif isinstance(data, list):
+        # Process lists recursively
+        return [numpy_to_yaml(x) for x in data]
+    else:
+        # Return the data as is for non-list, non-dict, non-numpy types
+        return data
+
+
+class CustomDumper(yaml.SafeDumper):
+    """
+    Custom YAML Dumper that forces lists to be displayed in bracket format [x, y, z]
+    while keeping dictionaries in the usual indented structure.
+    """
+
+    def represent_list(self, data):
+        return self.represent_sequence('tag:yaml.org,2002:seq', data, flow_style=True)
+
+# Attach the new list representation to our dumper
+CustomDumper.add_representer(list, CustomDumper.represent_list)
+
+def dump_yaml_custom_format(data, file_path):
+    """
+    Dumps YAML data where lists are in bracket format but dictionaries use standard indentation.
+
+    Args:
+        data (dict): The data to be serialized.
+        file_path (str): Path to the output YAML file.
+    """
+    with open(file_path, "w") as f:
+        yaml.dump(data, f, Dumper=CustomDumper, sort_keys=False, default_flow_style=False)
+
+def save_config(
+        config: dict,
+        save_dir: str,
+        file_name: str = 'config_used.pickle'
+):
+    """
+    Save the config to a file.
+
+    Parameters:
+    config (dict): The configuration dictionary.
+    save_path (str): The path to the file.
+    """
+
+    save_path = os.path.join(save_dir, file_name)
+
+    config_yaml = numpy_to_yaml(config)
+
+    # with open(save_path, 'w') as f:
+        # yaml.dump(config_yaml, f)
+    dump_yaml_custom_format(config_yaml, save_path)
+
+    # with open(save_path, 'wb') as f:
+    #     pickle.dump(config, f)
 
 def main():
 
@@ -115,6 +188,7 @@ def main():
     # load the configuration file
     with open(args.config, 'r') as f:
         config = yaml.safe_load(f)
+
 
     setup_file_handler(logger, config['output']['dir'], **config['output']['logging'])
 
@@ -131,6 +205,7 @@ def main():
 
         sampler.run()
         sampler.write_data(config['output']['dir'])
+        save_config(config, config['output']['dir'], 'config_used.yml')
 
     except Exception as e:
         logger.exception("An error occurred during the simulation: %s", str(e))
