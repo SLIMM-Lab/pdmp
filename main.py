@@ -1,12 +1,11 @@
 import yaml
-import pickle
 import os
 import argparse
 
 import numpy as np
 import seaborn as sns
 
-from typing import Any, Iterable
+from typing import Any
 
 from pdmp import logger
 from pdmp.logger_setup import setup_file_handler
@@ -14,8 +13,6 @@ from pdmp.distributions import Distribution, MultivariateNormal, CubicDistributi
 from pdmp.sampler import Sampler
 from pdmp.zigzag import ZigZagSampler
 from pdmp.mcmc import MetropolisHastingsSampler, HamiltonianMonteCarlo, LangevinDynamicsSampler
-
-sns.set_style('white')
 
 def get_problem(
         problem_config: dict[str, Any],
@@ -166,19 +163,13 @@ def save_config(
 
     Parameters:
     config (dict): The configuration dictionary.
-    save_path (str): The path to the file.
+    save_dir (str): The directory to the file.
+    file_name (str): The name of the file.
     """
 
     save_path = os.path.join(save_dir, file_name)
-
     config_yaml = numpy_to_yaml(config)
-
-    # with open(save_path, 'w') as f:
-        # yaml.dump(config_yaml, f)
     dump_yaml_custom_format(config_yaml, save_path)
-
-    # with open(save_path, 'wb') as f:
-    #     pickle.dump(config, f)
 
 def main():
 
@@ -188,7 +179,6 @@ def main():
     # load the configuration file
     with open(args.config, 'r') as f:
         config = yaml.safe_load(f)
-
 
     setup_file_handler(logger, config['output']['dir'], **config['output']['logging'])
 
