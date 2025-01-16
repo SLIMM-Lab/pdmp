@@ -10,7 +10,7 @@ from typing import Union, Any
 
 from pdmp.forward_model import Model, get_model
 from pdmp.project_field import get_gaussian_random_field_projection_from_dict
-from pdmp.utils import get_2d_despined_figure, plot_samples
+from pdmp.plotting import get_2d_despined_figure, plot_samples
 
 small = 1e-12
 large = 1e20

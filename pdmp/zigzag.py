@@ -12,7 +12,7 @@ from pdmp import logger
 from pdmp.sampler import Sampler
 from pdmp.distributions import Distribution, MultivariateNormal, plot_pdf_contours
 from pdmp.surrogates import SurrogateModel, LaplaceSurrogate
-from pdmp.utils import get_2d_despined_figure
+from pdmp.plotting import get_2d_despined_figure
 
 
 class ZigZagSampler(Sampler):
