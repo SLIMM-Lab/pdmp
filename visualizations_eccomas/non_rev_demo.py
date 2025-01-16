@@ -6,7 +6,8 @@ from os.path import join
 
 from pdmp.mcmc import MetropolisHastingsSampler, LangevinDynamicsSampler, ZigZagSampler
 from pdmp.distributions import MultivariateNormal, GaussianLikelihood, Posterior
-from pdmp.utils import plot_pdf_contours, plot_samples, central_moment_from_skeleton
+from pdmp.utils import plot_pdf_contours, central_moment_from_skeleton
+from pdmp.plotting import plot_samples
 
 sns.set_style('white')
 
