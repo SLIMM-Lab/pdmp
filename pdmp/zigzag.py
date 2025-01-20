@@ -10,9 +10,9 @@ from tqdm import tqdm
 
 from pdmp import logger
 from pdmp.sampler import Sampler
-from pdmp.distributions import Distribution, MultivariateNormal, plot_pdf_contours
+from pdmp.distributions import Distribution, MultivariateNormal
 from pdmp.surrogates import SurrogateModel, LaplaceSurrogate
-from pdmp.plotting import get_2d_despined_figure
+from pdmp.plotting import get_2d_despined_figure, plot_pdf_contours
 
 
 class ZigZagSampler(Sampler):

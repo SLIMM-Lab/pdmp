@@ -6,8 +6,8 @@ import seaborn as sns
 from os.path import join
 
 from pdmp.zigzag import ZigZagSampler
-from pdmp.distributions import Posterior, FlatLikelihood, GaussianMixture, plot_pdf_contours
-from pdmp.plotting import get_2d_despined_figure
+from pdmp.distributions import Posterior, FlatLikelihood, GaussianMixture
+from pdmp.plotting import get_2d_despined_figure, plot_pdf_contours
 
 sns.set_style('white')
 

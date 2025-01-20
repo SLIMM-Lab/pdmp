@@ -1,8 +1,14 @@
 from typing import Union
 
+import matplotlib.colors
 import numpy as np
 import seaborn as sns
 from matplotlib import pyplot as plt
+
+from pdmp.distributions import Distribution
+from pdmp.forward_model import Model
+from pdmp.surrogates import NeuralNetwork
+
 
 def get_2d_despined_figure(
         plot_limits: tuple[list[float], list[float]] = None,
@@ -160,3 +166,128 @@ def plot_trace(
     plt.show()
 
     return fig, ax
+
+def plot_pdf_contours(
+        target: Union[Distribution, Model],
+        ax: plt.Axes,
+        plot_limits: tuple[list[float], list[float]],
+        n_grid: int = 100,
+        alpha: float = 0.6,
+        n_levels: int = 20,
+        cmap: matplotlib.colors.Colormap = sns.color_palette('rocket', as_cmap=True)
+) -> plt.Axes:
+    """
+    Plot the probability density function (PDF) contours of a distribution.
+
+    Parameters:
+    distribution (Distribution): The distribution to plot.
+    ax (plt.Axes): The matplotlib axes object to plot on.
+    plot_limits (tuple): A tuple containing two lists, each specifying the x and y axis limits respectively.
+    n_grid (int, optional): Number of grid points for the x and y axes. Default is 100.
+    alpha (float, optional): Transparency level of the contour plot. Default is 0.6.
+    n_levels (int, optional): Number of contour levels to plot. Default is 20.
+    cmap (sns.palettes._ColorPalette, optional): Colormap to use for the contour plot. Default is 'rocket' colormap.
+
+    Returns:
+    plt.Axes: The matplotlib axes object with the PDF contours plotted.
+    """
+
+    if isinstance(target, NeuralNetwork):
+        eval = target.eval
+
+    if isinstance(target, Distribution):
+        eval = target.log_density
+
+    x = np.linspace(*plot_limits[0], n_grid)
+    y = np.linspace(*plot_limits[1], n_grid)
+    X, Y = np.meshgrid(x, y)
+    Z = np.zeros_like(X)
+
+    for i in range(n_grid):
+        for j in range(n_grid):
+            # Z[i, j] = np.exp(target.log_density(np.array([X[i, j], Y[i, j]])))
+            Z[i, j] = np.exp(eval(np.array([X[i, j], Y[i, j]])))
+            # if isinstance(target, NeuralNetwork):
+            #     Z[i, j] = np.exp(target.eval(np.array([X[i, j], Y[i, j]])))
+            # else:
+            #     Z[i, j] = np.exp(target.log_density(np.array([X[i, j], Y[i, j]])))
+
+    ax.contour(X, Y, Z, levels=n_levels, zorder=1, alpha=alpha, cmap=cmap)
+
+    return ax
+
+
+def plot_pfd_contour_conditional(
+        distribution: Distribution,
+        ax: plt.Axes,
+        plot_limits: tuple[list[float], list[float]],
+        slice: np.ndarray,
+        idcs_plane: tuple[int, int] = (0, 1),
+        n_grid: int = 100,
+        alpha: float = 0.6,
+        n_levels: int = 20,
+        cmap: matplotlib.colors.ListedColormap = sns.color_palette('rocket', as_cmap=True)
+) -> plt.Axes:
+    """
+    Plot the conditional probability density function (PDF) contours of a distribution.
+
+    Parameters:
+    distribution (Distribution): The distribution to plot.
+    ax (plt.Axes): The matplotlib axes object to plot on.
+    plot_limits (tuple): A tuple containing two lists, each specifying the x and y axis limits respectively.
+    slice_loc (np.ndarray): The coordinates to condition on.
+    idcs (tuple, optional): The indices of the plane to condition on. Default is (0, 1).
+    n_grid (int, optional): Number of grid points for the x and y axes. Default is 100.
+    alpha (float, optional): Transparency level of the contour plot. Default is 0.6.
+    n_levels (int, optional): Number of contour levels to plot. Default is 20.
+    cmap (sns.palettes._ColorPalette, optional): Colormap to use for the contour plot. Default is 'rocket' colormap.
+
+    Returns:
+    plt.Axes: The matplotlib axes object with the PDF contours plotted.
+    """
+
+    x = np.linspace(*plot_limits[0], n_grid)
+    y = np.linspace(*plot_limits[1], n_grid)
+    X, Y = np.meshgrid(x, y)
+    Z = np.zeros_like(X)
+
+    for i in range(n_grid):
+        for j in range(n_grid):
+            point = slice.copy()
+            point[idcs_plane[0]] = X[i, j]
+            point[idcs_plane[1]] = Y[i, j]
+            Z[i, j] = np.exp(distribution.log_density(point))
+
+    ax.contour(X, Y, Z, levels=n_levels, zorder=1, alpha=alpha, cmap=cmap)
+
+    return ax
+
+
+def plot_pfd_contour_marginal(
+        samples: np.ndarray,
+        ax: plt.Axes,
+        idcs: tuple[int, int] = (0, 1),
+        alpha: float = 0.6,
+        n_levels: int = 15,
+        cmap: matplotlib.colors.ListedColormap = sns.color_palette('rocket', as_cmap=True),
+        **kde_kwargs
+) -> plt.Axes:
+    """
+    Plot the probability density function (PDF) contours of a multivariate normal distribution.
+
+    Parameters:
+    distribution (MultivariateNormal): The multivariate normal distribution to plot.
+    ax (plt.Axes): The matplotlib axes object to plot on.
+    idcs (tuple, optional): The indices of the dimensions to plot. Default is (0, 1).
+    alpha (float, optional): Transparency level of the contour plot. Default is 0.6.
+    n_levels (int, optional): Number of contour levels to plot. Default is 20.
+    cmap (matplotlib.colors.ListedColormap, optional): Colormap to use for the contour plot. Default is 'rocket' colormap.
+
+    Returns:
+    plt.Axes: The matplotlib axes object with the PDF contours plotted.
+    """
+
+    sns.kdeplot(x=samples[:, idcs[0]], y=samples[:, idcs[1]],
+                ax=ax, cmap=cmap, levels=n_levels, alpha=alpha, zorder=1, **kde_kwargs)
+
+    return ax
