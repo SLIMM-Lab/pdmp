@@ -1,16 +1,13 @@
-import matplotlib.colors
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
-import seaborn as sns
 
 from datetime import datetime
 from timeit import timeit
 from typing import Union, Any
 
-from pdmp.forward_model import Model, get_model
+from pdmp.forward_model import Model
 from pdmp.project_field import get_gaussian_random_field_projection_from_dict
-from pdmp.plotting import get_2d_despined_figure, plot_samples
 
 small = 1e-12
 large = 1e20
@@ -376,7 +373,7 @@ class GaussianLikelihood(Likelihood):
                  seed: int = None):
         super().__init__(rng=rng, seed=seed)
         self.model_ = model
-        self.n_params_ = model.get_dim()
+        self.n_params_ = model.get_dim_in()
         self.u_obs_ = u_obs
         self.n_obs_ = self.u_obs_.shape[0]
         self.dim_ = self.u_obs_.shape[1]
@@ -490,46 +487,28 @@ def get_prior(
 def get_likelihood(
         config: dict[str, Any],
         model: Model,
-        obs: np.ndarray,
         rng: np.random.Generator = None,
     ) -> Likelihood:
 
     if 'name' not in config:
         raise ValueError("Likelihood config must include 'name'.")
+    if 'observation_file' not in config:
+        raise ValueError("Likelihood config must include 'observation_file'.")
 
+    obs = np.genfromtxt(config['observation_file'])
 
     if config['name'] == 'GaussianLikelihood':
         sigma = config['sigma']
         return GaussianLikelihood(model=model, u_obs=obs, sigma=sigma, rng=rng)
     elif config['name'] == 'TemperedLikelihood':
-        likelihood = get_likelihood(config['likelihood'], model, obs, rng=rng)
+        likelihood = get_likelihood(config['likelihood'], model=model, rng=rng)
         beta = config['beta']
         return TemperedLikelihood(likelihood, beta=beta, rng=rng)
     elif config['name'] == 'FlatLikelihood':
-        return FlatLikelihood(dim=model.get_dim(), rng=rng)
+        return FlatLikelihood(dim=model.get_dim_in(), rng=rng)
     else:
         raise ValueError(f"Likelihood {config['name']} not recognized.")
 
-def gen_observations(
-        config: dict[str, Any],
-        model: Model,
-        ground_truth: np.ndarray,
-        rng: np.random.Generator = None
-    ) -> np.ndarray:
-
-    # read keys
-    n_obs = config['n_obs']
-    sigma = config['sigma']
-
-    # init arrays
-    output = model.eval(ground_truth)
-    obs = np.zeros((config['n_obs'], output.shape[0]))
-
-    # generate observations
-    for i in range(n_obs):
-        obs[i] = model.eval(ground_truth, idx=i) + rng.normal(0, sigma, (1, output.shape[0]))
-
-    return obs
 
 class Posterior(Distribution):
     def __init__(self, prior: Distribution, likelihood: Likelihood, rng: np.random.Generator = None, seed: int = None):
@@ -537,38 +516,6 @@ class Posterior(Distribution):
         self.dim_ = prior.get_dim()
         self.prior_ = prior
         self.likelihood_ = likelihood
-
-    @classmethod
-    def from_dict(
-            cls,
-            config: dict[str, Any],
-            rng: np.random.Generator = None,
-        ):
-
-        # check if config has the necessary keys
-        if 'prior' not in config or 'likelihood' not in config or 'observations' not in config:
-            raise ValueError("Parameters must include 'prior', 'likelihood', and 'observations'.")
-
-        config['prior']['dim'] = config['dim']
-        config['model']['dim'] = config['dim']
-
-        # get prior and model
-        prior = get_prior(config['prior'], rng=rng)
-        model = get_model(config['model'])
-        # model = Model.from_dict(config['model'])
-
-        # generate or get observations
-        if config['observations']['name'] == 'synthetic':
-            ground_truth = prior.get_sample()
-            obs = gen_observations(config['observations'], model, ground_truth, rng=rng)
-            config['observations']['ground_truth'] = ground_truth
-            config['observations']['observation_data'] = obs
-        else:
-            obs = np.genfromtxt(config['observations']['observation_file'])
-
-        # get likelihood and posterior
-        likelihood = get_likelihood(config['likelihood'], model, obs, rng=rng)
-        return cls(prior, likelihood, rng=rng)
 
     def get_dim(self) -> int:
         return self.dim_
@@ -595,118 +542,6 @@ class Posterior(Distribution):
     def hessian_log_density(self, params: np.ndarray) -> np.ndarray:
         return self.likelihood_.hessian_log_density(params) + self.prior_.hessian_log_density(params)
 
-
-def plot_pdf_contours(
-        distribution: Distribution,
-        ax: plt.Axes,
-        plot_limits: tuple[list[float], list[float]],
-        n_grid: int = 100,
-        alpha: float = 0.6,
-        n_levels: int = 20,
-        cmap: matplotlib.colors.Colormap = sns.color_palette('rocket', as_cmap=True)
-) -> plt.Axes:
-    """
-    Plot the probability density function (PDF) contours of a distribution.
-
-    Parameters:
-    distribution (Distribution): The distribution to plot.
-    ax (plt.Axes): The matplotlib axes object to plot on.
-    plot_limits (tuple): A tuple containing two lists, each specifying the x and y axis limits respectively.
-    n_grid (int, optional): Number of grid points for the x and y axes. Default is 100.
-    alpha (float, optional): Transparency level of the contour plot. Default is 0.6.
-    n_levels (int, optional): Number of contour levels to plot. Default is 20.
-    cmap (sns.palettes._ColorPalette, optional): Colormap to use for the contour plot. Default is 'rocket' colormap.
-
-    Returns:
-    plt.Axes: The matplotlib axes object with the PDF contours plotted.
-    """
-
-    x = np.linspace(*plot_limits[0], n_grid)
-    y = np.linspace(*plot_limits[1], n_grid)
-    X, Y = np.meshgrid(x, y)
-    Z = np.zeros_like(X)
-
-    for i in range(n_grid):
-        for j in range(n_grid):
-            Z[i, j] = np.exp(distribution.log_density(np.array([X[i, j], Y[i, j]])))
-
-    ax.contour(X, Y, Z, levels=n_levels, zorder=1, alpha=alpha, cmap=cmap)
-
-    return ax
-
-def plot_pfd_contour_conditional(
-        distribution: Distribution,
-        ax: plt.Axes,
-        plot_limits: tuple[list[float], list[float]],
-        slice: np.ndarray,
-        idcs_plane: tuple[int, int] = (0, 1),
-        n_grid: int = 100,
-        alpha: float = 0.6,
-        n_levels: int = 20,
-        cmap: matplotlib.colors.ListedColormap = sns.color_palette('rocket', as_cmap=True)
-) -> plt.Axes:
-    """
-    Plot the conditional probability density function (PDF) contours of a distribution.
-
-    Parameters:
-    distribution (Distribution): The distribution to plot.
-    ax (plt.Axes): The matplotlib axes object to plot on.
-    plot_limits (tuple): A tuple containing two lists, each specifying the x and y axis limits respectively.
-    slice_loc (np.ndarray): The coordinates to condition on.
-    idcs (tuple, optional): The indices of the plane to condition on. Default is (0, 1).
-    n_grid (int, optional): Number of grid points for the x and y axes. Default is 100.
-    alpha (float, optional): Transparency level of the contour plot. Default is 0.6.
-    n_levels (int, optional): Number of contour levels to plot. Default is 20.
-    cmap (sns.palettes._ColorPalette, optional): Colormap to use for the contour plot. Default is 'rocket' colormap.
-
-    Returns:
-    plt.Axes: The matplotlib axes object with the PDF contours plotted.
-    """
-
-    x = np.linspace(*plot_limits[0], n_grid)
-    y = np.linspace(*plot_limits[1], n_grid)
-    X, Y = np.meshgrid(x, y)
-    Z = np.zeros_like(X)
-
-    for i in range(n_grid):
-        for j in range(n_grid):
-            point = slice.copy()
-            point[idcs_plane[0]] = X[i, j]
-            point[idcs_plane[1]] = Y[i, j]
-            Z[i, j] = np.exp(distribution.log_density(point))
-
-    ax.contour(X, Y, Z, levels=n_levels, zorder=1, alpha=alpha, cmap=cmap)
-
-    return ax
-
-def plot_pfd_contour_marginal(
-        samples: np.ndarray,
-        ax: plt.Axes,
-        idcs: tuple[int, int] = (0, 1),
-        alpha: float = 0.6,
-        n_levels: int = 15,
-        cmap: matplotlib.colors.ListedColormap = sns.color_palette('rocket', as_cmap=True),
-        **kde_kwargs
-) -> plt.Axes:
-    """
-    Plot the probability density function (PDF) contours of a multivariate normal distribution.
-
-    Parameters:
-    distribution (MultivariateNormal): The multivariate normal distribution to plot.
-    ax (plt.Axes): The matplotlib axes object to plot on.
-    idcs (tuple, optional): The indices of the dimensions to plot. Default is (0, 1).
-    alpha (float, optional): Transparency level of the contour plot. Default is 0.6.
-    n_levels (int, optional): Number of contour levels to plot. Default is 20.
-    cmap (matplotlib.colors.ListedColormap, optional): Colormap to use for the contour plot. Default is 'rocket' colormap.
-
-    Returns:
-    plt.Axes: The matplotlib axes object with the PDF contours plotted.
-    """
-
-    sns.kdeplot(x=samples[:, idcs[0]], y=samples[:, idcs[1]],
-                ax=ax, cmap=cmap, levels=n_levels, alpha=alpha, zorder=1, **kde_kwargs)
-
-    return ax
 
 def get_sample(dim, rng=None):
     if rng is None:
@@ -794,23 +629,3 @@ if __name__ == '__main__':
     # print(f"Method 1 (Matmul with A_inv): {matmul_time:.6f} seconds")
     # print(f"Method 2 (Solving L y = x): {cholesky_time:.6f} seconds")
     # print(f"Method 2 (cho_solve from scipy): {cho_solve_time:.6f} seconds")
-
-    # ---------------------------- test visualization ----------------------------
-    # normal 2d
-    rng = np.random.default_rng(0)
-    mean, cov = np.array([0, 0]), np.array([[1, 0.3], [0.3, 1.]])
-    posterior = MultivariateNormal(mean, cov, rng=rng)
-    plot_limits = ([-3, 3], [-3, 3])
-
-    fig, ax = get_2d_despined_figure(plot_limits, figsize=(5, 3.5))
-    plot_pdf_contours(posterior, ax, plot_limits)
-
-    n_samples = 5000
-
-    samples = np.zeros((n_samples, 2))
-    for i in range(n_samples):
-        samples[i] = posterior.get_sample()
-
-    plot_samples(samples, ax, color_code=True)
-
-    plt.show()
