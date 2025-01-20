@@ -1,3 +1,9 @@
+import torch
+
+import torch.nn as nn
+import torch.optim as optim
+from torch.autograd import grad
+
 import numpy as np
 
 from typing import cast
@@ -196,3 +202,166 @@ class LaplaceSurrogate(SurrogateModel):
         :return: None
         """
         pass
+
+    def get_samples(self, n: int) -> np.ndarray:
+        """
+        Get samples from the Laplace approximation.
+
+        Parameters:
+        n (int): The number of samples to generate.
+
+        Returns:
+        np.ndarray: An array of samples from the Laplace approximation.
+        """
+        return self.gaussian.get_sample(n)
+
+
+class NeuralNetwork(SurrogateModel):
+    """
+    Neural network surrogate model based on PyTorch.
+    """
+
+    def __init__(self,
+                 target: Distribution,
+                 layer_sizes: list,
+                 lr: float = 1e-3,
+                 x_0: np.ndarray = None):
+        """
+        Initialize the neural network surrogate model.
+
+        Parameters:
+        layer_sizes (list): List containing the number of neurons per layer.
+        lr (float): Learning rate for the optimizer.
+        """
+        super().__init__()
+        layer_sizes = [target.get_dim()] + layer_sizes + [1]
+        layers = []
+        for i in range(len(layer_sizes) - 1):
+            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i + 1]))
+            if i < len(layer_sizes) - 2:
+                layers.append(nn.Tanh())
+        self.model = nn.Sequential(*layers)
+
+        self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
+        self.criterion = nn.MSELoss()
+
+        laplace = LaplaceSurrogate(target, x_0=x_0)
+        n_samples = 100
+        samples = laplace.get_samples(n_samples)
+
+        self.x_data = torch.tensor(samples, dtype=torch.float32)
+        self.y_data = torch.zeros(n_samples)
+
+        for i in range(n_samples):
+            self.y_data[i] = torch.tensor(target.log_density(samples[i]), dtype=torch.float32)
+
+        self.update()
+
+    def eval(self, x: np.ndarray) -> np.ndarray:
+        """
+        Evaluate the neural network surrogate model at a point.
+
+        Parameters:
+        x (np.ndarray): The point at which the neural network surrogate model is to be evaluated.
+
+        Returns:
+        float: The value of the neural network surrogate model at the point x.
+        """
+        x_tensor = torch.tensor(x, dtype=torch.float32)
+        with torch.no_grad():
+            return self.model(x_tensor).numpy()
+
+    def grad(self, x: np.ndarray, idx: int = None) -> np.ndarray:
+        """
+        Compute the gradient of the neural network surrogate model at a point.
+
+        Parameters:
+        x (np.ndarray): The point at which the gradient is to be computed.
+        idx (int, optional): The index of the component of the gradient to be computed. Default is None.
+
+        Returns:
+        np.ndarray: The gradient of the neural network surrogate model at the point x.
+        """
+        x_tensor = torch.tensor(x, dtype=torch.float32, requires_grad=True)
+        y_tensor = self.model(x_tensor)
+        gradients = grad(
+            outputs=y_tensor,
+            inputs=x_tensor,
+            grad_outputs=torch.ones_like(y_tensor),
+            create_graph=True
+        )[0]
+
+        if idx is None:
+            return gradients.detach().numpy()
+        else:
+            return gradients[idx].detach().numpy()
+
+    def add_data(self, x: np.ndarray, y: np.ndarray) -> None:
+        """
+        Add data to the neural network surrogate model.
+
+        Parameters:
+        x (np.ndarray): The input data.
+        y (np.ndarray): The output data.
+        """
+        self.x_data.append(torch.tensor(x, dtype=torch.float32))
+        self.y_data.append(torch.tensor(y, dtype=torch.float32))
+
+    def update(self, epochs: int = 5000, batch_size: int = 20) -> None:
+        """
+        Train the neural network surrogate model using stored data.
+
+        Parameters:
+        epochs (int): Number of training epochs.
+        batch_size (int): Batch size for training.
+        """
+
+        dataset = torch.utils.data.TensorDataset(self.x_data, self.y_data)
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+        for epoch in range(epochs):
+            for x_batch, y_batch in dataloader:
+                self.optimizer.zero_grad()
+                y_pred = self.model(x_batch).squeeze()
+                loss = self.criterion(y_pred, y_batch)
+                loss.backward()
+                self.optimizer.step()
+
+        # # Clear stored data
+        # self.x_data.clear()
+        # self.y_data.clear()
+
+    # def update(self, target_grad_fn) -> None:
+    #     """
+    #     Update the neural network surrogate model using added data.
+    #
+    #     Parameters:
+    #     target_grad_fn (callable): A function that computes the gradient of the true negative log-pdf.
+    #     """
+    #     if not self.x_data:
+    #         return
+    #
+    #     x_batch = torch.stack(self.x_data)
+    #     y_batch = torch.stack(self.y_data)
+    #
+    #     self.optimizer.zero_grad()
+    #
+    #     # Compute loss on function values
+    #     y_pred = self.model(x_batch).squeeze()
+    #     loss = self.criterion(y_pred, y_batch)
+    #
+    #     # Compute gradient penalty
+    #     x_batch.requires_grad = True
+    #     y_pred = self.model(x_batch)
+    #     grad_pred = grad(outputs=y_pred, inputs=x_batch, grad_outputs=torch.ones_like(y_pred), create_graph=True)[0]
+    #     grad_target = target_grad_fn(x_batch.detach().numpy())
+    #     grad_penalty = torch.mean(
+    #         torch.clamp(torch.abs(grad_pred) - torch.abs(torch.tensor(grad_target, dtype=torch.float32)), min=0) ** 2)
+    #
+    #     total_loss = loss + grad_penalty
+    #     total_loss.backward()
+    #     self.optimizer.step()
+    #
+    #     # Clear stored data
+    #     self.x_data.clear()
+    #     self.y_data.clear()
