@@ -34,9 +34,13 @@ def setup_file_handler(
         level="INFO"
 ):
 
-    # create log dir
+    # create log dir and set log path
     os.makedirs(log_dir, exist_ok=True)
     log_path = os.path.join(log_dir, log_file)
+
+    # remove old log-file if exists
+    if os.path.exists(log_path):
+        os.remove(log_path)
 
     # set up file_handler
     file_handler = logging.FileHandler(log_path)
