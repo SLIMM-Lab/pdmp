@@ -46,11 +46,19 @@ class Model:
         """
         raise NotImplementedError
 
-    def get_dim(self) -> int:
+    def get_dim_in(self) -> int:
         """
         Get dimension of the model outputs
         Returns:
             int: dimension of the model
+        """
+        raise NotImplementedError
+
+    def get_dim_out(self) -> int:
+        """
+        Get dimension of the model outputs
+        Returns:
+            int: dimension of the model outputs
         """
         raise NotImplementedError
 
@@ -210,13 +218,21 @@ class PiecewiseConstantModel(Model):
                     hessian[i, j, k] = hess(x_i, self.F_vals[idx], *params)  # Evaluate Hessian
         return hessian
 
-    def get_dim(self) -> int:
+    def get_dim_in(self) -> int:
         """
         Get dimension of the model
         Returns:
             int: dimension of the model
         """
         return self.n_params  # Return number of parameters
+
+    def get_dim_out(self) -> int:
+        """
+        Get dimension of the model outputs
+        Returns:
+            int: dimension of the model outputs
+        """
+        return len(self.x_obs_)
 
     def get_n_settings(self):
         """
@@ -315,7 +331,8 @@ class LinearModel(Model):
         """
         super().__init__()
         assert A.shape[0] == b.shape[0], "Dimensions do not match"
-        self.dim_ = A.shape[1]
+        self.dim_in_ = A.shape[1]
+        self.dim_out_ = A.shape[0]
         self.A_ = A
         self.b_ = b
 
@@ -366,13 +383,21 @@ class LinearModel(Model):
         s = self.A_.shape
         return np.zeros((s[0], s[1], s[1]))
 
-    def get_dim(self) -> int:
+    def get_dim_in(self) -> int:
         """
         Get dimension of the model outputs
         Returns:
             int: dimension of the model
         """
-        return self.dim_
+        return self.dim_in_
+
+    def get_dim_out(self) -> int:
+        """
+        Get dimension of the model outputs
+        Returns:
+            int: dimension of the model outputs
+        """
+        return self.dim_out_
 
 def get_model(config: dict):
     """

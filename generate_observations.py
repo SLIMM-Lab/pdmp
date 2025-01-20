@@ -1,0 +1,95 @@
+import yaml
+import argparse
+import os
+
+import numpy as np
+
+from typing import Any
+
+from pdmp import logger
+from pdmp.logger_setup import setup_file_handler
+from pdmp.loader import get_target, get_sampler, yaml_to_numpy, save_config
+
+from pdmp.distributions import get_prior, get_likelihood
+from pdmp.forward_model import get_model, Model
+
+def parse_args():
+    """
+    Parse the command line arguments.
+
+    Returns:
+    argparse.Namespace: The command line arguments.
+    """
+
+    parser = argparse.ArgumentParser(description="Run observation generation.")
+    parser.add_argument(
+        "--config",
+        type=str,
+        required=True,
+        help="The path to the configuration file.",
+    )
+
+    return parser.parse_args()
+
+def generate_observations(
+        config: dict[str, Any],
+        rng: np.random.Generator
+):
+    """
+    Generate observations.
+
+    Parameters:
+    config (dict): The configuration.
+    rng (np.random.Generator): The random number generator.
+
+    Returns:
+    np.ndarray: The observations.
+    """
+
+    # load the observation configuration
+    observation_config = config['observations']
+    n_obs = observation_config['n_obs']
+    sigma = observation_config['sigma']
+
+    # load the problem configuration
+    problem_config = config['problem']
+    assert problem_config['name'] == 'BayesianInverse', "Problem must be BayesianInverse."
+
+    # get the prior distribution and the model
+    prior = get_prior(problem_config['prior'], rng=rng)
+    model = get_model(problem_config['model'])
+
+    # sample ground truth from prior and write to file
+    ground_truth = prior.get_sample()
+    np.savetxt(os.path.join('ground_truth.dat'), ground_truth)
+
+    # init array
+    obs = np.zeros((n_obs, model.get_dim_out()))
+
+    for i in range(n_obs):
+        obs[i] = model.eval(ground_truth, idx=i) + rng.normal(0, sigma, model.get_dim_out())
+
+    # write observations to file
+    np.savetxt(os.path.join('observations.dat'), obs)
+
+def main():
+
+    # parse input arguments
+    args = parse_args()
+
+    # load the configuration file
+    with open(args.config, 'r') as f:
+        config = yaml.safe_load(f)
+
+    # setup_file_handler(logger, level='INFO', log_dir='.', log_file='generate_observations.log')
+
+    # convert the configuration to numpy arrays
+    config = yaml_to_numpy(config)
+
+    # init rng and generate observations
+    rng = np.random.default_rng(config.get('seed', 0))
+    generate_observations(config, rng)
+
+if __name__ == '__main__':
+
+    main()
