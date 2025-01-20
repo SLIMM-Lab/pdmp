@@ -2,6 +2,7 @@ name: pdmp
 channels:
   - conda-forge
   - defaults
+  - pytorch
 dependencies:
   - python
   - jupyter
@@ -18,3 +19,4 @@ dependencies:
   - pytest
   - pytest-cov
   - snakeviz
+  - pytorch
