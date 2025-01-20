@@ -2,7 +2,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.special import binom
 
-def central_moment_from_skeleton(t: np.ndarray, x: np.ndarray, v: np.ndarray, degree: int) -> np.ndarray:
+def central_moment_from_skeleton(
+        t: np.ndarray,
+        x: np.ndarray,
+        v: np.ndarray,
+        degree: int,
+        mean: np.ndarray = None
+) -> np.ndarray:
     """
     Compute the central moment of a piecewise linear curve defined by its skeleton.
 
@@ -11,16 +17,19 @@ def central_moment_from_skeleton(t: np.ndarray, x: np.ndarray, v: np.ndarray, de
     x (np.ndarray): 2D array of positions corresponding to the time points.
     v (np.ndarray): 2D array of velocities corresponding to the segments between time points.
     degree (int): The degree of the moment to compute.
+    mean (np.ndarray, optional): The mean of the curve. If None, it will be computed from the skeleton.
 
     Returns:
     np.ndarray: The computed central moment of the specified degree.
     """
 
     # Compute the mean of the curve
-    if degree != 1:
+    if degree != 1 and mean is None:
         mean = central_moment_from_skeleton(t, x, v, 1)
-    else:
-        mean = np.zeros(x.shape[1])
+
+    if degree == 1:
+        mean = np.zeros_like(x[0])
+
 
     n_events, d = x.shape
 
