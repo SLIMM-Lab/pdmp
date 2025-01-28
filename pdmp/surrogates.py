@@ -1,3 +1,4 @@
+import sys
 import torch
 
 import torch.nn as nn
@@ -6,8 +7,9 @@ from torch.autograd import grad
 
 import numpy as np
 
-from typing import cast
+from typing import cast, Any
 from scipy.optimize import minimize
+from tqdm import tqdm
 
 from pdmp.distributions import Distribution, MultivariateNormal, Posterior
 from pdmp import logger
@@ -22,7 +24,7 @@ class SurrogateModel(object):
         Initialize the surrogate model.
         """
 
-    def eval(self, x: np.ndarray) -> np.ndarray:
+    def eval(self, x: np.ndarray, **kwargs) -> np.ndarray:
         """
         Evaluate the surrogate model at a point.
 
@@ -138,6 +140,7 @@ class LaplaceSurrogate(SurrogateModel):
             self.cov = cov
 
         self.gaussian = MultivariateNormal(self.mean, self.cov)
+        self.delta = self.gaussian.log_density(self.mean) - target.log_density(self.mean)
 
     @classmethod
     def from_dict(cls, config: dict, target = None, rng: np.random.Generator = None):
@@ -159,7 +162,7 @@ class LaplaceSurrogate(SurrogateModel):
             target=target
         )
 
-    def eval(self, x: np.ndarray) -> np.ndarray:
+    def eval(self, x: np.ndarray, delta: bool=False, **kwargs) -> np.ndarray:
         """
         Evaluate the Laplace approximation at a point.
 
@@ -169,7 +172,7 @@ class LaplaceSurrogate(SurrogateModel):
         Returns:
         float: The value of the Laplace approximation at the point x.
         """
-        return self.gaussian.log_density(x)
+        return self.gaussian.log_density(x) - delta * self.delta
 
     def grad(self, x: np.ndarray, idx: int = None) -> np.ndarray:
         """
@@ -221,11 +224,20 @@ class NeuralNetwork(SurrogateModel):
     Neural network surrogate model based on PyTorch.
     """
 
-    def __init__(self,
-                 target: Distribution,
-                 layer_sizes: list,
-                 lr: float = 1e-3,
-                 x_0: np.ndarray = None):
+    def __init__(
+            self,
+            target: Distribution,
+            hidden_layers: list,
+            lr: float = 1e-3,
+            n_samples: int = 100,
+            epochs: int = 5000,
+            batch_size:int = 20,
+            val_split = 0.3,
+            patience = 100,
+            lr_scheduler_step = None,
+            lr_scheduler_gamma = None,
+            **kwargs
+    ):
         """
         Initialize the neural network surrogate model.
 
@@ -234,30 +246,63 @@ class NeuralNetwork(SurrogateModel):
         lr (float): Learning rate for the optimizer.
         """
         super().__init__()
-        layer_sizes = [target.get_dim()] + layer_sizes + [1]
+        hidden_layers = [target.get_dim()] + hidden_layers + [1]
         layers = []
-        for i in range(len(layer_sizes) - 1):
-            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i + 1]))
-            if i < len(layer_sizes) - 2:
+        for i in range(len(hidden_layers) - 1):
+            layers.append(nn.Linear(hidden_layers[i], hidden_layers[i + 1]))
+            if i < len(hidden_layers) - 2:
                 layers.append(nn.Tanh())
         self.model = nn.Sequential(*layers)
 
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
+        if lr_scheduler_gamma is not None and lr_scheduler_step is not None:
+            self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=lr_scheduler_step, gamma=lr_scheduler_gamma)
+        else:
+            self.scheduler = None
         self.criterion = nn.MSELoss()
+        self.losses = []
+        self.best_val_loss = float('inf')
+        self.best_model_state = None
 
-        laplace = LaplaceSurrogate(target, x_0=x_0)
-        n_samples = 100
+        laplace = LaplaceSurrogate(target, **kwargs)
         samples = laplace.get_samples(n_samples)
 
         self.x_data = torch.tensor(samples, dtype=torch.float32)
         self.y_data = torch.zeros(n_samples)
 
+        num_val = int(val_split * len(self.x_data))
+        self.x_train, self.x_val = self.x_data[:-num_val], self.x_data[-num_val:]
+        self.y_train, self.y_val = self.y_data[:-num_val], self.y_data[-num_val:]
+
         for i in range(n_samples):
             self.y_data[i] = torch.tensor(target.log_density(samples[i]), dtype=torch.float32)
 
-        self.update()
+        self.update(epochs=epochs, batch_size=batch_size, patience=patience)
 
-    def eval(self, x: np.ndarray) -> np.ndarray:
+    @classmethod
+    def from_dict(
+            cls,
+            config: dict,
+            target: Distribution,
+            rng: np.random.Generator = None
+    ):
+        """
+        Create a neural network surrogate model from a dictionary.
+
+        Parameters:
+        config (dict): The configuration dictionary.
+        rng (np.random.Generator, optional): The random number generator. Default is None.
+
+        Returns:
+        NeuralNetwork: The neural network surrogate model.
+        """
+
+        return cls(
+            target=target,
+            **config
+        )
+
+    def eval(self, x: np.ndarray, **kwargs) -> np.ndarray:
         """
         Evaluate the neural network surrogate model at a point.
 
@@ -307,25 +352,101 @@ class NeuralNetwork(SurrogateModel):
         self.x_data.append(torch.tensor(x, dtype=torch.float32))
         self.y_data.append(torch.tensor(y, dtype=torch.float32))
 
-    def update(self, epochs: int = 5000, batch_size: int = 20) -> None:
+    def save_model(self, path: str = 'neural_network.th') -> None:
+        """
+        Save the neural network model to a file.
+
+        Parameters:
+        path (str): The path to the file.
+        """
+        torch.save(self.model.state_dict(), path)
+
+    def update(
+            self,
+            epochs: int = 5000,
+            batch_size: int = 20,
+            print_every: int = 10,
+            patience: int = 10,
+            lr_scheduler_step: int = None,
+            lr_scheduler_gamma: float = None
+    ) -> None:
         """
         Train the neural network surrogate model using stored data.
 
         Parameters:
         epochs (int): Number of training epochs.
         batch_size (int): Batch size for training.
+        print_every (int): Print training information every print_every epochs.
+        patience (int): Number of epochs to wait for improvement in validation loss before stopping early.
+        lr_scheduler_step (int): Number of epochs after which to reduce the learning rate.
+        lr_scheduler_gamma (float): Factor by which to reduce the learning rate.
         """
 
-        dataset = torch.utils.data.TensorDataset(self.x_data, self.y_data)
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        train_losses = []
+        val_losses = []
 
-        for epoch in range(epochs):
-            for x_batch, y_batch in dataloader:
-                self.optimizer.zero_grad()
-                y_pred = self.model(x_batch).squeeze()
-                loss = self.criterion(y_pred, y_batch)
-                loss.backward()
-                self.optimizer.step()
+        train_dataset = torch.utils.data.TensorDataset(self.x_train, self.y_train)
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+        # dataset = torch.utils.data.TensorDataset(self.x_data, self.y_data)
+        # dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+        logger.warning("Training neural network surrogate model ...")
+
+        with tqdm(total=epochs, file=sys.stdout, dynamic_ncols=False) as pbar:
+            for epoch in range(epochs):
+                self.model.train()
+                for x_batch, y_batch in train_loader:
+
+                    if epoch % print_every == 0:
+                        pbar.clear()
+                        logger.debug(f"Epoch {epoch}/{epochs}")
+                        pbar.refresh()
+                        pbar.update()
+
+                    self.optimizer.zero_grad()
+                    y_pred = self.model(x_batch).squeeze()
+                    loss = self.criterion(y_pred, y_batch)
+                    train_losses.append(loss.detach().numpy())
+                    loss.backward()
+                    self.optimizer.step()
+
+                if self.scheduler is not None:
+                    self.scheduler.step()
+
+                self.model.eval()
+                with torch.no_grad():
+                    val_loss = self.criterion(self.model(self.x_val).squeeze(), self.y_val).item()
+                    val_losses.append(val_loss)
+
+                    if val_loss < self.best_val_loss:
+                        self.best_val_loss = val_loss
+                        self.best_model_state = self.model.state_dict()
+                        patience_counter = 0
+                    else:
+                        patience_counter += 1
+                        if patience_counter >= patience:
+                            logger.warning(f"Early stopping at epoch {epoch} with validation loss {val_loss}")
+                            break
+
+        if self.best_model_state:
+            self.model.load_state_dict(self.best_model_state)
+
+        import matplotlib.pyplot as plt
+        from pdmp.plotting import get_2d_despined_figure
+        fig, ax = get_2d_despined_figure(
+            figsize=(5, 3.5),
+            equal_axes=False,
+            axes_label=('Epoch', 'MSE'),
+            keep_ticks=True
+        )
+        ax.semilogy(np.linspace(0, epoch, len(train_losses)), train_losses, label='Train')
+        ax.semilogy(np.linspace(0, epoch, len(val_losses)), val_losses, label='Validation')
+        ax.set_ylim(7e-5, 1e3)
+        ax.legend()
+        fig.savefig(f'figures/losses_{len(self.x_data)}.pdf')
+        plt.show()
+
 
         # # Clear stored data
         # self.x_data.clear()

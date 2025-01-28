@@ -6,8 +6,7 @@ import seaborn as sns
 from matplotlib import pyplot as plt
 
 from pdmp.distributions import Distribution
-from pdmp.forward_model import Model
-from pdmp.surrogates import NeuralNetwork
+from pdmp.surrogates import SurrogateModel
 
 
 def get_2d_despined_figure(
@@ -168,19 +167,20 @@ def plot_trace(
     return fig, ax
 
 def plot_pdf_contours(
-        target: Union[Distribution, Model],
+        target: Union[Distribution, SurrogateModel],
         ax: plt.Axes,
         plot_limits: tuple[list[float], list[float]],
         n_grid: int = 100,
         alpha: float = 0.6,
-        n_levels: int = 20,
+        levels: Union[int, np.ndarray] = 20,
+        log = False,
         cmap: matplotlib.colors.Colormap = sns.color_palette('rocket', as_cmap=True)
 ) -> plt.Axes:
     """
     Plot the probability density function (PDF) contours of a distribution.
 
     Parameters:
-    distribution (Distribution): The distribution to plot.
+    taget (Distribution, SurrogateModel): The target distribution to plot.
     ax (plt.Axes): The matplotlib axes object to plot on.
     plot_limits (tuple): A tuple containing two lists, each specifying the x and y axis limits respectively.
     n_grid (int, optional): Number of grid points for the x and y axes. Default is 100.
@@ -192,11 +192,10 @@ def plot_pdf_contours(
     plt.Axes: The matplotlib axes object with the PDF contours plotted.
     """
 
-    if isinstance(target, NeuralNetwork):
-        eval = target.eval
-
-    if isinstance(target, Distribution):
-        eval = target.log_density
+    if isinstance(target, SurrogateModel):
+        f_eval = lambda x: target.eval(x, delta=True)
+    else:
+        f_eval = target.log_density
 
     x = np.linspace(*plot_limits[0], n_grid)
     y = np.linspace(*plot_limits[1], n_grid)
@@ -205,20 +204,18 @@ def plot_pdf_contours(
 
     for i in range(n_grid):
         for j in range(n_grid):
-            # Z[i, j] = np.exp(target.log_density(np.array([X[i, j], Y[i, j]])))
-            Z[i, j] = np.exp(eval(np.array([X[i, j], Y[i, j]])))
-            # if isinstance(target, NeuralNetwork):
-            #     Z[i, j] = np.exp(target.eval(np.array([X[i, j], Y[i, j]])))
-            # else:
-            #     Z[i, j] = np.exp(target.log_density(np.array([X[i, j], Y[i, j]])))
+            if log:
+                Z[i, j] = f_eval(np.array([X[i, j], Y[i, j]]))
+            else:
+                Z[i, j] = np.exp(f_eval(np.array([X[i, j], Y[i, j]])))
 
-    ax.contour(X, Y, Z, levels=n_levels, zorder=1, alpha=alpha, cmap=cmap)
+    ax.contour(X, Y, Z, levels=levels, zorder=1, alpha=alpha, cmap=cmap)
 
     return ax
 
 
 def plot_pfd_contour_conditional(
-        distribution: Distribution,
+        target: [Distribution, SurrogateModel],
         ax: plt.Axes,
         plot_limits: tuple[list[float], list[float]],
         slice: np.ndarray,
@@ -232,7 +229,7 @@ def plot_pfd_contour_conditional(
     Plot the conditional probability density function (PDF) contours of a distribution.
 
     Parameters:
-    distribution (Distribution): The distribution to plot.
+    target (Distribution, SurrogateModel): The target distribution to plot.
     ax (plt.Axes): The matplotlib axes object to plot on.
     plot_limits (tuple): A tuple containing two lists, each specifying the x and y axis limits respectively.
     slice_loc (np.ndarray): The coordinates to condition on.
@@ -245,6 +242,10 @@ def plot_pfd_contour_conditional(
     Returns:
     plt.Axes: The matplotlib axes object with the PDF contours plotted.
     """
+    if isinstance(target, SurrogateModel):
+        f_eval = lambda x: target.eval(x, delta=True)
+    else:
+        f_eval = target.log_density
 
     x = np.linspace(*plot_limits[0], n_grid)
     y = np.linspace(*plot_limits[1], n_grid)
@@ -256,7 +257,7 @@ def plot_pfd_contour_conditional(
             point = slice.copy()
             point[idcs_plane[0]] = X[i, j]
             point[idcs_plane[1]] = Y[i, j]
-            Z[i, j] = np.exp(distribution.log_density(point))
+            Z[i, j] = np.exp(f_eval(point))
 
     ax.contour(X, Y, Z, levels=n_levels, zorder=1, alpha=alpha, cmap=cmap)
 
@@ -276,7 +277,7 @@ def plot_pfd_contour_marginal(
     Plot the probability density function (PDF) contours of a multivariate normal distribution.
 
     Parameters:
-    distribution (MultivariateNormal): The multivariate normal distribution to plot.
+    samples (np.ndarray): The samples to plot, expected to be a 2D array.
     ax (plt.Axes): The matplotlib axes object to plot on.
     idcs (tuple, optional): The indices of the dimensions to plot. Default is (0, 1).
     alpha (float, optional): Transparency level of the contour plot. Default is 0.6.
