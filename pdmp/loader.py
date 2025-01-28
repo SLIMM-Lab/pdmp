@@ -9,7 +9,7 @@ from pdmp.distributions import get_prior, get_likelihood
 from pdmp.forward_model import get_model
 from pdmp.sampler import Sampler
 from pdmp.zigzag import ZigZagSampler
-
+from pdmp.surrogates import SurrogateModel, LaplaceSurrogate, NeuralNetwork
 
 def get_target(
         config: dict[str, Any],
@@ -48,7 +48,9 @@ def get_target(
 def get_sampler(
         sampler_config: dict[str, Any],
         target: Distribution,
-        rng: np.random.Generator
+        surrogate: SurrogateModel = None,
+        rng: np.random.Generator = None
+
 ) -> Sampler:
     """
     Load the sampler configuration.
@@ -56,19 +58,42 @@ def get_sampler(
     Parameters:
     sampler_config (dict): The sampler configuration.
     target (MultivariateNormal): The target distribution.
-    rng (np.random.Generator): The random number generator.
+    rng (np.random.Generator): The random number generator. Default is None.
 
     Returns:
     ZigZagSampler: The sampler.
     """
 
     if sampler_config['name'] == 'ZigZag':
-        return ZigZagSampler.from_dict(sampler_config, target=target, rng=rng)
+        return ZigZagSampler.from_dict(sampler_config, target=target, rng=rng, surrogate=surrogate)
     else:
         raise ValueError(f"Sampler {sampler_config['name']} not recognized.")
 
+def get_surrogate(
+        config: dict[str, Any],
+        target: Distribution,
+        rng: np.random.Generator = None
+) -> SurrogateModel:
+    """
+    Get a surrogate model from a dictionary.
 
-def yaml_to_numpy(data: Any):
+    Parameters:
+    config (dict): The configuration dictionary.
+    target (Distribution): The target distribution.
+    rng (np.random.Generator): The random number generator. Default is None.
+
+    Returns:
+    LaplaceSurrogate: A surrogate model for the target distribution.
+    """
+
+    if config['name'] == 'Laplace':
+        return LaplaceSurrogate.from_dict(config, target=target, rng=rng)
+
+    if config['name'] == 'NeuralNetwork':
+        return NeuralNetwork.from_dict(config, target=target, rng=rng)
+
+
+def yaml_to_numpy(data: Any, exclude_keys: set = None):
     """
     Convert the configuration dictionary to numpy arrays.
 
@@ -79,9 +104,14 @@ def yaml_to_numpy(data: Any):
     dict: The configuration dictionary with numpy arrays.
     """
 
+    # necessary to keep list of NN hidden layers as lists
+    if exclude_keys is None:
+        exclude_keys = set()
+
     if isinstance(data, dict):
         # Process dictionaries recursively
-        return {key: yaml_to_numpy(value) for key, value in data.items()}
+        return {key: yaml_to_numpy(value, exclude_keys) if key not in exclude_keys else value
+                for key, value in data.items()}
     elif isinstance(data, list):
         # Check if all elements are floats or integers
         if all(isinstance(x, (int, float)) for x in data):

@@ -11,7 +11,7 @@ from tqdm import tqdm
 from pdmp import logger
 from pdmp.sampler import Sampler
 from pdmp.distributions import Distribution, MultivariateNormal
-from pdmp.surrogates import SurrogateModel, LaplaceSurrogate
+from pdmp.surrogates import SurrogateModel, LaplaceSurrogate, NeuralNetwork
 from pdmp.plotting import get_2d_despined_figure, plot_pdf_contours
 
 
@@ -114,15 +114,24 @@ class ZigZagSampler(Sampler):
             pass
         elif surrogate is not None:
             self.thinning_ = True
+
             if isinstance(surrogate, LaplaceSurrogate):
                 self.surrogate_ = cast(LaplaceSurrogate, surrogate)
                 self.generate_event_times = self.inverse_cdf_linear
+
+            if isinstance(surrogate, NeuralNetwork):
+                self.surrogate_ = cast(NeuralNetwork, surrogate)
+                self.generate_event_times =  self.inverse_cdf
+
+            self.cdf_rates = self.surrogate_rates
         else:
             self.generate_event_times = self.inverse_cdf
+            self.cdf_rates = self.target_rates
+
         if 'dt' in kwargs:
             self.dt_ = kwargs['dt']
         else:
-            self.dt_ = 0.01
+            self.dt_ = 0.001
 
         if 'plot' in kwargs:
             self.plot_ = kwargs['plot']
@@ -131,29 +140,31 @@ class ZigZagSampler(Sampler):
         logger.info("ZigZagSampler initialized.")
 
     @classmethod
-    def from_dict(cls, config: dict[str, Any], target: Distribution, rng: np.random.Generator):
+    def from_dict(
+            cls,
+            config: dict[str, Any],
+            target: Distribution,
+            surrogate: SurrogateModel = None,
+            rng: np.random.Generator = None
+    ):
         """
         Initialize the ZigZagSampler class from a dictionary.
 
         Parameters:
         config (dict): The configuration dictionary.
         target (Distribution): The target distribution to sample from.
-        rng (np.random.Generator, optional): Random number generator. Default is None.
+        rng (np.random.Generator, optional): Random number generator.
+        surrogate (SurrogateModel, optional): The surrogate model. Default is None.
 
         Returns:
         ZigZagSampler: The initialized ZigZagSampler class.
         """
-        my_config = config.copy()
-        surrogate = None
-        if 'surrogate' in config:
-            surrogate = LaplaceSurrogate.from_dict(my_config['surrogate'], target=target, rng=rng)
-            my_config.pop('surrogate')
 
-        return ZigZagSampler(target, surrogate=surrogate, rng=rng, **my_config)
+        return ZigZagSampler(target, surrogate=surrogate, rng=rng, **config)
 
-    def rates(self, x: np.ndarray, idx_d: int = None, idx_n: int = None) -> np.ndarray:
+    def target_rates(self, x: np.ndarray, idx_d: int = None, idx_n: int = None) -> np.ndarray:
         """
-        Calculate the rates for the ZigZag process.
+        Calculate the rates for the target ZigZag process.
 
         Parameters:
         x (np.ndarray): The current position.
@@ -167,6 +178,25 @@ class ZigZagSampler(Sampler):
             return np.maximum(-self.target_.grad_log_density(x) * self.velocities_[self.iter_], 0) + self.gamma_
         else:
             return np.maximum(0, -self.target_.grad_log_density(x)[idx_d] * self.velocities_[self.iter_, idx_d]) + self.gamma_
+
+    def surrogate_rates(self, x: np.ndarray, idx_d: int = None, idx_n: int = None) -> np.ndarray:
+        """
+        Calculate the surrogate rates for the surrogate ZigZag process.
+
+        Parameters:
+        x (np.ndarray): The current position.
+        idx_d (int, optional): Dimension index. Default is None.
+        idx_n (int, optional): Observation index. Default is None.
+
+        Returns:
+        np.ndarray: The calculated surrogate rates.
+        """
+        if idx_d is None:
+            rates = - self.surrogate_.grad(x) * self.velocities_[self.iter_] + self.offset_
+            return np.maximum(rates, 0) + self.gamma_
+        else:
+            rate = - self.surrogate_.grad(x, idx_d) * self.velocities_[self.iter_, idx_d] + self.offset_[idx_d]
+            return np.maximum(rate, 0) + self.gamma_
 
     def inverse_cdf(self) -> tuple[np.ndarray, int]:
         """
@@ -186,12 +216,15 @@ class ZigZagSampler(Sampler):
         # print(f"Sampling likelihood component {j}")
 
         integral = np.zeros(self.dim_)
-        rate_t0 = self.rates(self.positions_[self.iter_], idx_n=j)
+        rate_t0 = self.cdf_rates(self.positions_[self.iter_], idx_n=j)
         rate_t1 = np.zeros_like(rate_t0)
 
         # advance all process until one reaches s
         while np.all(integral < s):
-            rate_t1 = self.rates(self.positions_[self.iter_] + (taus + self.dt_) * self.velocities_[self.iter_], idx_n=j)
+            rate_t1 = self.cdf_rates(
+                self.positions_[self.iter_] + (taus + self.dt_) * self.velocities_[self.iter_],
+                idx_n=j
+            )
             integral += np.trapezoid(np.array([rate_t0, rate_t1]), dx=self.dt_, axis=0)
             taus += self.dt_
             rate_t0 = rate_t1

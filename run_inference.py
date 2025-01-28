@@ -1,11 +1,12 @@
 import yaml
 import argparse
+import torch
 
 import numpy as np
 
 from pdmp import logger
 from pdmp.logger_setup import setup_file_handler
-from pdmp.loader import get_target, get_sampler, yaml_to_numpy, save_config
+from pdmp.loader import get_target, get_sampler, get_surrogate, yaml_to_numpy, save_config
 
 
 def parse_args():
@@ -37,16 +38,21 @@ def main():
 
     setup_file_handler(logger, config['output']['dir'], **config['output']['logging'])
 
-    # convert the configuration to numpy arrays
-    config = yaml_to_numpy(config)
+    # # convert the configuration to numpy arrays
+    config = yaml_to_numpy(config, exclude_keys={'hidden_layers'})
 
+    # collect seed for rng
     rng = np.random.default_rng(config.get('seed', 0))
+
+    # Generate a random seed for PyTorch from NumPy's RNG
+    torch_seed = rng.integers(0, 2 ** 32)  # Get a random 32-bit integer
+    torch.manual_seed(torch_seed)
 
     try:
         # load the problem configuration
-        problem_config = config['problem']
-        target = get_target(problem_config, rng=rng)
-        sampler = get_sampler(config['sampler'], target=target, rng=rng)
+        target = get_target(config['problem'], rng=rng)
+        surrogate = get_surrogate(config['surrogate'], target=target, rng=rng)
+        sampler = get_sampler(config['sampler'], target=target, surrogate=surrogate, rng=rng)
 
         sampler.run()
         sampler.write_data(config['output']['dir'])
