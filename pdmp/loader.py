@@ -4,7 +4,7 @@ from typing import Any, Union
 import numpy as np
 import yaml
 
-from pdmp.distributions import Distribution, CubicDistribution, MultivariateNormal, Posterior
+from pdmp.distributions import Distribution, CubicDistribution, MultivariateNormal, Posterior, TransformedDistribution
 from pdmp.distributions import get_prior, get_likelihood
 from pdmp.forward_model import get_model
 from pdmp.sampler import Sampler
@@ -41,6 +41,10 @@ def get_target(
         model = get_model(config['model'])
         likelihood = get_likelihood(config['likelihood'], model=model, rng=rng)
         return Posterior(prior=prior, likelihood=likelihood, rng=rng)
+
+    elif config['name'] == 'Transformed':
+        target = get_target(config['distribution'], rng=rng)
+        return TransformedDistribution(target)
 
     else:
         raise ValueError(f"Problem {config['name']} not recognized.")

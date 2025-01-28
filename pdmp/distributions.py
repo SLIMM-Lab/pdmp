@@ -1,11 +1,13 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
+from scipy.optimize import minimize
 
 from datetime import datetime
 from timeit import timeit
-from typing import Union, Any
+from typing import Union, Any, cast
 
+from pdmp import logger
 from pdmp.forward_model import Model
 from pdmp.project_field import get_gaussian_random_field_projection_from_dict
 
@@ -549,6 +551,264 @@ def get_sample(dim, rng=None):
     else:
         dist = MultivariateNormal(np.zeros(dim), np.eye(dim), rng=rng)
     return dist.get_sample()
+
+class affine_transform:
+    def __init__(
+            self,
+            offset: np.ndarray,
+            matrix: np.ndarray
+    ):
+        self.offset = offset
+        self.matrix = matrix
+        self.inv_matrix = np.linalg.inv(matrix)
+        self.det = np.linalg.det(matrix)
+
+    def __call__(self, x: np.ndarray):
+        # return self.matrix @ x + self.offset
+        # return x @ self.matrix + self.offset
+        return x @ self.matrix.T + self.offset
+
+    def forward(self, x: np.ndarray) -> np.ndarray:
+        return self(x)
+
+    def inv(self, x: np.ndarray) -> np.ndarray:
+        return self.inv_matrix @ (self.matrix, x - self.offset)
+
+    def grad(self) -> np.ndarray:
+        return self.matrix
+
+    def grad_inv(self) -> np.ndarray:
+        return self.inv_matrix
+
+    def get_det(self) -> float:
+        return self.det
+
+class TransformedDistribution(Distribution):
+    """
+    A class representing a transformed distribution.
+
+    Attributes:
+    distribution (Distribution): The base distribution to be transformed.
+    transform (affine_transform): The affine transformation applied to the base distribution.
+    """
+
+    def __init__(
+            self,
+            distribution: Distribution,
+            mean: np.ndarray = None,
+            cov: np.ndarray = None,
+            x_0: np.ndarray = None
+    ):
+        """
+        Initialize the TransformedDistribution.
+
+        Parameters:
+        distribution (Distribution): The base distribution to be transformed.
+        mean (np.ndarray, optional): The mean of the distribution. Default is None.
+        cov (np.ndarray, optional): The covariance matrix of the distribution. Default is None.
+        x_0 (np.ndarray, optional): The initial guess for the mean. Default is None.
+        """
+        super().__init__()
+        self.distribution = distribution
+
+        if mean is None:
+            mean = find_mean(distribution, x_0=x_0)
+
+        if cov is None:
+            cov = find_curvature(distribution, mean=mean)
+
+        M = np.linalg.cholesky(cov)
+        self.transform = affine_transform(mean, M)
+
+    @classmethod
+    def from_dict(
+            cls,
+            params: dict[str, Any],
+            distribution: [Distribution, Posterior],
+    ):
+        """
+        Create an instance of TransformedDistribution from a dictionary.
+
+        Parameters:
+        params (dict): A dictionary containing the parameters.
+        distribution (Distribution or Posterior): The base distribution to be transformed.
+
+        Returns:
+        TransformedDistribution: An instance of TransformedDistribution.
+        """
+        mean = params.get('mean', None)
+        cov = params.get('cov', None)
+        x_0 = params.get('x_0', None)
+        return cls(
+            distribution=distribution,
+            mean=mean,
+            cov=cov,
+            x_0=x_0
+        )
+
+    def log_density(self, x: np.ndarray) -> np.ndarray:
+        """
+        Compute the log density of the transformed distribution.
+
+        Parameters:
+        x (np.ndarray): The input array.
+
+        Returns:
+        np.ndarray: The log density of the transformed distribution.
+        """
+        return self.distribution.log_density(self.transform(x)) + np.log(np.abs(self.transform.get_det()))
+
+    def grad_log_density(self, x: np.ndarray) -> np.ndarray:
+        """
+        Compute the gradient of the log density of the transformed distribution.
+
+        Parameters:
+        x (np.ndarray): The input array.
+
+        Returns:
+        np.ndarray: The gradient of the log density of the transformed distribution.
+        """
+        return self.transform.grad().T @ self.distribution.grad_log_density(self.transform(x))
+
+    def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
+        """
+        Compute the Hessian of the log density of the transformed distribution.
+
+        Parameters:
+        x (np.ndarray): The input array.
+
+        Returns:
+        np.ndarray: The Hessian of the log density of the transformed distribution.
+        """
+        return self.transform.grad().T @ self.distribution.hessian_log_density(self.transform(x)) @ self.transform.grad()
+
+    def get_mean(self) -> np.ndarray:
+        """
+        Get the mean of the transformed distribution.
+
+        Returns:
+        np.ndarray: The mean of the transformed distribution.
+        """
+        return self.transform.inv(self.distribution.get_mean())
+
+    def get_cov(self) -> np.ndarray:
+        """
+        Get the covariance matrix of the transformed distribution.
+
+        Returns:
+        np.ndarray: The covariance matrix of the transformed distribution.
+        """
+        return self.transform.grad_inv().T @ self.distribution.get_cov() @ self.transform.grad_inv()
+
+    def get_sample(self) -> np.ndarray:
+        """
+        Get a sample from the transformed distribution.
+
+        Returns:
+        np.ndarray: A sample from the transformed distribution.
+        """
+        return self.transform.inv(self.distribution.get_sample())
+
+    def get_dim(self) -> int:
+        """
+        Get the dimensionality of the transformed distribution.
+
+        Returns:
+        int: The dimensionality of the transformed distribution.
+        """
+        return self.distribution.get_dim()
+
+    def get_n_obs(self) -> int:
+        """
+        Get the number of observations in the transformed distribution.
+
+        Returns:
+        int: The number of observations in the transformed distribution.
+        """
+        return self.distribution.get_n_obs()
+
+    def get_prior_sample(self) -> np.ndarray:
+        """
+        Get a prior sample from the transformed distribution.
+
+        Returns:
+        np.ndarray: A prior sample from the transformed distribution.
+        """
+        assert hasattr(self.distribution, 'get_prior_sample')
+        child = cast(Posterior, self.distribution)
+        return self.transform.inv(child.get_prior_sample())
+
+def find_mean(
+        target: Distribution,
+        x_0: np.ndarray = None
+) -> np.ndarray:
+    """
+    Find the mean of a distribution using the BFGS method
+
+    Parameters:
+    target (Distribution): The target distribution
+    x_0 (np.ndarray): The initial guess for the mean (optional). Default is None.
+    Returns:
+    np.ndarray: The mean of the distribution
+    """
+
+    n_log_post = lambda x: - target.log_density(x)
+    n_grad_log_post = lambda x: - target.grad_log_density(x)
+
+    if x_0 is None:
+        logger.warning("No initial point provided ... attempting to get sample from target.")
+        success = False
+
+        if hasattr(target, 'get_sample'):
+            try:
+                x_0 = target.get_sample()
+                success = True
+            except NotImplementedError as e:
+                logger.warning("  Method get_sample not implemented for target.")
+
+        if hasattr(target, 'get_mean'):
+            try:
+                x_0 = target.get_mean()
+                success = True
+            except NotImplementedError as e:
+                logger.warning("  Method get_mean not implemented for target.")
+
+        if not success and hasattr(target, 'prior_') and hasattr(target.prior_, 'get_sample'):
+            try:
+                x_0 = target.prior_.get_sample()
+                success = True
+            except NotImplementedError as e:
+                logger.warning("  Method get_sample not implemented for prior.")
+
+        if not success and hasattr(target, 'prior_') and hasattr(target.prior_, 'get_mean'):
+            try:
+                x_0 = target.prior_.get_mean()
+            except NotImplementedError as e:
+                logger.warning("  Method get_mean not implemented for prior.")
+
+        if not success:
+            x_0 = np.zeros(target.get_dim())
+
+    return minimize(n_log_post, x_0, jac=n_grad_log_post, method='BFGS').x
+
+def find_curvature(
+        target: Distribution,
+        mean: np.ndarray = None,
+) -> np.ndarray:
+    """
+    Find the curvature of a distribution at the MAP point
+
+    Parameters:
+    target (Distribution): The target distribution
+    mean (np.ndarray): The mean of the distribution (optional)
+    Returns:
+    np.ndarray: The covariance of the distribution
+    """
+
+    if mean is None:
+        mean = find_mean(target)
+
+    return - np.linalg.inv(target.hessian_log_density(mean))
 
 
 if __name__ == '__main__':

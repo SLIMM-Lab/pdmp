@@ -11,7 +11,7 @@ from typing import cast, Any
 from scipy.optimize import minimize
 from tqdm import tqdm
 
-from pdmp.distributions import Distribution, MultivariateNormal, Posterior
+from pdmp.distributions import Distribution, MultivariateNormal, Posterior, find_mean, find_curvature
 from pdmp import logger
 
 
@@ -70,18 +70,22 @@ class LaplaceSurrogate(SurrogateModel):
     """
     Laplace approximation to the target distribution.
     """
-    def __init__(self,
-                 target: Distribution = None,
-                 mean: np.ndarray = None,
-                 cov: np.ndarray = None,
-                 x_0: np.ndarray = None):
+    def __init__(
+            self,
+            target: Distribution = None,
+            mean: np.ndarray = None,
+            cov: np.ndarray = None,
+            x_0: np.ndarray = None,
+            **kwargs
+    ):
         """
-        Initialize the Laplace approximation.
+        Initialize the Laplace approximation. If mean and or cov are not provided, they are computed using the target.
 
         Parameters:
         target (Distribution): The target distribution.
+        mean (np.ndarray): The mean of the Laplace approximation.
+        cov (np.ndarray): The covariance matrix of the Laplace approximation.
         x_0 (np.ndarray): The initial point for the Laplace approximation.
-        approximation (dict, optional): The approximation to be used. Default is None.
         """
         super().__init__()
 
@@ -90,49 +94,13 @@ class LaplaceSurrogate(SurrogateModel):
 
         if mean is None or cov is None:
             assert target is not None, "Target distribution must be provided if mean and cov are not provided."
-            n_log_post = lambda x: - target.log_density(x)
-            n_grad_log_post = lambda x: - target.grad_log_density(x)
 
             if mean is None:
-                if x_0 is None:
-                    logger.warning("No initial point provided ... attempting to get sample from target.")
-                    success = False
-
-                    if hasattr(target, 'get_sample'):
-                        try:
-                            x_0 = target.get_sample()
-                            success = True
-                        except NotImplementedError as e:
-                            logger.warning("  Method get_sample not implemented for target.")
-
-                    if hasattr(target, 'get_mean'):
-                        try:
-                            x_0 = target.get_mean()
-                            success = True
-                        except NotImplementedError as e:
-                            logger.warning("  Method get_mean not implemented for target.")
-
-                    if not success and hasattr(target, 'prior_') and hasattr(target.prior_, 'get_sample'):
-                        try:
-                            x_0 = target.prior_.get_sample()
-                            success = True
-                        except NotImplementedError as e:
-                            logger.warning("  Method get_sample not implemented for prior.")
-
-                    if not success and hasattr(target, 'prior_') and hasattr(target.prior_, 'get_mean'):
-                        try:
-                            x_0 = target.prior_.get_mean()
-                        except NotImplementedError as e:
-                            logger.warning("  Method get_mean not implemented for prior.")
-
-                    if not success:
-                        x_0 = np.zeros(target.get_dim())
-
-                self.mean = minimize(n_log_post, x_0, jac=n_grad_log_post, method='BFGS').x
+                self.mean = find_mean(target, x_0)
             else:
                 self.mean = mean
             if cov is None:
-                self.cov = - np.linalg.inv(target.hessian_log_density(self.mean))
+                self.cov = find_curvature(target, mean)
             else:
                 self.cov = cov
         else:
@@ -143,7 +111,12 @@ class LaplaceSurrogate(SurrogateModel):
         self.delta = self.gaussian.log_density(self.mean) - target.log_density(self.mean)
 
     @classmethod
-    def from_dict(cls, config: dict, target = None, rng: np.random.Generator = None):
+    def from_dict(
+            cls,
+            config: dict,
+            target = None,
+            rng: np.random.Generator = None
+    ):
         """
         Create a Laplace approximation from a dictionary.
 
