@@ -75,8 +75,8 @@ class ZigZagSampler(Sampler):
         self.velocities_ = np.zeros((self.n_max_, self.dim_))
         self.iter_ = 0
         self.gamma_ = gamma
-        self.offset_ = 0.
-        self.offset_history_ = [[0.0, 0.0]] # [[time, offset]]
+        self.offset_ = np.zeros(self.dim_)
+        self.offset_history_ = [(1 + self.dim_) * [0.0]] # [[time, offsets]]
         self.plot_ = False
         self.thinning_ = False
         self.n_accepted_ = 0
@@ -309,10 +309,10 @@ class ZigZagSampler(Sampler):
         """
 
         if idx is None:
-            rates = - self.velocities_[self.iter_] * self.surrogate_.grad(x) + self.offset_ + self.offset_
+            rates = - self.velocities_[self.iter_] * self.surrogate_.grad(x) + self.offset_
             return np.maximum(rates, 0) + self.gamma_
         else:
-            rate = - self.velocities_[self.iter_, idx] * self.surrogate_.grad(x, idx) + self.offset_
+            rate = - self.velocities_[self.iter_, idx] * self.surrogate_.grad(x, idx) + self.offset_[idx]
             return np.maximum(rate, 0) + self.gamma_
 
     def poisson_thinning(self, j: int, T: np.ndarray):
@@ -324,27 +324,29 @@ class ZigZagSampler(Sampler):
         T (np.ndarray): Time increment.
         """
         pos = self.positions_[self.iter_] + T * self.velocities_[self.iter_]
-        m = self.rates(pos, idx_d=j)
+        m = self.target_rates(pos, idx_d=j)
         M = self.approximate_rates(pos, idx=j)
         u = self.rng_.uniform(0, 1)
         # u = self.us_[self.iter_]
         # logger.debug(f"      u:    {u}")
-        if u < (m / M):
+
+        # logger.debug(f"      ratio: {m/M}")
+
+        if m > M:
+            self.offset_[j] += m - M
+            self.offset_history_.append(
+                np.hstack((self.times_[self.iter_], self.offset_)).tolist()
+            )
+            self.revert_step()
+            logger.info(f"  Action at time {self.times_[self.iter_]:.2f}; current position: {self.positions_[self.iter_]}")
+            logger.info(f"     upper bound too tight, m: {m:.4f}, M: {M:.4f}")
+            logger.info(f"      ...increasing offset {j} to: {self.offset_[j]:.4f}")
+        elif u < (m / M):
             self.velocities_[self.iter_ + 1, j] = -self.velocities_[self.iter_, j]
             self.n_accepted_ += 1
             self.accepted_iters_[self.n_accepted_] = self.iter_ + 1
         else:
             self.velocities_[self.iter_ + 1, j] = self.velocities_[self.iter_, j]
-
-        # logger.debug(f"      ratio: {m/M}")
-
-        if m > M:
-            self.offset_ += m - M
-            self.offset_history_.append([self.times_[self.iter_], self.offset_])
-            self.revert_step()
-            logger.info(f"  Action at time {self.times_[self.iter_]:.2f}; current position: {self.positions_[self.iter_]}")
-            logger.info(f"     upper bound too tight, m: {m:.4f}, M: {M:.4f}")
-            logger.info(f"      ...increasing offset to: {self.offset_:.4f}")
 
     def step(self):
         """
@@ -367,9 +369,7 @@ class ZigZagSampler(Sampler):
         """
         self.times_[self.iter_ + 1] = 0.
         self.positions_[self.iter_ + 1] = 0.
-        self.velocities_[self.iter_ + 1] = 0.
-        self.accepted_iters_[self.n_accepted_] = 0
-        self.n_accepted_ -= 1
+        self.velocities_[self.iter_ + 1] = 0
         self.iter_ -= 1
 
 
@@ -381,7 +381,7 @@ class ZigZagSampler(Sampler):
         logger.info("Shutting down ZigZag sampler. Summary:")
         if self.thinning_:
             logger.info(f"    Acceptance rate : {self.n_accepted_ / self.iter_:.3f}")
-            logger.info(f"    Final offset    : {self.offset_:.3f}")
+            logger.info(f"    Final offsets    : {self.offset_}")
 
             idx = self.n_accepted_ + 1
             self.positions_ = self.positions_[self.accepted_iters_[:idx]]
@@ -395,6 +395,7 @@ class ZigZagSampler(Sampler):
         """
         Run the ZigZag sampler.
         """
+        logger.warning(f"Running ZigZag sampler with budget n_max={self.n_max_}")
 
         with tqdm(total=self.n_max_, file=sys.stdout, dynamic_ncols=False) as pbar:
             for i in range(1, self.n_max_):
@@ -415,6 +416,7 @@ class ZigZagSampler(Sampler):
         Run the ZigZag sampler.
         """
 
+        logger.warning(f"Running ZigZag sampler with time limit T={self.t_max_}")
         time = 0.
         with tqdm(total=self.t_max_, leave=True, file=sys.stdout, dynamic_ncols=False,
                   bar_format='{l_bar}{bar}| {n:.2f}/{total:.2f} [{elapsed}<{remaining}, {rate_fmt}{postfix}]') as pbar:
