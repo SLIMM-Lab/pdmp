@@ -552,20 +552,43 @@ def get_sample(dim, rng=None):
         dist = MultivariateNormal(np.zeros(dim), np.eye(dim), rng=rng)
     return dist.get_sample()
 
-class affine_transform:
+
+class transformation:
+    def __init__(self):
+        pass
+
+    def __call__(self, x: np.ndarray):
+        raise NotImplementedError
+
+    def forward(self, x: np.ndarray) -> np.ndarray:
+        raise NotImplementedError
+
+    def inv(self, x: np.ndarray) -> np.ndarray:
+        raise NotImplementedError
+
+    def grad(self, x: np.ndarray) -> np.ndarray:
+        raise NotImplementedError
+
+    def grad_inv(self, x: np.ndarray) -> np.ndarray:
+        raise NotImplementedError
+
+    def get_det(self, x: np.ndarray) -> float:
+        raise NotImplementedError
+
+
+class affine_transformation(transformation):
     def __init__(
             self,
             offset: np.ndarray,
             matrix: np.ndarray
     ):
+        super().__init__()
         self.offset = offset
         self.matrix = matrix
         self.inv_matrix = np.linalg.inv(matrix)
         self.det = np.linalg.det(matrix)
 
     def __call__(self, x: np.ndarray):
-        # return self.matrix @ x + self.offset
-        # return x @ self.matrix + self.offset
         return x @ self.matrix.T + self.offset
 
     def forward(self, x: np.ndarray) -> np.ndarray:
@@ -574,14 +597,39 @@ class affine_transform:
     def inv(self, x: np.ndarray) -> np.ndarray:
         return self.inv_matrix @ (self.matrix, x - self.offset)
 
-    def grad(self) -> np.ndarray:
+    def grad(self, x: np.ndarray) -> np.ndarray:
         return self.matrix
 
-    def grad_inv(self) -> np.ndarray:
+    def grad_inv(self, x: np.ndarray) -> np.ndarray:
         return self.inv_matrix
 
-    def get_det(self) -> float:
+    def get_det(self, x: np.ndarray) -> float:
         return self.det
+
+class exponential_transform(transformation):
+    def __init__(self):
+        super().__init__()
+
+    def __call__(self, x: np.ndarray):
+        return np.exp(x)
+
+    def forward(self, x: np.ndarray) -> np.ndarray:
+        return self(x)
+
+    def inv(self, x: np.ndarray) -> np.ndarray:
+        return np.log(x)
+
+    def grad(self, x: np.ndarray) -> np.ndarray:
+        return np.exp(x)
+
+    def grad_inv(self, x: np.ndarray) -> np.ndarray:
+        return 1 / x
+
+    def get_det(self, x: np.ndarray) -> float:
+        return np.abs(self.grad(x))
+
+    def get_det_inv(self, x: np.ndarray) -> float:
+        return np.abs(np.prod(self.grad_inv(x)))
 
 class TransformedDistribution(Distribution):
     """
@@ -618,7 +666,7 @@ class TransformedDistribution(Distribution):
             cov = find_curvature(distribution, mean=mean)
 
         M = np.linalg.cholesky(cov)
-        self.transform = affine_transform(mean, M)
+        self.transform = affine_transformation(mean, M)
 
     @classmethod
     def from_dict(
@@ -656,7 +704,7 @@ class TransformedDistribution(Distribution):
         Returns:
         np.ndarray: The log density of the transformed distribution.
         """
-        return self.distribution.log_density(self.transform(x)) + np.log(np.abs(self.transform.get_det()))
+        return self.distribution.log_density(self.transform(x)) + np.log(np.abs(self.transform.get_det(x)))
 
     def grad_log_density(self, x: np.ndarray) -> np.ndarray:
         """
@@ -813,41 +861,63 @@ def find_curvature(
 
 if __name__ == '__main__':
 
-    rng = np.random.default_rng(0)
+    from scipy.stats import lognorm
 
-    x = np.meshgrid(np.linspace(-5, 5, 100), np.linspace(-5, 5, 100))
-    x = np.stack((x[0].flatten(), x[1].flatten()), axis=1)
+    # norm = MultivariateNormal(np.zeros(1), np.eye(1))
+    norm = MultivariateNormal(np.zeros(1), np.eye(1))
 
-    # Define distributions
-    mean = np.array([0., 0.])
-    cov = np.array([[1., 0.5], [0.5, 1.]])
+    t = exponential_transform()
 
+    xi = np.linspace(-100, 2, 1000)
+    x = t.forward(xi)
+    # x = t.forward(x)
+    # x = np.linspace(0.01, 3, 100)
+    # y = 1/(np.sqrt(2*np.pi))*np.exp(norm.log_density(x))
+    # y = np.exp(t.forward(x) + t.get_det(x))
+    y = np.exp(norm.log_density(xi)) / t.get_det(xi)
+    y_2 = lognorm.pdf(x, 1, 0, np.exp(0))
 
-    old = MultivariateNormal(mean, cov, rng=rng)
-
-    y_old = old.log_density(x).reshape(100, 100)
-
-    fig, ax = plt.subplots(1, 2, figsize=(10, 5))
-    ax[0].contourf(x[:,0].reshape(100, 100), x[:,1].reshape(100, 100), y_old)
-    ax[0].set_title('Old')
+    fig, ax = plt.subplots()
+    ax.plot(x, y)
+    ax.plot(x, y_2, ls='--')
     plt.show()
 
-    # get a random mean vector and covariance matrix with d dimensions
-    d = 100
-    mean = rng.uniform(-5, 5, d)
-    cov = rng.uniform(-5, 5, (d, d))
-    cov = cov @ cov.T
 
-    # get n test inputs
-    n = 1000
-    x = rng.uniform(-5, 5, (n, d))
-
-    old = MultivariateNormal(mean, cov, rng=rng)
-
-    exec_old = timeit.timeit('old.log_density(x)', globals=globals(), number=1000)
-    print(f"Old: {exec_old}")
-
-
+    # rng = np.random.default_rng(0)
+    #
+    # x = np.meshgrid(np.linspace(-5, 5, 100), np.linspace(-5, 5, 100))
+    # x = np.stack((x[0].flatten(), x[1].flatten()), axis=1)
+    #
+    # # Define distributions
+    # mean = np.array([0., 0.])
+    # cov = np.array([[1., 0.5], [0.5, 1.]])
+    #
+    #
+    # old = MultivariateNormal(mean, cov, rng=rng)
+    #
+    # y_old = old.log_density(x).reshape(100, 100)
+    #
+    # fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+    # ax[0].contourf(x[:,0].reshape(100, 100), x[:,1].reshape(100, 100), y_old)
+    # ax[0].set_title('Old')
+    # plt.show()
+    #
+    # # get a random mean vector and covariance matrix with d dimensions
+    # d = 100
+    # mean = rng.uniform(-5, 5, d)
+    # cov = rng.uniform(-5, 5, (d, d))
+    # cov = cov @ cov.T
+    #
+    # # get n test inputs
+    # n = 1000
+    # x = rng.uniform(-5, 5, (n, d))
+    #
+    # old = MultivariateNormal(mean, cov, rng=rng)
+    #
+    # exec_old = timeit.timeit('old.log_density(x)', globals=globals(), number=1000)
+    # print(f"Old: {exec_old}")
+    #
+    # # get a random mean vector and covariance matrix with d dimensions
     # from scipy.linalg import cho_factor, cho_solve
     # import timeit
     #
