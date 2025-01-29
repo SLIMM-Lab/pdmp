@@ -237,8 +237,8 @@ class NeuralNetwork(SurrogateModel):
         self.best_val_loss = float('inf')
         self.best_model_state = None
 
-        laplace = LaplaceSurrogate(target, **kwargs)
-        samples = laplace.get_samples(n_samples)
+        self.laplace = LaplaceSurrogate.from_dict(kwargs, target=target)
+        samples = self.laplace.get_samples(n_samples)
 
         self.x_data = torch.tensor(samples, dtype=torch.float32)
         self.y_data = torch.zeros(n_samples)
@@ -248,7 +248,10 @@ class NeuralNetwork(SurrogateModel):
         self.y_train, self.y_val = self.y_data[:-num_val], self.y_data[-num_val:]
 
         for i in range(n_samples):
-            self.y_data[i] = torch.tensor(target.log_density(samples[i]), dtype=torch.float32)
+            self.y_data[i] = torch.tensor(
+                target.log_density(samples[i]) - self.laplace.eval(samples[i], delta=True),
+                dtype=torch.float32
+            )
 
         self.update(epochs=epochs, batch_size=batch_size, patience=patience)
 
@@ -287,7 +290,7 @@ class NeuralNetwork(SurrogateModel):
         """
         x_tensor = torch.tensor(x, dtype=torch.float32)
         with torch.no_grad():
-            return self.model(x_tensor).numpy()
+            return self.model(x_tensor).numpy() + self.laplace.eval(x, delta=True)
 
     def grad(self, x: np.ndarray, idx: int = None) -> np.ndarray:
         """
@@ -310,9 +313,9 @@ class NeuralNetwork(SurrogateModel):
         )[0]
 
         if idx is None:
-            return gradients.detach().numpy()
+            return gradients.detach().numpy() + self.laplace.grad(x)
         else:
-            return gradients[idx].detach().numpy()
+            return gradients[idx].detach().numpy() + self.laplace.grad(x, idx=idx)
 
     def add_data(self, x: np.ndarray, y: np.ndarray) -> None:
         """
@@ -415,7 +418,7 @@ class NeuralNetwork(SurrogateModel):
         )
         ax.semilogy(np.linspace(0, epoch, len(train_losses)), train_losses, label='Train')
         ax.semilogy(np.linspace(0, epoch, len(val_losses)), val_losses, label='Validation')
-        ax.set_ylim(7e-5, 1e3)
+        ax.set_ylim(1e-5, 4e1)
         ax.legend()
         fig.savefig(f'figures/losses_{len(self.x_data)}.pdf')
         plt.show()
