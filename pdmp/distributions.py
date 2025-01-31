@@ -486,31 +486,6 @@ def get_prior(
     else:
         raise ValueError(f"Prior {config['name']} not recognized.")
 
-def get_likelihood(
-        config: dict[str, Any],
-        model: Model,
-        rng: np.random.Generator = None,
-    ) -> Likelihood:
-
-    if 'name' not in config:
-        raise ValueError("Likelihood config must include 'name'.")
-    if 'observation_file' not in config:
-        raise ValueError("Likelihood config must include 'observation_file'.")
-
-    obs = np.genfromtxt(config['observation_file'])
-
-    if config['name'] == 'GaussianLikelihood':
-        sigma = config['sigma']
-        return GaussianLikelihood(model=model, u_obs=obs, sigma=sigma, rng=rng)
-    elif config['name'] == 'TemperedLikelihood':
-        likelihood = get_likelihood(config['likelihood'], model=model, rng=rng)
-        beta = config['beta']
-        return TemperedLikelihood(likelihood, beta=beta, rng=rng)
-    elif config['name'] == 'FlatLikelihood':
-        return FlatLikelihood(dim=model.get_dim_in(), rng=rng)
-    else:
-        raise ValueError(f"Likelihood {config['name']} not recognized.")
-
 
 class Posterior(Distribution):
     def __init__(self, prior: Distribution, likelihood: Likelihood, rng: np.random.Generator = None, seed: int = None):
@@ -553,238 +528,588 @@ def get_sample(dim, rng=None):
     return dist.get_sample()
 
 
-class transformation:
-    def __init__(self):
-        pass
+class Transformation:
+    """
+    Base class for transformations.
 
-    def __call__(self, x: np.ndarray):
+    A transformation is a bijective mapping between a latent space ξ and a target space x.
+    """
+
+    def transform(self, xi: np.ndarray) -> np.ndarray:
+        """
+        Forward transformation from xi to x.
+
+        Parameters:
+            xi: np.ndarray: The input to the transformation
+
+        Returns:
+            np.ndarray: The transformed input
+        """
         raise NotImplementedError
 
-    def forward(self, x: np.ndarray) -> np.ndarray:
+    def inverse_transform(self, x: np.ndarray) -> np.ndarray:
+        """
+        Inverse transformation from x to xi.
+
+        Parameters:
+            x: np.ndarray: The input to the transformation
+
+        Returns:
+            np.ndarray: The inverse transformed input xi
+        """
         raise NotImplementedError
 
-    def inv(self, x: np.ndarray) -> np.ndarray:
+    def jacobian(self, xi: np.ndarray) -> np.ndarray:
+        """
+        Computes the Jacobian of the transformation.
+
+        Parameters:
+            xi: np.ndarray: The input to the transformation
+
+        Returns:
+            np.ndarray: The Jacobian of the transformation
+        """
         raise NotImplementedError
 
-    def grad(self, x: np.ndarray) -> np.ndarray:
+    def inv_jacobian(self, xi: np.ndarray) -> np.ndarray:
+        """
+        Efficiently return the Jacobian of the inverse transformation.
+
+        Parameters:
+            xi: np.ndarray: The input to the transformation
+
+        Returns:
+            np.ndarray: The Jacobian of the inverse transformation
+        """
         raise NotImplementedError
 
-    def grad_inv(self, x: np.ndarray) -> np.ndarray:
+    def log_det_jacobian(self, xi: np.ndarray) -> float:
+        """
+        Computes the log determinant of the Jacobian.
+
+        Parameters:
+            xi: np.ndarray: The input to the transformation
+
+        Returns:
+            float: The log determinant of the Jacobian
+        """
         raise NotImplementedError
 
-    def get_det(self, x: np.ndarray) -> float:
+    def grad_log_det_jacobian(self, xi: np.ndarray) -> np.ndarray:
+        """
+        Efficiently return the gradient of log-determinant of Jacobian.
+
+        Parameters:
+            xi: np.ndarray: The input to the transformation
+
+        Returns:
+            np.ndarray: The gradient of the log determinant of the Jacobian
+        """
         raise NotImplementedError
 
+    def hessian(self, xi: np.ndarray) -> np.ndarray:
+        """
+        Computes the Hessian of the transformation.
 
-class affine_transformation(transformation):
-    def __init__(
-            self,
-            offset: np.ndarray,
-            matrix: np.ndarray
-    ):
-        super().__init__()
-        self.offset = offset
-        self.matrix = matrix
-        self.inv_matrix = np.linalg.inv(matrix)
-        self.det = np.linalg.det(matrix)
+        Parameters:
+            xi: np.ndarray: The input to the transformation
 
-    def __call__(self, x: np.ndarray):
-        return x @ self.matrix.T + self.offset
+        Returns:
+            np.ndarray: The Hessian of the transformation
+        """
+        raise NotImplementedError
 
-    def forward(self, x: np.ndarray) -> np.ndarray:
-        return self(x)
+    def hessian_log_det_jacobian(self, xi: np.ndarray) -> np.ndarray:
+        """
+        Computes the Hessian of the log determinant of the Jacobian.
 
-    def inv(self, x: np.ndarray) -> np.ndarray:
-        return self.inv_matrix @ (self.matrix, x - self.offset)
+        Parameters:
+            xi: np.ndarray: The input to the transformation
 
-    def grad(self, x: np.ndarray) -> np.ndarray:
-        return self.matrix
+        Returns:
+            np.ndarray: The Hessian of the log determinant of the Jacobian
+        """
+        raise NotImplementedError
 
-    def grad_inv(self, x: np.ndarray) -> np.ndarray:
-        return self.inv_matrix
+class ExponentialTransform(Transformation):
+    """
+    Implements x = exp(ξ).
+    """
 
-    def get_det(self, x: np.ndarray) -> float:
-        return self.det
+    def transform(self, xi: np.ndarray) -> np.ndarray:
+        """
+        Forward transformation from xi to x.
 
-class exponential_transform(transformation):
-    def __init__(self):
-        super().__init__()
+        Parameters:
+            xi: np.ndarray: The input to the transformation
 
-    def __call__(self, x: np.ndarray):
-        return np.exp(x)
+        Returns:
+            np.ndarray: The transformed input
+        """
+        return np.exp(xi)
 
-    def forward(self, x: np.ndarray) -> np.ndarray:
-        return self(x)
+    def inverse_transform(self, x: np.ndarray) -> np.ndarray:
+        """
+        Inverse transformation from x to xi.
 
-    def inv(self, x: np.ndarray) -> np.ndarray:
+        Parameters:
+            x: np.ndarray: The input to the transformation
+
+        Returns:
+            np.ndarray: The inverse transformed input
+        """
         return np.log(x)
 
-    def grad(self, x: np.ndarray) -> np.ndarray:
-        return np.exp(x)
+    def jacobian(self, xi: np.ndarray) -> np.ndarray:
+        """
+        Efficiently return the Jacobian of the inverse transformation.
 
-    def grad_inv(self, x: np.ndarray) -> np.ndarray:
-        return 1 / x
+        Parameters:
+            xi: np.ndarray: The input to the transformation
 
-    def get_det(self, x: np.ndarray) -> float:
-        return np.abs(self.grad(x))
+        Returns:
+            np.ndarray: The Jacobian of the inverse transformation
+        """
+        return np.diag(np.exp(xi))
 
-    def get_det_inv(self, x: np.ndarray) -> float:
-        return np.abs(np.prod(self.grad_inv(x)))
+    def inv_jacobian(self, xi: np.ndarray) -> np.ndarray:
+        """
+        Jacobian is diagonal with exp(xi) entries.
+
+        Parameters:
+            xi: np.ndarray: The input to the transformation
+
+        Returns:
+            np.ndarray: The Jacobian of the inverse transformation
+        """
+        return np.diag(np.exp(-xi))  # Directly return inverse
+
+    def log_det_jacobian(self, xi: np.ndarray) -> float:
+        """
+        log |det(J)| = sum(xi) since J is diagonal.
+
+        Parameters:
+            xi: np.ndarray: The input to the transformation
+
+        Returns:
+            float: The log determinant of the Jacobian
+        """
+        return np.sum(xi, axis=-1)  # log |det(J)| = sum(xi) for diagonal matrix
+
+    def grad_log_det_jacobian(self, xi: np.ndarray) -> np.ndarray:
+        """
+        Gradient of log determinant is always 1 (since log(exp(x)) = x and J is diagonal).
+
+        Parameters:
+            xi: np.ndarray: The input to the transformation
+
+        Returns:
+            np.ndarray: The gradient of the log determinant of the Jacobian
+        """
+        return np.ones_like(xi)
+
+    def hessian(self, xi: np.ndarray) -> np.ndarray:
+        """
+        Hessian is a 3-tensor with diagonal elements being exp(xi).
+
+        Parameters:
+            xi: np.ndarray: The input to the transformation
+
+        Returns:
+            np.ndarray: The Hessian of the transformation
+        """
+        d = xi.shape[0]
+        H = np.zeros((d, d, d))
+        idx = np.arange(d)
+        H[idx, idx, idx] = np.exp(xi)
+        return H
+
+    def hessian_log_det_jacobian(self, xi: np.ndarray) -> np.ndarray:
+        """
+        Computes the Hessian of the log determinant of the Jacobian.
+
+        Parameters:
+            xi: np.ndarray: The input to the transformation
+
+        Returns:
+            np.ndarray: The Hessian of the log determinant of the Jacobian
+        """
+        return np.zeros((xi.shape[0], xi.shape[0]))
+
+
+class AffineTransform(Transformation):
+    """
+    Implements x = M * xi + b.
+    """
+
+    def __init__(self, M: np.ndarray, b: np.ndarray):
+        self.M = M
+        self.b = b
+        self.M_inv = np.linalg.inv(M)
+        self.log_abs_det_M = np.log(np.abs(np.linalg.det(M)))
+
+    def transform(self, xi: np.ndarray) -> np.ndarray:
+        """
+        Forward transformation from xi to x.
+
+        Parameters:
+            xi: np.ndarray: The input to the transformation.
+
+        Returns:
+            np.ndarray: The transformed input.
+        """
+        return xi @ self.M.T + self.b
+
+    def inverse_transform(self, x: np.ndarray) -> np.ndarray:
+        """
+        Inverse transformation from x to xi.
+
+        Parameters:
+            x: np.ndarray: The input to the transformation.
+
+        Returns:
+            np.ndarray: The inverse transformed input.
+        """
+        return self.M_inv @ (x - self.b)
+
+    def jacobian(self, xi: np.ndarray) -> np.ndarray:
+        """
+        Computes the Jacobian of the transformation.
+
+        Parameters:
+            xi: np.ndarray: The input to the transformation.
+
+        Returns:
+            np.ndarray: The Jacobian of the transformation.
+        """
+        return self.M  # Jacobian is constant
+
+    def inv_jacobian(self, xi: np.ndarray) -> np.ndarray:
+        """
+        Computes the inverse Jacobian of the transformation.
+
+        Parameters:
+            xi: np.ndarray: The input to the transformation.
+
+        Returns:
+            np.ndarray: The inverse Jacobian of the transformation.
+        """
+        return self.M_inv  # Directly return precomputed inverse
+
+    def log_det_jacobian(self, xi: np.ndarray) -> float:
+        """
+        Computes the log determinant of the Jacobian.
+
+        Parameters:
+            xi: np.ndarray: The input to the transformation.
+
+        Returns:
+            float: The log determinant of the Jacobian.
+        """
+        return self.log_abs_det_M  # log |det(M)|
+
+    def grad_log_det_jacobian(self, xi: np.ndarray) -> np.ndarray:
+        """
+        Computes the gradient of the log determinant of the Jacobian.
+
+        Parameters:
+            xi: np.ndarray: The input to the transformation.
+
+        Returns:
+            np.ndarray: The gradient of the log determinant of the Jacobian.
+        """
+        return np.zeros_like(xi)  # Zero since M is constant
+
+    def hessian(self, xi: np.ndarray) -> np.ndarray:
+        """
+        Computes the Hessian of the transformation.
+
+        Parameters:
+            xi: np.ndarray: The input to the transformation.
+
+        Returns:
+            np.ndarray: The Hessian of the transformation.
+        """
+        return np.zeros((xi.shape[0], xi.shape[0], xi.shape[0]))  # Hessian is zero
+
+    def hessian_log_det_jacobian(self, xi: np.ndarray) -> np.ndarray:
+        """
+        Computes the Hessian of the log determinant of the Jacobian.
+
+        Parameters:
+            xi: np.ndarray: The input to the transformation.
+
+        Returns:
+            np.ndarray: The Hessian of the log determinant of the Jacobian.
+        """
+        return np.zeros((xi.shape[0], xi.shape[0]))
+
+EXPONENITAL = 'Exponential'
+AFFINE = 'Affine'
+TRANSFORMATIONS = [EXPONENITAL, AFFINE]
 
 class TransformedDistribution(Distribution):
     """
-    A class representing a transformed distribution.
-
-    Attributes:
-    distribution (Distribution): The base distribution to be transformed.
-    transform (affine_transform): The affine transformation applied to the base distribution.
+    Applies a transformation to a base distribution.
     """
 
-    def __init__(
-            self,
-            distribution: Distribution,
-            mean: np.ndarray = None,
-            cov: np.ndarray = None,
-            x_0: np.ndarray = None
-    ):
+    def __init__(self, base_distribution: Distribution, params: dict[str, Any]):
         """
-        Initialize the TransformedDistribution.
-
         Parameters:
-        distribution (Distribution): The base distribution to be transformed.
-        mean (np.ndarray, optional): The mean of the distribution. Default is None.
-        cov (np.ndarray, optional): The covariance matrix of the distribution. Default is None.
-        x_0 (np.ndarray, optional): The initial guess for the mean. Default is None.
+            base_distribution (Distribution): The base distribution to transform.
+            params (dict[str, Any]): The parameters of the transformation.
+
+        Raises:
+            NotImplementedError: If the transformation is not recognized.
         """
-        super().__init__()
-        self.distribution = distribution
+        super().__init__(rng=base_distribution.rng_)
+        self.base_distribution = base_distribution
 
-        if mean is None:
-            mean = find_mean(distribution, x_0=x_0)
+        if params['transformation'] == EXPONENITAL:
+            self.transformation = ExponentialTransform()
+        elif params['transformation'] == AFFINE:
+            M = params.get('M', None)
+            b = params.get('b', None)
+            x_0 = params.get('x_0', None)
 
-        if cov is None:
-            cov = find_curvature(distribution, mean=mean)
+            if b is None:
+                b = find_mean(base_distribution, x_0=x_0)
 
-        M = np.linalg.cholesky(cov)
-        self.transform = affine_transformation(mean, M)
+            if M is None:
+                M = find_curvature(base_distribution, mean=b)
 
-    @classmethod
-    def from_dict(
-            cls,
-            params: dict[str, Any],
-            distribution: [Distribution, Posterior],
-    ):
-        """
-        Create an instance of TransformedDistribution from a dictionary.
+            C = np.linalg.cholesky(M)
 
-        Parameters:
-        params (dict): A dictionary containing the parameters.
-        distribution (Distribution or Posterior): The base distribution to be transformed.
-
-        Returns:
-        TransformedDistribution: An instance of TransformedDistribution.
-        """
-        mean = params.get('mean', None)
-        cov = params.get('cov', None)
-        x_0 = params.get('x_0', None)
-        return cls(
-            distribution=distribution,
-            mean=mean,
-            cov=cov,
-            x_0=x_0
-        )
-
-    def log_density(self, x: np.ndarray) -> np.ndarray:
-        """
-        Compute the log density of the transformed distribution.
-
-        Parameters:
-        x (np.ndarray): The input array.
-
-        Returns:
-        np.ndarray: The log density of the transformed distribution.
-        """
-        return self.distribution.log_density(self.transform(x)) + np.log(np.abs(self.transform.get_det(x)))
-
-    def grad_log_density(self, x: np.ndarray) -> np.ndarray:
-        """
-        Compute the gradient of the log density of the transformed distribution.
-
-        Parameters:
-        x (np.ndarray): The input array.
-
-        Returns:
-        np.ndarray: The gradient of the log density of the transformed distribution.
-        """
-        return self.transform.grad().T @ self.distribution.grad_log_density(self.transform(x))
-
-    def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
-        """
-        Compute the Hessian of the log density of the transformed distribution.
-
-        Parameters:
-        x (np.ndarray): The input array.
-
-        Returns:
-        np.ndarray: The Hessian of the log density of the transformed distribution.
-        """
-        return self.transform.grad().T @ self.distribution.hessian_log_density(self.transform(x)) @ self.transform.grad()
-
-    def get_mean(self) -> np.ndarray:
-        """
-        Get the mean of the transformed distribution.
-
-        Returns:
-        np.ndarray: The mean of the transformed distribution.
-        """
-        return self.transform.inv(self.distribution.get_mean())
-
-    def get_cov(self) -> np.ndarray:
-        """
-        Get the covariance matrix of the transformed distribution.
-
-        Returns:
-        np.ndarray: The covariance matrix of the transformed distribution.
-        """
-        return self.transform.grad_inv().T @ self.distribution.get_cov() @ self.transform.grad_inv()
+            self.transformation = AffineTransform(C, b)
+        else:
+            raise NotImplementedError(f"Transformation {params['transformation']} not recognized.\n"
+                                      f"pick any of {TRANSFORMATIONS}")
 
     def get_sample(self) -> np.ndarray:
         """
-        Get a sample from the transformed distribution.
+        Generates a sample from the transformed distribution.
 
         Returns:
-        np.ndarray: A sample from the transformed distribution.
+            np.ndarray: A sample from the transformed distribution.
         """
-        return self.transform.inv(self.distribution.get_sample())
+        xi_sample = self.base_distribution.get_sample()
+        return self.transformation.transform(xi_sample)
 
     def get_dim(self) -> int:
         """
-        Get the dimensionality of the transformed distribution.
+        Returns:
+            int: The dimension of the transformed distribution.
+        """
+        return self.base_distribution.get_dim()
+
+    def log_density(self, xi: np.ndarray) -> np.ndarray:
+        """
+        Computes log p(xi).
+
+        Parameters:
+            xi (np.ndarray): The input to the transformation.
 
         Returns:
-        int: The dimensionality of the transformed distribution.
+            np.ndarray: The log density of the transformed distribution.
         """
-        return self.distribution.get_dim()
+        x = self.transformation.transform(xi)
+        return self.base_distribution.log_density(x) + self.transformation.log_det_jacobian(xi)
 
-    def get_n_obs(self) -> int:
+    def grad_log_density(self, xi: np.ndarray) -> np.ndarray:
         """
-        Get the number of observations in the transformed distribution.
+        Computes the gradient of the log density with respect to xi.
+
+        Parameters:
+            xi (np.ndarray): The input to the transformation.
 
         Returns:
-        int: The number of observations in the transformed distribution.
+            np.ndarray: The gradient of the log density with respect to xi.
         """
-        return self.distribution.get_n_obs()
+        x = self.transformation.transform(xi)
+
+        # Precompute gradient of log density of base distribution
+        grad_log_p_xi = self.transformation.jacobian(xi).T @ self.base_distribution.grad_log_density(x)
+
+        return grad_log_p_xi + self.transformation.grad_log_det_jacobian(xi)
+
+    def hessian_log_density(self, xi: np.ndarray) -> np.ndarray:
+        """
+        Computes the Hessian of the log density with respect to xi.
+
+        Parameters:
+            xi (np.ndarray): The input to the transformation.
+
+        Returns:
+            np.ndarray: The Hessian of the log density with respect to xi.
+        """
+
+        x = self.transformation.transform(xi)
+        H_x = self.base_distribution.hessian_log_density(x)
+        J = self.transformation.jacobian(xi)
+
+        # Compute Hessian of transformation
+        grad_x = self.base_distribution.grad_log_density(x)
+        H_f = self.transformation.hessian(xi)
+        H_f_grad = np.einsum('ijk,j->ik', H_f, grad_x)
+
+        # Compute Hessian of log density of base distribution
+        jac_correction = self.transformation.hessian_log_det_jacobian(xi)
+
+        return J.T @ H_x @ J + H_f_grad + jac_correction
 
     def get_prior_sample(self) -> np.ndarray:
         """
         Get a prior sample from the transformed distribution.
 
         Returns:
-        np.ndarray: A prior sample from the transformed distribution.
+            np.ndarray: A prior sample from the transformed distribution.
         """
-        assert hasattr(self.distribution, 'get_prior_sample')
-        child = cast(Posterior, self.distribution)
-        return self.transform.inv(child.get_prior_sample())
+        assert hasattr(self.base_distribution, 'get_prior_sample')
+        child = cast(Posterior, self.base_distribution)
+        return self.transformation.inverse_transform(child.get_prior_sample())
+
+
+class TransformedLikelihood(Likelihood):
+    """
+    Applies a transformation to a base distribution.
+    """
+
+    def __init__(self, likelihood: Likelihood, params: dict[str, Any]):
+        super().__init__(rng=likelihood.rng_)
+        self.likelihood = likelihood
+
+        if params['transformation'] == EXPONENITAL:
+            self.transformation = ExponentialTransform()
+        elif params['transformation'] == AFFINE:
+            M = params.get('M', None)
+            b = params.get('b', None)
+            x_0 = params.get('x_0', None)
+
+            if b is None:
+                b = find_mean(likelihood, x_0=x_0)
+
+            if M is None:
+                M = find_curvature(likelihood, mean=b)
+
+            C = np.linalg.cholesky(M)
+
+            self.transformation = AffineTransform(C, b)
+        else:
+            raise NotImplementedError(f"Transformation {params['transformation']} not recognized.\n"
+                                      f"pick any of {TRANSFORMATIONS}")
+
+    def get_dim(self) -> int:
+        """
+        Returns:
+            int: The dimension of the transformed distribution.
+        """
+        return self.likelihood.get_dim()
+
+    def get_sample(self) -> np.ndarray:
+        raise NotImplementedError("Cannot sample directly from GaussianLikelihood. Use MCMC instead")
+
+    def log_density(self, xi: np.ndarray, idx: int = None) -> np.ndarray:
+        """
+        Computes log p(xi).
+
+        Parameters:
+            xi (np.ndarray): The input to the transformation.
+            idx (int): The index of the observation to evaluate.
+
+        Returns:
+            np.ndarray: The log density of the transformed distribution.
+        """
+        x = self.transformation.transform(xi)
+        return self.likelihood.log_density(x, idx=idx) + self.transformation.log_det_jacobian(xi)
+
+    def grad_log_density(self, xi: np.ndarray, idx: int = None) -> np.ndarray:
+        """
+        Computes the gradient of the log density with respect to xi.
+
+        Parameters:
+            xi (np.ndarray): The input to the transformation.
+            idx (int): The index of the observation to evaluate.
+
+        Returns:
+            np.ndarray: The gradient of the log density with respect to xi.
+        """
+        x = self.transformation.transform(xi)
+
+        # Precompute gradient of log density of base distribution
+        grad_log_p_xi = self.transformation.jacobian(xi).T @ self.likelihood.grad_log_density(x, idx=idx)
+
+        return grad_log_p_xi + self.transformation.grad_log_det_jacobian(xi)
+
+    def hessian_log_density(self, xi: np.ndarray, idx: int = None) -> np.ndarray:
+        """
+        Computes the Hessian of the log density with respect to xi.
+
+        Parameters:
+            xi (np.ndarray): The input to the transformation.
+            idx (int): The index of the observation to evaluate.
+
+        Returns:
+            np.ndarray: The Hessian of the log density with respect to xi.
+        """
+        x = self.transformation.transform(xi)
+        H_x = self.likelihood.hessian_log_density(x, idx=idx)
+        J = self.transformation.jacobian(xi)
+
+        # Compute Hessian of transformation
+        grad_x = self.likelihood.grad_log_density(x, idx=idx)
+        H_f = self.transformation.hessian(xi)
+        H_f_grad = np.einsum('ijk,j->ik', H_f, grad_x)
+
+        # Compute Hessian of log density of base distribution
+        jac_correction = self.transformation.hessian_log_det_jacobian(xi)
+
+        return J.T @ H_x @ J + H_f_grad + jac_correction
+
+def get_likelihood(
+        config: dict[str, Any],
+        model: Model,
+        rng: np.random.Generator = None,
+) -> Likelihood:
+    """
+    Get a likelihood distribution from a configuration.
+
+    Parameters:
+        config (dict[str, Any]): The configuration of the likelihood.
+        model (Model): The model to evaluate the likelihood.
+        rng (np.random.Generator): The random number generator.
+
+    Returns:
+        Likelihood: The likelihood distribution.
+    """
+
+    obs = None
+
+    if 'name' not in config:
+        raise ValueError("Likelihood config must include 'name'.")
+    if (
+            (config['name'] != 'FlatLikelihood')
+        and (config['name'] != 'TransformedLikelihood')
+        and ('observation_file' not in config)
+    ):
+        raise ValueError("Likelihood config must include 'observation_file'.")
+
+    if (config['name'] != 'FlatLikelihood') and (config['name'] != 'TransformedLikelihood'):
+        obs = np.genfromtxt(config['observation_file'])
+
+    if config['name'] == 'GaussianLikelihood':
+        sigma = config['sigma']
+        return GaussianLikelihood(model=model, u_obs=obs, sigma=sigma, rng=rng)
+    elif config['name'] == 'TemperedLikelihood':
+        likelihood = get_likelihood(config['likelihood'], model=model, rng=rng)
+        beta = config['beta']
+        return TemperedLikelihood(likelihood, beta=beta, rng=rng)
+    elif config['name'] == 'TransformedLikelihood':
+        likelihood = get_likelihood(config['likelihood'], model=model, rng=rng)
+        return TransformedLikelihood(likelihood, params=config)
+    elif config['name'] == 'FlatLikelihood':
+        return FlatLikelihood(dim=model.get_dim_in(), rng=rng)
+    else:
+        raise ValueError(f"Likelihood {config['name']} not recognized.")
 
 def find_mean(
         target: Distribution,
