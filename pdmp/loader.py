@@ -44,7 +44,7 @@ def get_target(
 
     elif config['name'] == 'Transformed':
         target = get_target(config['distribution'], rng=rng)
-        return TransformedDistribution(target)
+        return TransformedDistribution(base_distribution=target, params=config)
 
     else:
         raise ValueError(f"Problem {config['name']} not recognized.")
