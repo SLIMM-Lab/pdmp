@@ -5,7 +5,7 @@ from scipy.optimize import minimize
 
 from datetime import datetime
 from timeit import timeit
-from typing import Union, Any, cast
+from typing import Union, Any, cast, override
 
 from pdmp import logger
 from pdmp.forward_model import Model
@@ -16,8 +16,40 @@ large = 1e20
 
 
 class Distribution:
+    """
+    Base class for probability distributions.
 
-    def __init__(self, rng: np.random.Generator = None, seed: int = None):
+    ...
+    Attributes
+    ----------
+    rng_ : np.random.Generator
+        Random number generator.
+
+    Methods
+    -------
+    get_mean()
+        Get the mean of the distribution.
+    get_cov()
+        Get the covariance of the distribution.
+    get_sample()
+        Get a sample from the distribution.
+    get_dim()
+        Get the dimension of the distribution.
+    log_density(x)
+        Get the log density of the distribution at a point.
+    grad_log_density(x)
+        Get the gradient of the log density of the distribution at a point.
+    hessian_log_density(x)
+        Get the Hessian of the log density of the distribution at a point.
+    get_n_obs()
+        Get the number of observations.
+    """
+
+    def __init__(
+            self,
+            rng: np.random.Generator = None,
+            seed: int = None
+    ):
         if rng is None and seed is None:
             self.rng_ = np.random.default_rng(0)
         elif rng is None:
@@ -27,33 +59,124 @@ class Distribution:
 
 
     def get_mean(self) -> np.ndarray:
+        """
+        Get the mean of the distribution.
+        Returns:
+            np.ndarray: The mean of the distribution.
+        """
         raise NotImplementedError
 
     def get_cov(self) -> np.ndarray:
+        """
+        Get the covariance of the distribution.
+        Returns:
+            np.ndarray: The covariance of the distribution.
+        """
         raise NotImplementedError
 
-    def get_sample(self) -> np.ndarray:
+    def get_sample(self, n: int = 1) -> np.ndarray:
+        """
+        Get a sample from the distribution.
+
+        Parameters:
+            n (int): The number of samples to draw. Default is 1.
+
+        Returns:
+            np.ndarray: A sample from the distribution.
+        """
         raise NotImplementedError
 
     def get_dim(self) -> int:
+        """
+        Get the dimension of the distribution.
+        Returns:
+            int: The dimension of the distribution.
+        """
         raise NotImplementedError
 
     def log_density(self, x: np.ndarray) -> np.ndarray:
+        """
+        Get the log density of the distribution at a point.
+
+        Parameters:
+            x (np.ndarray): The point at which to evaluate the log density.
+
+        Returns:
+            np.ndarray: The log density of the distribution at the point.
+        """
         raise NotImplementedError
 
     def grad_log_density(self, x: np.ndarray) -> np.ndarray:
+        """
+        Get the gradient of the log density of the distribution at a point.
+
+        Parameters:
+            x (np.ndarray): The point at which to evaluate the gradient of the log density.
+
+        Returns:
+            np.ndarray: The gradient of the log density of the distribution at the point.
+        """
         raise NotImplementedError
 
     def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
+        """
+        Get the Hessian of the log density of the distribution at a point.
+
+        Parameters:
+            x (np.ndarray): The point at which to evaluate the Hessian of the log density.
+
+        Returns:
+            np.ndarray: The Hessian of the log density of the distribution at the point.
+        """
         raise NotImplementedError
 
     def get_n_obs(self) -> int:
+        """
+        Get the number of observations.
+
+        Returns:
+            int: The number of observations.
+        """
         return 0
 
 
 class MultivariateNormal(Distribution):
+    """
+    Multivariate normal distribution.
 
-    def __init__(self, mean: np.ndarray, cov: np.ndarray, rng: np.random.Generator = None, seed: int = None):
+    ...
+    Attributes
+    ----------
+    mean_ : np.ndarray
+        The mean of the distribution.
+    dim_ : int
+        The dimension of the distribution.
+    cov_ : np.ndarray
+        The covariance matrix of the distribution.
+    covL_ : np.ndarray
+        The Cholesky decomposition of the covariance matrix.
+    invC_ : np.ndarray
+        The inverse of the covariance matrix.
+    logDet_ : float
+        The log determinant of the covariance matrix.
+    constant_ : float
+        The constant term in the log density.
+
+    Methods
+    -------
+    get_inv_cov()
+        Get the inverse of the covariance matrix.
+    from_dict(params, rng, seed)
+        Create a multivariate normal distribution from a dictionary.
+    """
+
+    def __init__(
+            self,
+            mean: np.ndarray,
+            cov: np.ndarray,
+            rng: np.random.Generator = None,
+            seed: int = None
+    ):
         super().__init__(rng=rng, seed=seed)
         self.mean_ = mean
         self.dim_ = mean.shape[0]
@@ -64,7 +187,12 @@ class MultivariateNormal(Distribution):
         self.constant_ = - 0.5 * np.log(2.0 * np.pi) * self.dim_
 
     @classmethod
-    def from_dict(cls, params: dict[str, np.ndarray], rng: np.random.Generator = None, seed: int = None):
+    def from_dict(
+            cls,
+            params: dict[str, np.ndarray],
+            rng: np.random.Generator = None,
+            seed: int = None
+    ):
         if 'mean' not in params or 'cov' not in params:
             raise ValueError("Parameters must include 'mean' and 'cov'.")
         return cls(
@@ -74,6 +202,15 @@ class MultivariateNormal(Distribution):
             seed=seed
         )
 
+    def get_inv_cov(self) -> np.ndarray:
+        """
+        Get the inverse of the covariance matrix.
+        Returns:
+            np.ndarray: The inverse of the covariance matrix
+        """
+        return self.invC_
+
+    @override
     def get_sample(self, n: int = 1) -> np.ndarray:
         if n == 1:
             z = self.rng_.standard_normal(size=self.dim_)
@@ -82,18 +219,19 @@ class MultivariateNormal(Distribution):
             z = self.rng_.standard_normal(size=(n, self.dim_))
             return z @ self.covL_ + self.mean_
 
+    @override
     def get_dim(self) -> int:
         return self.dim_
 
+    @override
     def get_mean(self) -> np.ndarray:
         return self.mean_
 
+    @override
     def get_cov(self) -> np.ndarray:
         return self.cov_
 
-    def get_inv_cov(self) -> np.ndarray:
-        return self.invC_
-
+    @override
     def log_density(self, x: np.ndarray) -> np.ndarray:
         diff = x - self.mean_
         if diff.ndim == 1:
@@ -102,21 +240,61 @@ class MultivariateNormal(Distribution):
             else:
                 return self.constant_ - self.logDet_ - 0.5 * np.linalg.norm(np.linalg.solve(self.covL_, diff)) ** 2
         else:
-            return (self.constant_ - self.logDet_ - 0.5 * np.linalg.norm(np.linalg.solve(self.covL_, diff.T), axis=0) ** 2).T
+            return (
+                    self.constant_
+                    - self.logDet_
+                    - 0.5 * np.linalg.norm(np.linalg.solve(self.covL_, diff.T), axis=0) ** 2
+            ).T
 
+    @override
     def grad_log_density(self, x: np.ndarray) -> np.ndarray:
         diff =  x - self.mean_
-        return - sp.linalg.solve_triangular(self.covL_.transpose(),
-                                            sp.linalg.solve_triangular(self.covL_, diff, lower=True, check_finite=False),
-                                            check_finite=False, lower=False)
+        return - sp.linalg.solve_triangular(
+            self.covL_.transpose(),
+            sp.linalg.solve_triangular(self.covL_, diff, lower=True, check_finite=False),
+            lower=False,
+            check_finite = False
+        )
 
+    @override
     def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
         return - self.invC_
 
 
 class GaussianMixture(Distribution):
+    """
+    Gaussian mixture distribution.
 
-    def __init__(self, means: np.ndarray, covs: np.ndarray, weights: np.ndarray, rng: np.random.Generator = None, seed: int = None):
+    ...
+    Attributes
+    ----------
+    means_ : np.ndarray
+        The means of the components.
+    covs_ : np.ndarray
+        The covariances of the components.
+    weights_ : np.ndarray
+        The weights of the components.
+    n_components_ : int
+        The number of components.
+    dim_ : int
+        The dimension of the distribution.
+    dists_ : list[MultivariateNormal]
+        The component distributions.
+
+    Methods
+    -------
+    from_dict(params, rng, seed)
+        Create a Gaussian mixture distribution from a dictionary.
+    """
+
+    def __init__(
+            self,
+            means: np.ndarray,
+            covs: np.ndarray,
+            weights: np.ndarray,
+            rng: np.random.Generator = None,
+            seed: int = None
+    ):
         super().__init__(rng=rng, seed=seed)
         self.n_components_ = means.shape[0]
         self.dim_ = means.shape[1]
@@ -130,9 +308,15 @@ class GaussianMixture(Distribution):
         # self.constant_ = - 0.5 * np.log(2.0 * np.pi) * self.dim_
 
     @classmethod
-    def from_dict(cls, params: dict[str, np.ndarray], rng: np.random.Generator = None, seed: int = None):
+    def from_dict(
+            cls,
+            params: dict[str, np.ndarray],
+            rng: np.random.Generator = None,
+            seed: int = None
+    ):
         if 'means' not in params or 'covs' not in params or 'weights' not in params:
             raise ValueError("Parameters must include 'means', 'covs', and 'weights'.")
+
         return cls(
             means=params['means'],
             covs=params['covs'],
@@ -141,19 +325,23 @@ class GaussianMixture(Distribution):
             seed=seed
         )
 
+    @override
     def get_sample(self) -> np.ndarray:
         idx = self.rng_.choice(self.n_components_, p=self.weights_)
         return self.dists_[idx].get_sample()
 
+    @override
     def get_dim(self) -> int:
         return self.dim_
 
+    @override
     def get_mean(self) -> np.ndarray:
         mean = np.zeros(self.dim_)
         for i in range(self.n_components_):
             mean += self.weights_[i] * self.dists_[i].get_mean()
         return mean
 
+    @override
     def get_cov(self) -> np.ndarray:
         cov = np.zeros((self.dim_, self.dim_))
         mean = self.get_mean()
@@ -162,12 +350,14 @@ class GaussianMixture(Distribution):
             cov += self.weights_[i] * ( self.dists_[i].get_cov() + np.outer(diff, diff))
         return cov
 
+    @override
     def log_density(self, x: np.ndarray) -> np.ndarray:
         log_p = 0.
         for i in range(self.n_components_):
             log_p += self.weights_[i] * np.exp(self.dists_[i].log_density(x))
         return np.log(log_p)
 
+    @override
     def grad_log_density(self, x: np.ndarray) -> np.ndarray:
         grad = np.zeros(self.dim_)
         for i in range(self.n_components_):
@@ -175,6 +365,7 @@ class GaussianMixture(Distribution):
             grad += gamma * self.dists_[i].grad_log_density(x)
         return grad
 
+    @override
     def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
         hess = np.zeros((self.dim_, self.dim_))
         grad = self.grad_log_density(x)
@@ -188,17 +379,50 @@ class GaussianMixture(Distribution):
 
 
 class BananaDistribution(Distribution):
+    """
+    Banana distribution.
 
-    def __init__(self, mean: np.ndarray, cov: np.ndarray, a: float = 2.0, b: float = 0.2, rng: np.random.Generator = None, seed: int = None):
+    ...
+    Attributes
+    ----------
+    a_ : float
+        The shape parameter a.
+    b_ : float
+        The shape parameter b.
+    gaussian_ : MultivariateNormal
+        The underlying Gaussian distribution.
+
+    Methods
+    -------
+    from_dict(params, rng, seed)
+        Create a banana distribution from a dictionary.
+    transform(x)
+        Transform a point from the Gaussian to the banana distribution.
+    """
+
+    def __init__(
+            self, mean: np.ndarray,
+            cov: np.ndarray,
+            a: float = 2.0,
+            b: float = 0.2,
+            rng: np.random.Generator = None,
+            seed: int = None
+    ):
         super().__init__(rng=rng, seed=seed)
         self.a_ = a
         self.b_ = b
         self.gaussian_ = MultivariateNormal(mean, cov, rng=rng, seed=seed)
 
     @classmethod
-    def from_dict(cls, params: dict[str, Union[np.ndarray, float]], rng: np.random.Generator = None, seed: int = None):
+    def from_dict(
+            cls,
+            params: dict[str, Union[np.ndarray, float]],
+            rng: np.random.Generator = None,
+            seed: int = None
+    ):
         if 'mean' not in params or 'cov' not in params:
             raise ValueError("Parameters must include 'mean' and 'cov'.")
+
         return cls(
             mean=params['mean'],
             cov=params['cov'],
@@ -209,18 +433,31 @@ class BananaDistribution(Distribution):
         )
 
     def transform(self, x: np.ndarray) -> np.ndarray:
+        """
+        Transform the Gaussian to the banana distribution.
+
+        Parameters:
+            x (np.ndarray): The point to transform.
+
+        Returns:
+            np.ndarray: The transformed point.
+        """
         return np.array([x[0] / self.a_,
                          x[1] * self.a_ + self.a_ * self.b_ * (x[0] ** 2 + self.a_ ** 2)])
 
-    def get_sample(self) -> np.ndarray:
+    @override
+    def get_sample(self, n: int = 1) -> np.ndarray:
         raise NotImplementedError("Cannot sample directly from Banana. Use MCMC instead")
 
+    @override
     def get_dim(self) -> int:
         return self.gaussian_.get_dim()
 
+    @override
     def log_density(self, x: np.ndarray) -> np.ndarray:
         return self.gaussian_.log_density(self.transform(x))
 
+    @override
     def grad_log_density(self, x: np.ndarray) -> np.ndarray:
         nGrad = - self.gaussian_.grad_log_density(self.transform(x))
         return - np.array([nGrad[0] / self.a_ + nGrad[1] * self.a_ * self.b_ * 2 * x[0],
@@ -228,7 +465,35 @@ class BananaDistribution(Distribution):
 
 
 class MultivariateLogNormal(Distribution):
-    def __init__(self, mean: np.ndarray, cov: np.ndarray, rng: np.random.Generator = None, seed: int = None):
+    """
+    Multivariate log-normal distribution.
+
+    ...
+    Attributes
+    ----------
+    mean_normal_ : np.ndarray
+        The mean of the underlying normal distribution.
+    cov_normal_ : np.ndarray
+        The covariance of the underlying normal distribution.
+    covL_ : np.ndarray
+        The Cholesky decomposition of the covariance matrix.
+    logDet_ : float
+        The log determinant of the covariance matrix.
+    mean_ : np.ndarray
+
+    Methods
+    -------
+    from_dict(params, rng, seed)
+        Create a multivariate log-normal distribution from a dictionary.
+    """
+
+    def __init__(
+            self,
+            mean: np.ndarray,
+            cov: np.ndarray,
+            rng: np.random.Generator = None,
+            seed: int = None
+    ):
         super().__init__(rng=rng, seed=seed)
         self.mean_normal_ = mean
         self.cov_normal_ = cov
@@ -255,21 +520,26 @@ class MultivariateLogNormal(Distribution):
             seed=seed
         )
 
+    @override
     def get_dim(self) -> int:
         return self.dim_
 
+    @override
     def get_cov(self) -> np.ndarray:
         return self.cov_
 
+    @override
     def get_mean(self) -> np.ndarray:
         return self.mean_
 
+    @override
     def log_density(self, x: np.ndarray) -> np.ndarray:
         x[np.where(x < 0)] = small
         diff = np.log(x) - self.mean_normal_
         return self.constant_ - self.logDet_ - np.sum(np.log(x)) - 0.5 * np.linalg.norm(
             np.linalg.solve(self.covL_, diff)) ** 2
 
+    @override
     def grad_log_density(self, x: np.ndarray) -> np.ndarray:
         x[np.where(x < 0)] = small
         diff = np.log(x) - self.mean_normal_
@@ -279,9 +549,35 @@ class MultivariateLogNormal(Distribution):
 
 
 class CubicDistribution(Distribution):
+    """
+    Distribution with a cubic term in the log-density.
 
-    def __init__(self, mean: np.ndarray, cov: np.ndarray, a: float, *, cubic_diag: np.ndarray=None,
-                 rng: np.random.Generator=None, seed: int=None):
+    ...
+    Attributes
+    ----------
+    normal_ : MultivariateNormal
+        The underlying normal distribution.
+    a_ : float
+        The shape parameter a.
+    cubic_diag : np.ndarray
+        The diagonal of the cubic matrix.
+
+    Methods
+    -------
+    from_dict(params, rng, seed)
+        Create a cubic distribution from a dictionary.
+    """
+
+    def __init__(
+            self,
+            mean: np.ndarray,
+            cov: np.ndarray,
+            a: float,
+            *,
+            cubic_diag: np.ndarray=None,
+            rng: np.random.Generator=None,
+            seed: int=None
+    ):
         super().__init__(rng=rng, seed=seed)
         self.dim_ = mean.shape[0]
         self.normal_ = MultivariateNormal(mean, cov, rng=rng, seed=seed)
@@ -292,9 +588,15 @@ class CubicDistribution(Distribution):
             self.cubic_diag = np.ones(self.dim_)
 
     @classmethod
-    def from_dict(cls, params: dict[str, Union[np.ndarray, float]], rng: np.random.Generator = None, seed: int = None):
+    def from_dict(
+            cls,
+            params: dict[str, Union[np.ndarray, float]],
+            rng: np.random.Generator = None,
+            seed: int = None
+    ):
         if 'mean' not in params or 'cov' not in params or 'a' not in params:
             raise ValueError("Parameters must include 'mean', 'cov', and 'a'.")
+
         return cls(
             mean=np.array(params['mean']),
             cov=np.array(params['cov']),
@@ -304,25 +606,31 @@ class CubicDistribution(Distribution):
             seed=seed
         )
 
+    @override
     def get_dim(self) -> int:
         return self.dim_
 
-    def get_sample(self) -> np.ndarray:
+    @override
+    def get_sample(self, n: int=1) -> np.ndarray:
         raise NotImplementedError("Cannot sample directly from Cubic. Use MCMC instead")
 
+    @override
     def get_mean(self) -> np.ndarray:
         return self.normal_.get_mean()
 
+    @override
     def log_density(self, x: np.ndarray) -> np.ndarray:
         d = x - self.normal_.get_mean()
         return (np.sum((1 - 2*(d>0)) * self.a_/3 * self.cubic_diag * d**3)
                 + self.normal_.log_density(x))
 
+    @override
     def grad_log_density(self, x: np.ndarray) -> np.ndarray:
         d = x - self.normal_.get_mean()
         return ((1 - 2 * (d > 0)) * (self.a_ * self.cubic_diag * d**2)
                 + self.normal_.grad_log_density(x))
 
+    @override
     def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
         d = x - self.normal_.get_mean()
         return ((1 - 2 * (d > 0)) * (2 * self.a_ * np.diag(self.cubic_diag * d))
@@ -330,49 +638,146 @@ class CubicDistribution(Distribution):
 
 
 class Likelihood(Distribution):
-    def __init__(self, rng: np.random.Generator = None, seed: int = None):
+    """
+    Base class for likelihoods.
+
+    ...
+    Methods
+    -------
+    log_density(params, idx)
+        Get the log density of the likelihood of the observation given by idx.
+    grad_log_density(params, idx)
+        Get the gradient of the log density of the likelihood of the observation given by idx.
+    hessian_log_density(params, idx)
+        Get the Hessian of the log density of the likelihood of the observation given by idx.
+    """
+
+    def __init__(
+            self,
+            rng: np.random.Generator = None,
+            seed: int = None
+    ):
         super().__init__(rng=rng, seed=seed)
 
+    @override
     def get_n_obs(self) -> int:
         raise NotImplementedError
 
+    @override
     def log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
+        """
+        Get the log density of the likelihood of the observation given by idx.
+
+        Parameters:
+            params (np.ndarray): The parameters to evaluate the log density.
+            idx (int): The index of the observation. Default is None.
+
+        Returns:
+            np.ndarray: The log density of the likelihood of the observation given by idx.
+        """
         raise NotImplementedError
 
+    @override
     def grad_log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
+        """
+        Get the gradient of the log density of the likelihood of the observation given by idx.
+
+        Parameters:
+            params (np.ndarray): The parameters to evaluate the gradient of the log density.
+            idx (int): The index of the observation. Default is None.
+
+        Returns:
+            np.ndarray: The gradient of the log density of the likelihood of the observation given by idx.
+        """
         raise NotImplementedError
 
+    @override
     def hessian_log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
+        """
+        Get the Hessian of the log density of the likelihood of the observation given by idx.
+
+        Parameters:
+            params (np.ndarray): The parameters to evaluate the Hessian of the log density.
+            idx (int): The index of the observation. Default is None.
+
+        Returns:
+            np.ndarray: The Hessian of the log density of the likelihood of the observation given by idx.
+
+        """
         raise NotImplementedError
 
 
 class TemperedLikelihood(Likelihood):
-    def __init__(self,
-                 likelihood: Likelihood,
-                 *,
-                 beta: float = 1.0,
-                 rng: np.random.Generator = None,
-                 seed: int = None):
+    """
+    Tempered likelihood.
+
+    ...
+    Attributes
+    ----------
+    likelihood_ : Likelihood
+        The underlying likelihood.
+    beta_ : float
+        The tempering parameter.
+    """
+    def __init__(
+            self,
+            likelihood: Likelihood,
+            *,
+            beta: float = 1.0,
+            rng: np.random.Generator = None,
+            seed: int = None
+    ):
         super().__init__(rng=rng, seed=seed)
         self.likelihood_ = likelihood
         self.beta_ = beta
 
-    def get_n_obs(self) -> int:
+    @override
+    def get_n_obs(self, n: int=1) -> int:
         return self.likelihood_.get_n_obs()
 
+    @override
     def log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
         return self.beta_ * self.likelihood_.log_density(params, idx=idx)
 
+    @override
     def grad_log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
         return self.beta_ * self.likelihood_.grad_log_density(params, idx=idx)
 
+    @override
     def hessian_log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
         return self.beta_ * self.likelihood_.hessian_log_density(params, idx=idx)
 
 
 class GaussianLikelihood(Likelihood):
-    def __init__(self, model: Model, u_obs: np.ndarray, sigma: float, rng: np.random.Generator = None,
-                 seed: int = None):
+    """
+    Gaussian likelihood.
+
+    ...
+    Attributes
+    ----------
+    model_ : Model
+        The model used to evaluate the likelihood.
+    n_params_ : int
+        The number of parameters.
+    u_obs_ : np.ndarray
+        The observations.
+    n_obs_ : int
+        The number of observations.
+    dim_ : int
+        The dimension of the observations.
+    sigma_ : float
+        The standard deviation of the Gaussian noise.
+    dists_ : list[MultivariateNormal]
+        The component distributions.
+    """
+    def __init__(
+            self,
+            model: Model,
+            u_obs: np.ndarray,
+            sigma: float,
+            rng: np.random.Generator = None,
+            seed: int = None
+    ):
         super().__init__(rng=rng, seed=seed)
         self.model_ = model
         self.n_params_ = model.get_dim_in()
@@ -385,15 +790,19 @@ class GaussianLikelihood(Likelihood):
             self.dists_.append(MultivariateNormal(self.u_obs_[i],
                                                   sigma ** 2 * np.eye(self.dim_)))
 
+    @override
     def get_dim(self) -> int:
         return self.dim_
 
-    def get_sample(self) -> np.ndarray:
+    @override
+    def get_sample(self, n: int=1) -> np.ndarray:
         raise NotImplementedError("Cannot sample directly from GaussianLikelihood. Use MCMC instead")
 
+    @override
     def get_n_obs(self) -> int:
         return self.n_obs_
 
+    @override
     def log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
         if idx is None:
             log_p = 0.
@@ -403,6 +812,7 @@ class GaussianLikelihood(Likelihood):
         else:
             return self.dists_[idx].log_density(self.model_.eval(params, idx=idx))
 
+    @override
     def grad_log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
         if idx is None:
             grad = np.zeros(self.n_params_)
@@ -416,9 +826,10 @@ class GaussianLikelihood(Likelihood):
             grad_m = self.model_.eval_grad(params, idx=idx)
             return self.dists_[idx].grad_log_density(m) @ grad_m
 
+    @override
     def hessian_log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
 
-        def hess_comp(hess, i):
+        def hess_comp(hess: np.ndarray, i: int):
             m = self.model_.eval(params, idx=i)
             grad_m = self.model_.eval_grad(params, idx=i)
             hess_m = self.model_.eval_hessian(params, idx=i)
@@ -437,36 +848,62 @@ class GaussianLikelihood(Likelihood):
 
 
 class FlatLikelihood(Likelihood):
+    """
+    Flat likelihood that assigns equal likelihood to all observations.
+
+    ...
+    Attributes
+    ----------
+    dim_ : int
+        The dimension of the observations.
+    """
 
     def __init__(self, dim: int, rng: np.random.Generator = None, seed: int = None):
         super().__init__(rng=rng, seed=seed)
         self.dim_ = dim
 
+    @override
     def get_dim(self) -> int:
         return self.dim_
 
-    def get_sample(self) -> np.ndarray:
+    @override
+    def get_sample(self, n: int=1) -> np.ndarray:
         raise NotImplementedError("Cannot sample directly from Flat GaussianLikelihood. Use MCMC instead")
 
+    @override
     def get_n_obs(self) -> int:
         return 0
 
+    @override
     def log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
         return np.array([0.0])
 
+    @override
     def grad_log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
         if idx is None:
             return np.zeros(self.dim_)
         else:
             return np.zeros(1)
 
+    @override
     def hessian_log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
         return np.zeros((self.dim_, self.dim_))
+
 
 def get_prior(
         config: dict[str, Union[str, np.ndarray, float]],
         rng: np.random.Generator = None,
     ) -> Distribution:
+    """
+    Get a prior distribution from a dictionary.
+
+    Parameters:
+        config (dict[str, Union[str, np.ndarray, float]]): The configuration of the prior.
+        rng (np.random.Generator): The random number generator. Default is None.
+
+    Returns:
+        Distribution: The prior distribution
+    """
 
     if 'name' not in config:
         raise ValueError("Prior config must include 'name'.")
@@ -488,24 +925,47 @@ def get_prior(
 
 
 class Posterior(Distribution):
+    """
+    Posterior distribution given a prior and a likelihood.
+
+    ...
+    Attributes
+    ----------
+    dim_ : int
+        The dimension of the distribution.
+    prior_ : Distribution
+        The prior distribution.
+    likelihood_ : Likelihood
+        The likelihood distribution.
+
+    Methods
+    -------
+    get_prior_sample()
+        Get a sample from the prior distribution.
+    """
     def __init__(self, prior: Distribution, likelihood: Likelihood, rng: np.random.Generator = None, seed: int = None):
         super().__init__(rng=rng, seed=seed)
         self.dim_ = prior.get_dim()
         self.prior_ = prior
         self.likelihood_ = likelihood
 
+    @override
     def get_dim(self) -> int:
         return self.dim_
 
-    def get_sample(self) -> np.ndarray:
+    @override
+    def get_sample(self, n: int=1) -> np.ndarray:
         raise NotImplementedError("Cannot sample directly from Posterior. Use MCMC instead")
 
+    @override
     def get_n_obs(self) -> int:
         return self.likelihood_.get_n_obs()
 
+    @override
     def log_density(self, params: np.ndarray) -> np.ndarray:
         return self.likelihood_.log_density(params) + self.prior_.log_density(params)
 
+    @override
     def grad_log_density(self, params: np.ndarray, idx: int = None, sub_sampling: bool = False) -> np.ndarray:
         if sub_sampling:
             approx_llh = self.likelihood_.get_n_obs() * self.likelihood_.grad_log_density(params)
@@ -513,19 +973,12 @@ class Posterior(Distribution):
         else:
             return self.likelihood_.grad_log_density(params) + self.prior_.grad_log_density(params)
 
-    def get_prior_sample(self) -> np.ndarray:
-        return self.prior_.get_sample()
-
+    @override
     def hessian_log_density(self, params: np.ndarray) -> np.ndarray:
         return self.likelihood_.hessian_log_density(params) + self.prior_.hessian_log_density(params)
 
-
-def get_sample(dim, rng=None):
-    if rng is None:
-        dist = MultivariateNormal(np.zeros(dim), np.eye(dim), seed=datetime.now().microsecond)
-    else:
-        dist = MultivariateNormal(np.zeros(dim), np.eye(dim), rng=rng)
-    return dist.get_sample()
+    def get_prior_sample(self) -> np.ndarray:
+        return self.prior_.get_sample()
 
 
 class Transformation:
@@ -533,6 +986,26 @@ class Transformation:
     Base class for transformations.
 
     A transformation is a bijective mapping between a latent space ξ and a target space x.
+
+    ...
+    Methods
+    -------
+    transform(xi)
+        Forward transformation from xi to x.
+    inverse_transform(x)
+        Inverse transformation from x to xi.
+    jacobian(xi)
+        Return the Jacobian of the inverse transformation.
+    inv_jacobian(xi)
+        Return the inverse Jacobian of the transformation.
+    log_det_jacobian(xi)
+        Return the log determinant of the Jacobian.
+    grad_log_det_jacobian(xi)
+        Return the gradient of the log determinant of the Jacobian.
+    hessian(xi)
+        Return the Hessian of the transformation.
+    hessian_log_det_jacobian(xi)
+        Return the Hessian of the log determinant of the Jacobian.
     """
 
     def transform(self, xi: np.ndarray) -> np.ndarray:
@@ -636,87 +1109,40 @@ class ExponentialTransform(Transformation):
     Implements x = exp(ξ).
     """
 
+    @override
     def transform(self, xi: np.ndarray) -> np.ndarray:
-        """
-        Forward transformation from xi to x.
-
-        Parameters:
-            xi: np.ndarray: The input to the transformation
-
-        Returns:
-            np.ndarray: The transformed input
-        """
         return np.exp(xi)
 
+    @override
     def inverse_transform(self, x: np.ndarray) -> np.ndarray:
-        """
-        Inverse transformation from x to xi.
-
-        Parameters:
-            x: np.ndarray: The input to the transformation
-
-        Returns:
-            np.ndarray: The inverse transformed input
-        """
         return np.log(x)
 
+    @override
     def jacobian(self, xi: np.ndarray) -> np.ndarray:
-        """
-        Efficiently return the Jacobian of the inverse transformation.
-
-        Parameters:
-            xi: np.ndarray: The input to the transformation
-
-        Returns:
-            np.ndarray: The Jacobian of the inverse transformation
-        """
         return np.diag(np.exp(xi))
 
+    @override
     def inv_jacobian(self, xi: np.ndarray) -> np.ndarray:
-        """
-        Jacobian is diagonal with exp(xi) entries.
-
-        Parameters:
-            xi: np.ndarray: The input to the transformation
-
-        Returns:
-            np.ndarray: The Jacobian of the inverse transformation
-        """
         return np.diag(np.exp(-xi))  # Directly return inverse
 
+    @override
     def log_det_jacobian(self, xi: np.ndarray) -> float:
         """
         log |det(J)| = sum(xi) since J is diagonal.
-
-        Parameters:
-            xi: np.ndarray: The input to the transformation
-
-        Returns:
-            float: The log determinant of the Jacobian
         """
         return np.sum(xi, axis=-1)  # log |det(J)| = sum(xi) for diagonal matrix
 
+    @override
     def grad_log_det_jacobian(self, xi: np.ndarray) -> np.ndarray:
         """
         Gradient of log determinant is always 1 (since log(exp(x)) = x and J is diagonal).
-
-        Parameters:
-            xi: np.ndarray: The input to the transformation
-
-        Returns:
-            np.ndarray: The gradient of the log determinant of the Jacobian
         """
         return np.ones_like(xi)
 
+    @override
     def hessian(self, xi: np.ndarray) -> np.ndarray:
         """
-        Hessian is a 3-tensor with diagonal elements being exp(xi).
-
-        Parameters:
-            xi: np.ndarray: The input to the transformation
-
-        Returns:
-            np.ndarray: The Hessian of the transformation
+        Hessian is a 3-tensor with diagonal elements being exp(ξ).
         """
         d = xi.shape[0]
         H = np.zeros((d, d, d))
@@ -724,22 +1150,26 @@ class ExponentialTransform(Transformation):
         H[idx, idx, idx] = np.exp(xi)
         return H
 
+    @override
     def hessian_log_det_jacobian(self, xi: np.ndarray) -> np.ndarray:
-        """
-        Computes the Hessian of the log determinant of the Jacobian.
-
-        Parameters:
-            xi: np.ndarray: The input to the transformation
-
-        Returns:
-            np.ndarray: The Hessian of the log determinant of the Jacobian
-        """
         return np.zeros((xi.shape[0], xi.shape[0]))
 
 
 class AffineTransform(Transformation):
     """
-    Implements x = M * xi + b.
+    Implements x = M * ξ + b.
+
+    ...
+    Attributes
+    ----------
+    M : np.ndarray
+        The linear transformation matrix.
+    b : np.ndarray
+        The translation vector.
+    M_inv : np.ndarray
+        The inverse of the linear transformation matrix.
+    log_abs_det_M : float
+        The log determinant of the linear transformation matrix.
     """
 
     def __init__(self, M: np.ndarray, b: np.ndarray):
@@ -748,109 +1178,58 @@ class AffineTransform(Transformation):
         self.M_inv = np.linalg.inv(M)
         self.log_abs_det_M = np.log(np.abs(np.linalg.det(M)))
 
+    @override
     def transform(self, xi: np.ndarray) -> np.ndarray:
-        """
-        Forward transformation from xi to x.
-
-        Parameters:
-            xi: np.ndarray: The input to the transformation.
-
-        Returns:
-            np.ndarray: The transformed input.
-        """
         return xi @ self.M.T + self.b
 
+    @override
     def inverse_transform(self, x: np.ndarray) -> np.ndarray:
-        """
-        Inverse transformation from x to xi.
-
-        Parameters:
-            x: np.ndarray: The input to the transformation.
-
-        Returns:
-            np.ndarray: The inverse transformed input.
-        """
         return self.M_inv @ (x - self.b)
 
+    @override
     def jacobian(self, xi: np.ndarray) -> np.ndarray:
-        """
-        Computes the Jacobian of the transformation.
-
-        Parameters:
-            xi: np.ndarray: The input to the transformation.
-
-        Returns:
-            np.ndarray: The Jacobian of the transformation.
-        """
         return self.M  # Jacobian is constant
 
+    @override
     def inv_jacobian(self, xi: np.ndarray) -> np.ndarray:
-        """
-        Computes the inverse Jacobian of the transformation.
-
-        Parameters:
-            xi: np.ndarray: The input to the transformation.
-
-        Returns:
-            np.ndarray: The inverse Jacobian of the transformation.
-        """
         return self.M_inv  # Directly return precomputed inverse
 
+    @override
     def log_det_jacobian(self, xi: np.ndarray) -> float:
-        """
-        Computes the log determinant of the Jacobian.
-
-        Parameters:
-            xi: np.ndarray: The input to the transformation.
-
-        Returns:
-            float: The log determinant of the Jacobian.
-        """
         return self.log_abs_det_M  # log |det(M)|
 
+    @override
     def grad_log_det_jacobian(self, xi: np.ndarray) -> np.ndarray:
-        """
-        Computes the gradient of the log determinant of the Jacobian.
-
-        Parameters:
-            xi: np.ndarray: The input to the transformation.
-
-        Returns:
-            np.ndarray: The gradient of the log determinant of the Jacobian.
-        """
         return np.zeros_like(xi)  # Zero since M is constant
 
+    @override
     def hessian(self, xi: np.ndarray) -> np.ndarray:
-        """
-        Computes the Hessian of the transformation.
-
-        Parameters:
-            xi: np.ndarray: The input to the transformation.
-
-        Returns:
-            np.ndarray: The Hessian of the transformation.
-        """
         return np.zeros((xi.shape[0], xi.shape[0], xi.shape[0]))  # Hessian is zero
 
+    @override
     def hessian_log_det_jacobian(self, xi: np.ndarray) -> np.ndarray:
-        """
-        Computes the Hessian of the log determinant of the Jacobian.
-
-        Parameters:
-            xi: np.ndarray: The input to the transformation.
-
-        Returns:
-            np.ndarray: The Hessian of the log determinant of the Jacobian.
-        """
         return np.zeros((xi.shape[0], xi.shape[0]))
 
-EXPONENITAL = 'Exponential'
+EXPONENTIAL = 'Exponential'
 AFFINE = 'Affine'
-TRANSFORMATIONS = [EXPONENITAL, AFFINE]
+TRANSFORMATIONS = [EXPONENTIAL, AFFINE]
 
 class TransformedDistribution(Distribution):
     """
     Applies a transformation to a base distribution.
+
+    ...
+    Attributes
+    ----------
+    base_distribution : Distribution
+        The base distribution to transform.
+    transformation : Transformation
+        The transformation to apply.
+
+    Methods
+    -------
+    get_prior_sample()
+        Get a prior sample from the transformed distribution in case the base distribution is a posterior.
     """
 
     def __init__(self, base_distribution: Distribution, params: dict[str, Any]):
@@ -865,7 +1244,7 @@ class TransformedDistribution(Distribution):
         super().__init__(rng=base_distribution.rng_)
         self.base_distribution = base_distribution
 
-        if params['transformation'] == EXPONENITAL:
+        if params['transformation'] == EXPONENTIAL:
             self.transformation = ExponentialTransform()
         elif params['transformation'] == AFFINE:
             M = params.get('M', None)
@@ -885,7 +1264,8 @@ class TransformedDistribution(Distribution):
             raise NotImplementedError(f"Transformation {params['transformation']} not recognized.\n"
                                       f"pick any of {TRANSFORMATIONS}")
 
-    def get_sample(self) -> np.ndarray:
+    @override
+    def get_sample(self, n: int=1) -> np.ndarray:
         """
         Generates a sample from the transformed distribution.
 
@@ -895,6 +1275,7 @@ class TransformedDistribution(Distribution):
         xi_sample = self.base_distribution.get_sample()
         return self.transformation.transform(xi_sample)
 
+    @override
     def get_dim(self) -> int:
         """
         Returns:
@@ -902,6 +1283,7 @@ class TransformedDistribution(Distribution):
         """
         return self.base_distribution.get_dim()
 
+    @override
     def log_density(self, xi: np.ndarray) -> np.ndarray:
         """
         Computes log p(xi).
@@ -915,6 +1297,7 @@ class TransformedDistribution(Distribution):
         x = self.transformation.transform(xi)
         return self.base_distribution.log_density(x) + self.transformation.log_det_jacobian(xi)
 
+    @override
     def grad_log_density(self, xi: np.ndarray) -> np.ndarray:
         """
         Computes the gradient of the log density with respect to xi.
@@ -932,6 +1315,7 @@ class TransformedDistribution(Distribution):
 
         return grad_log_p_xi + self.transformation.grad_log_det_jacobian(xi)
 
+    @override
     def hessian_log_density(self, xi: np.ndarray) -> np.ndarray:
         """
         Computes the Hessian of the log density with respect to xi.
@@ -972,13 +1356,21 @@ class TransformedDistribution(Distribution):
 class TransformedLikelihood(Likelihood):
     """
     Applies a transformation to a base distribution.
+
+    ...
+    Attributes
+    ----------
+    likelihood : Likelihood
+        The likelihood distribution.
+    transformation : Transformation
+        The transformation to apply.
     """
 
     def __init__(self, likelihood: Likelihood, params: dict[str, Any]):
         super().__init__(rng=likelihood.rng_)
         self.likelihood = likelihood
 
-        if params['transformation'] == EXPONENITAL:
+        if params['transformation'] == EXPONENTIAL:
             self.transformation = ExponentialTransform()
         elif params['transformation'] == AFFINE:
             M = params.get('M', None)
@@ -998,6 +1390,7 @@ class TransformedLikelihood(Likelihood):
             raise NotImplementedError(f"Transformation {params['transformation']} not recognized.\n"
                                       f"pick any of {TRANSFORMATIONS}")
 
+    @override
     def get_dim(self) -> int:
         """
         Returns:
@@ -1005,9 +1398,7 @@ class TransformedLikelihood(Likelihood):
         """
         return self.likelihood.get_dim()
 
-    def get_sample(self) -> np.ndarray:
-        raise NotImplementedError("Cannot sample directly from GaussianLikelihood. Use MCMC instead")
-
+    @override
     def log_density(self, xi: np.ndarray, idx: int = None) -> np.ndarray:
         """
         Computes log p(xi).
@@ -1022,6 +1413,7 @@ class TransformedLikelihood(Likelihood):
         x = self.transformation.transform(xi)
         return self.likelihood.log_density(x, idx=idx) + self.transformation.log_det_jacobian(xi)
 
+    @override
     def grad_log_density(self, xi: np.ndarray, idx: int = None) -> np.ndarray:
         """
         Computes the gradient of the log density with respect to xi.
@@ -1040,6 +1432,7 @@ class TransformedLikelihood(Likelihood):
 
         return grad_log_p_xi + self.transformation.grad_log_det_jacobian(xi)
 
+    @override
     def hessian_log_density(self, xi: np.ndarray, idx: int = None) -> np.ndarray:
         """
         Computes the Hessian of the log density with respect to xi.
@@ -1119,10 +1512,10 @@ def find_mean(
     Find the mean of a distribution using the BFGS method
 
     Parameters:
-    target (Distribution): The target distribution
-    x_0 (np.ndarray): The initial guess for the mean (optional). Default is None.
+        target (Distribution): The target distribution
+        x_0 (np.ndarray): The initial guess for the mean (optional). Default is None.
     Returns:
-    np.ndarray: The mean of the distribution
+        np.ndarray: The mean of the distribution
     """
 
     n_log_post = lambda x: - target.log_density(x)
@@ -1172,10 +1565,10 @@ def find_curvature(
     Find the curvature of a distribution at the MAP point
 
     Parameters:
-    target (Distribution): The target distribution
-    mean (np.ndarray): The mean of the distribution (optional)
+        target (Distribution): The target distribution
+        mean (np.ndarray): The mean of the distribution (optional)
     Returns:
-    np.ndarray: The covariance of the distribution
+        np.ndarray: The covariance of the distribution
     """
 
     if mean is None:
