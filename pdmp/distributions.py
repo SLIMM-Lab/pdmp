@@ -84,7 +84,7 @@ class Distribution:
         Returns:
             np.ndarray: A sample from the distribution.
         """
-        raise NotImplementedError
+        raise NotImplementedError(f"Cannot sample directly from {self.__class__.__name__}. Use MCMC instead")
 
     def get_dim(self) -> int:
         """
@@ -326,9 +326,12 @@ class GaussianMixture(Distribution):
         )
 
     @override
-    def get_sample(self) -> np.ndarray:
-        idx = self.rng_.choice(self.n_components_, p=self.weights_)
-        return self.dists_[idx].get_sample()
+    def get_sample(self, n: int=1) -> np.ndarray:
+        x = np.zeros((n, self.dim_))
+        for i in range(n):
+            idx = self.rng_.choice(self.n_components_, p=self.weights_)
+            x[i] = self.dists_[idx].get_sample()
+        return x
 
     @override
     def get_dim(self) -> int:
@@ -444,10 +447,6 @@ class BananaDistribution(Distribution):
         """
         return np.array([x[0] / self.a_,
                          x[1] * self.a_ + self.a_ * self.b_ * (x[0] ** 2 + self.a_ ** 2)])
-
-    @override
-    def get_sample(self, n: int = 1) -> np.ndarray:
-        raise NotImplementedError("Cannot sample directly from Banana. Use MCMC instead")
 
     @override
     def get_dim(self) -> int:
@@ -609,10 +608,6 @@ class CubicDistribution(Distribution):
     @override
     def get_dim(self) -> int:
         return self.dim_
-
-    @override
-    def get_sample(self, n: int=1) -> np.ndarray:
-        raise NotImplementedError("Cannot sample directly from Cubic. Use MCMC instead")
 
     @override
     def get_mean(self) -> np.ndarray:
@@ -795,10 +790,6 @@ class GaussianLikelihood(Likelihood):
         return self.dim_
 
     @override
-    def get_sample(self, n: int=1) -> np.ndarray:
-        raise NotImplementedError("Cannot sample directly from GaussianLikelihood. Use MCMC instead")
-
-    @override
     def get_n_obs(self) -> int:
         return self.n_obs_
 
@@ -865,10 +856,6 @@ class FlatLikelihood(Likelihood):
     @override
     def get_dim(self) -> int:
         return self.dim_
-
-    @override
-    def get_sample(self, n: int=1) -> np.ndarray:
-        raise NotImplementedError("Cannot sample directly from Flat GaussianLikelihood. Use MCMC instead")
 
     @override
     def get_n_obs(self) -> int:
@@ -952,10 +939,6 @@ class Posterior(Distribution):
     @override
     def get_dim(self) -> int:
         return self.dim_
-
-    @override
-    def get_sample(self, n: int=1) -> np.ndarray:
-        raise NotImplementedError("Cannot sample directly from Posterior. Use MCMC instead")
 
     @override
     def get_n_obs(self) -> int:
