@@ -1267,13 +1267,13 @@ class TransformedDistribution(Distribution):
     @override
     def get_sample(self, n: int=1) -> np.ndarray:
         """
-        Generates a sample from the transformed distribution.
+        Generates a sample from the underlying distribution and transforms it.
 
         Returns:
             np.ndarray: A sample from the transformed distribution.
         """
-        xi_sample = self.base_distribution.get_sample()
-        return self.transformation.transform(xi_sample)
+        x_sample = self.base_distribution.get_sample(n=n)
+        return self.transformation.inverse_transform(x_sample)
 
     @override
     def get_dim(self) -> int:
