@@ -5,7 +5,7 @@ import numpy as np
 import seaborn as sns
 from matplotlib import pyplot as plt
 
-from pdmp.distributions import Distribution
+from pdmp.distributions import Distribution, Transformation, AffineTransform
 from pdmp.surrogates import SurrogateModel
 
 
@@ -174,7 +174,8 @@ def plot_pdf_contours(
         alpha: float = 0.6,
         levels: Union[int, np.ndarray] = 20,
         log = False,
-        cmap: matplotlib.colors.Colormap = sns.color_palette('rocket', as_cmap=True)
+        cmap: matplotlib.colors.Colormap = sns.color_palette('rocket', as_cmap=True),
+        transformation: Transformation = None
 ) -> plt.Axes:
     """
     Plot the probability density function (PDF) contours of a distribution.
@@ -187,10 +188,14 @@ def plot_pdf_contours(
     alpha (float, optional): Transparency level of the contour plot. Default is 0.6.
     n_levels (int, optional): Number of contour levels to plot. Default is 20.
     cmap (sns.palettes._ColorPalette, optional): Colormap to use for the contour plot. Default is 'rocket' colormap.
+    transformation (Transformation, optional): The transformation to apply to the target distribution. Default is None.
 
     Returns:
     plt.Axes: The matplotlib axes object with the PDF contours plotted.
     """
+
+    if transformation is None:
+        transformation = AffineTransform(M = np.eye(2), b = np.zeros(2))
 
     if isinstance(target, SurrogateModel):
         f_eval = lambda x: target.eval(x, delta=True)
@@ -204,10 +209,14 @@ def plot_pdf_contours(
 
     for i in range(n_grid):
         for j in range(n_grid):
+
+            x_i = np.array([X[i, j], Y[i, j]])
+            xi_i = transformation.inverse_transform(x_i)
+
             if log:
-                Z[i, j] = f_eval(np.array([X[i, j], Y[i, j]]))
+                Z[i, j] = f_eval(xi_i) - transformation.log_det_jacobian(x_i)
             else:
-                Z[i, j] = np.exp(f_eval(np.array([X[i, j], Y[i, j]])))
+                Z[i, j] = np.exp(f_eval(xi_i) - transformation.log_det_jacobian(x_i))
 
     ax.contour(X, Y, Z, levels=levels, zorder=1, alpha=alpha, cmap=cmap)
 
