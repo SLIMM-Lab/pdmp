@@ -1394,7 +1394,7 @@ class TransformedLikelihood(Likelihood):
             np.ndarray: The log density of the transformed distribution.
         """
         x = self.transformation.transform(xi)
-        return self.likelihood.log_density(x, idx=idx) + self.transformation.log_det_jacobian(xi)
+        return self.likelihood.log_density(x, idx=idx)
 
     @override
     def grad_log_density(self, xi: np.ndarray, idx: int = None) -> np.ndarray:
@@ -1413,7 +1413,8 @@ class TransformedLikelihood(Likelihood):
         # Precompute gradient of log density of base distribution
         grad_log_p_xi = self.transformation.jacobian(xi).T @ self.likelihood.grad_log_density(x, idx=idx)
 
-        return grad_log_p_xi + self.transformation.grad_log_det_jacobian(xi)
+        # return grad_log_p_xi + self.transformation.grad_log_det_jacobian(xi)
+        return grad_log_p_xi
 
     @override
     def hessian_log_density(self, xi: np.ndarray, idx: int = None) -> np.ndarray:
@@ -1436,10 +1437,7 @@ class TransformedLikelihood(Likelihood):
         H_f = self.transformation.hessian(xi)
         H_f_grad = np.einsum('ijk,j->ik', H_f, grad_x)
 
-        # Compute Hessian of log density of base distribution
-        jac_correction = self.transformation.hessian_log_det_jacobian(xi)
-
-        return J.T @ H_x @ J + H_f_grad + jac_correction
+        return J.T @ H_x @ J + H_f_grad
 
 def get_likelihood(
         config: dict[str, Any],
