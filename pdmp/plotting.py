@@ -5,7 +5,7 @@ import numpy as np
 import seaborn as sns
 from matplotlib import pyplot as plt
 
-from pdmp.distributions import Distribution, Transformation, AffineTransform
+from pdmp.distributions import Distribution, Transformation, AffineTransformtion
 from pdmp.surrogates import SurrogateModel
 
 
@@ -195,7 +195,7 @@ def plot_pdf_contours(
     """
 
     if transformation is None:
-        transformation = AffineTransform(M = np.eye(2), b = np.zeros(2))
+        transformation = AffineTransformtion(M = np.eye(2), b = np.zeros(2))
 
     if isinstance(target, SurrogateModel):
         f_eval = lambda x: target.eval(x, delta=True)
