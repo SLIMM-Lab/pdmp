@@ -204,11 +204,13 @@ class NeuralNetwork(SurrogateModel):
             lr: float = 1e-3,
             n_samples: int = 100,
             epochs: int = 5000,
-            batch_size:int = 20,
-            val_split = 0.3,
-            patience = 100,
-            lr_scheduler_step = None,
-            lr_scheduler_gamma = None,
+            batch_size: int = 20,
+            val_split: float = 0.3,
+            patience: int = 100,
+            lr_scheduler_step: bool = None,
+            lr_scheduler_gamma: bool = None,
+            train_on_init: bool = True,
+            rng: np.random.Generator = None,
             **kwargs
     ):
         """
@@ -237,30 +239,32 @@ class NeuralNetwork(SurrogateModel):
         self.best_val_loss = float('inf')
         self.best_model_state = None
 
-        self.laplace = LaplaceSurrogate.from_dict(kwargs, target=target)
-        samples = self.laplace.get_samples(n_samples)
+        self.laplace = LaplaceSurrogate.from_dict(kwargs, target=target, rng=rng)
 
-        self.x_data = torch.tensor(samples, dtype=torch.float32)
-        self.y_data = torch.zeros(n_samples)
+        if train_on_init:
+            samples = self.laplace.get_samples(n_samples)
+            self.x_data = torch.tensor(samples, dtype=torch.float32)
+            self.y_data = torch.zeros(n_samples)
 
-        num_val = int(val_split * len(self.x_data))
-        self.x_train, self.x_val = self.x_data[:-num_val], self.x_data[-num_val:]
-        self.y_train, self.y_val = self.y_data[:-num_val], self.y_data[-num_val:]
+            num_val = int(val_split * len(self.x_data))
+            self.x_train, self.x_val = self.x_data[:-num_val], self.x_data[-num_val:]
+            self.y_train, self.y_val = self.y_data[:-num_val], self.y_data[-num_val:]
 
-        for i in range(n_samples):
-            self.y_data[i] = torch.tensor(
-                target.log_density(samples[i]) - self.laplace.eval(samples[i], delta=True),
-                dtype=torch.float32
-            )
+            for i in range(n_samples):
+                self.y_data[i] = torch.tensor(
+                    target.log_density(samples[i]) - self.laplace.eval(samples[i], delta=True),
+                    dtype=torch.float32
+                )
 
-        self.update(epochs=epochs, batch_size=batch_size, patience=patience)
+            self.update(epochs=epochs, batch_size=batch_size, patience=patience)
 
     @classmethod
     def from_dict(
             cls,
             config: dict,
             target: Distribution,
-            rng: np.random.Generator = None
+            rng: np.random.Generator = None,
+            train_on_init: bool = True
     ):
         """
         Create a neural network surrogate model from a dictionary.
@@ -275,6 +279,8 @@ class NeuralNetwork(SurrogateModel):
 
         return cls(
             target=target,
+            rng=rng,
+            train_on_init=train_on_init,
             **config
         )
 
@@ -337,6 +343,15 @@ class NeuralNetwork(SurrogateModel):
         """
         torch.save(self.model.state_dict(), path)
 
+    def load_model(self, path: str = 'neural_network.th') -> None:
+        """
+        Load the neural network model from a file.
+
+        Parameters:
+        path (str): The path to the file.
+        """
+        self.model.load_state_dict(torch.load(path, weights_only=True))
+
     def update(
             self,
             epochs: int = 5000,
@@ -363,9 +378,6 @@ class NeuralNetwork(SurrogateModel):
 
         train_dataset = torch.utils.data.TensorDataset(self.x_train, self.y_train)
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-
-        # dataset = torch.utils.data.TensorDataset(self.x_data, self.y_data)
-        # dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
         logger.warning("Training neural network surrogate model ...")
 
@@ -402,11 +414,13 @@ class NeuralNetwork(SurrogateModel):
                     else:
                         patience_counter += 1
                         if patience_counter >= patience:
-                            logger.warning(f"Early stopping at epoch {epoch} with validation loss {val_loss}")
+                            pbar.clear()
+                            logger.warning(f"Early stopping at epoch {epoch} with validation loss {val_loss:.6f}")
                             break
 
         if self.best_model_state:
             self.model.load_state_dict(self.best_model_state)
+            self.save_model()
 
         import matplotlib.pyplot as plt
         from pdmp.plotting import get_2d_despined_figure
