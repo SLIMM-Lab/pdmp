@@ -1087,7 +1087,7 @@ class Transformation:
         """
         raise NotImplementedError
 
-class ExponentialTransform(Transformation):
+class ExponentialTransformation(Transformation):
     """
     Implements x = exp(ξ).
     """
@@ -1138,7 +1138,7 @@ class ExponentialTransform(Transformation):
         return np.zeros((xi.shape[0], xi.shape[0]))
 
 
-class AffineTransform(Transformation):
+class AffineTransformtion(Transformation):
     """
     Implements x = M * ξ + b.
 
@@ -1228,7 +1228,7 @@ class TransformedDistribution(Distribution):
         self.base_distribution = base_distribution
 
         if params['transformation'] == EXPONENTIAL:
-            self.transformation = ExponentialTransform()
+            self.transformation = ExponentialTransformation()
         elif params['transformation'] == AFFINE:
             M = params.get('M', None)
             b = params.get('b', None)
@@ -1242,7 +1242,7 @@ class TransformedDistribution(Distribution):
 
             C = np.linalg.cholesky(M)
 
-            self.transformation = AffineTransform(C, b)
+            self.transformation = AffineTransformtion(C, b)
         else:
             raise NotImplementedError(f"Transformation {params['transformation']} not recognized.\n"
                                       f"pick any of {TRANSFORMATIONS}")
@@ -1354,7 +1354,7 @@ class TransformedLikelihood(Likelihood):
         self.likelihood = likelihood
 
         if params['transformation'] == EXPONENTIAL:
-            self.transformation = ExponentialTransform()
+            self.transformation = ExponentialTransformation()
         elif params['transformation'] == AFFINE:
             M = params.get('M', None)
             b = params.get('b', None)
@@ -1368,7 +1368,7 @@ class TransformedLikelihood(Likelihood):
 
             C = np.linalg.cholesky(M)
 
-            self.transformation = AffineTransform(C, b)
+            self.transformation = AffineTransformtion(C, b)
         else:
             raise NotImplementedError(f"Transformation {params['transformation']} not recognized.\n"
                                       f"pick any of {TRANSFORMATIONS}")
