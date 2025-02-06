@@ -1558,103 +1558,81 @@ def find_curvature(
     return - np.linalg.inv(target.hessian_log_density(mean))
 
 
-if __name__ == '__main__':
-
-    from scipy.stats import lognorm
-
-    # norm = MultivariateNormal(np.zeros(1), np.eye(1))
-    norm = MultivariateNormal(np.zeros(1), np.eye(1))
-
-    t = exponential_transform()
-
-    xi = np.linspace(-100, 2, 1000)
-    x = t.forward(xi)
-    # x = t.forward(x)
-    # x = np.linspace(0.01, 3, 100)
-    # y = 1/(np.sqrt(2*np.pi))*np.exp(norm.log_density(x))
-    # y = np.exp(t.forward(x) + t.get_det(x))
-    y = np.exp(norm.log_density(xi)) / t.get_det(xi)
-    y_2 = lognorm.pdf(x, 1, 0, np.exp(0))
-
-    fig, ax = plt.subplots()
-    ax.plot(x, y)
-    ax.plot(x, y_2, ls='--')
-    plt.show()
-
-
-    # rng = np.random.default_rng(0)
-    #
-    # x = np.meshgrid(np.linspace(-5, 5, 100), np.linspace(-5, 5, 100))
-    # x = np.stack((x[0].flatten(), x[1].flatten()), axis=1)
-    #
-    # # Define distributions
-    # mean = np.array([0., 0.])
-    # cov = np.array([[1., 0.5], [0.5, 1.]])
-    #
-    #
-    # old = MultivariateNormal(mean, cov, rng=rng)
-    #
-    # y_old = old.log_density(x).reshape(100, 100)
-    #
-    # fig, ax = plt.subplots(1, 2, figsize=(10, 5))
-    # ax[0].contourf(x[:,0].reshape(100, 100), x[:,1].reshape(100, 100), y_old)
-    # ax[0].set_title('Old')
-    # plt.show()
-    #
-    # # get a random mean vector and covariance matrix with d dimensions
-    # d = 100
-    # mean = rng.uniform(-5, 5, d)
-    # cov = rng.uniform(-5, 5, (d, d))
-    # cov = cov @ cov.T
-    #
-    # # get n test inputs
-    # n = 1000
-    # x = rng.uniform(-5, 5, (n, d))
-    #
-    # old = MultivariateNormal(mean, cov, rng=rng)
-    #
-    # exec_old = timeit.timeit('old.log_density(x)', globals=globals(), number=1000)
-    # print(f"Old: {exec_old}")
-    #
-    # # get a random mean vector and covariance matrix with d dimensions
-    # from scipy.linalg import cho_factor, cho_solve
-    # import timeit
-    #
-    # # Generate a random positive-definite matrix A
-    # np.random.seed(42)
-    # n = 1000  # Size of the matrix
-    # A = np.random.randn(n, n)
-    # A = np.dot(A, A.T)  # Make A symmetric positive definite
-    #
-    # # Generate a random vector x
-    # x = np.random.randn(n)
-    #
-    # # Precompute the inverse of A
-    # A_inv = np.linalg.inv(A)
-    #
-    # # Precompute the Cholesky decomposition of A
-    # L = np.linalg.cholesky(A)
-    #
-    # # Method 1: Using np.matmul and A_inv
-    # def matmul_method():
-    #     return np.matmul(x.T, np.matmul(A_inv, x))
-    #
-    # # Method 2: Solving L y = x and computing the square norm
-    # def cholesky_method():
-    #     y = np.linalg.solve(L, x)
-    #     return np.dot(y, y)
-    #
-    # # Method 2 (alternative): Using scipy's cho_solve
-    # def cho_solve_method():
-    #     y = cho_solve((L, True), x)
-    #     return np.dot(y, y)
-    #
-    # # Timing the two methods
-    # matmul_time = timeit.timeit(matmul_method, number=100)
-    # cholesky_time = timeit.timeit(cholesky_method, number=100)
-    # cho_solve_time = timeit.timeit(cho_solve_method, number=100)
-    #
-    # # Results
-    # print(f"Method 1 (Matmul with A_inv): {matmul_time:.6f} seconds")
-    # print(f"Method 2 (Solving L y = x): {cholesky_time:.6f} seconds")
-    # print(f"Method 2 (cho_solve from scipy): {cho_solve_time:.6f} seconds")
+# if __name__ == '__main__':
+#
+#     rng = np.random.default_rng(0)
+#
+#     x = np.meshgrid(np.linspace(-5, 5, 100), np.linspace(-5, 5, 100))
+#     x = np.stack((x[0].flatten(), x[1].flatten()), axis=1)
+#
+#     # Define distributions
+#     mean = np.array([0., 0.])
+#     cov = np.array([[1., 0.5], [0.5, 1.]])
+#
+#
+#     old = MultivariateNormal(mean, cov, rng=rng)
+#
+#     y_old = old.log_density(x).reshape(100, 100)
+#
+#     fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+#     ax[0].contourf(x[:,0].reshape(100, 100), x[:,1].reshape(100, 100), y_old)
+#     ax[0].set_title('Old')
+#     plt.show()
+#
+#     # get a random mean vector and covariance matrix with d dimensions
+#     d = 100
+#     mean = rng.uniform(-5, 5, d)
+#     cov = rng.uniform(-5, 5, (d, d))
+#     cov = cov @ cov.T
+#
+#     # get n test inputs
+#     n = 1000
+#     x = rng.uniform(-5, 5, (n, d))
+#
+#     old = MultivariateNormal(mean, cov, rng=rng)
+#
+#     exec_old = timeit.timeit('old.log_density(x)', globals=globals(), number=1000)
+#     print(f"Old: {exec_old}")
+#
+#     # get a random mean vector and covariance matrix with d dimensions
+#     from scipy.linalg import cho_factor, cho_solve
+#     import timeit
+#
+#     # Generate a random positive-definite matrix A
+#     np.random.seed(42)
+#     n = 1000  # Size of the matrix
+#     A = np.random.randn(n, n)
+#     A = np.dot(A, A.T)  # Make A symmetric positive definite
+#
+#     # Generate a random vector x
+#     x = np.random.randn(n)
+#
+#     # Precompute the inverse of A
+#     A_inv = np.linalg.inv(A)
+#
+#     # Precompute the Cholesky decomposition of A
+#     L = np.linalg.cholesky(A)
+#
+#     # Method 1: Using np.matmul and A_inv
+#     def matmul_method():
+#         return np.matmul(x.T, np.matmul(A_inv, x))
+#
+#     # Method 2: Solving L y = x and computing the square norm
+#     def cholesky_method():
+#         y = np.linalg.solve(L, x)
+#         return np.dot(y, y)
+#
+#     # Method 2 (alternative): Using scipy's cho_solve
+#     def cho_solve_method():
+#         y = cho_solve((L, True), x)
+#         return np.dot(y, y)
+#
+#     # Timing the two methods
+#     matmul_time = timeit.timeit(matmul_method, number=100)
+#     cholesky_time = timeit.timeit(cholesky_method, number=100)
+#     cho_solve_time = timeit.timeit(cho_solve_method, number=100)
+#
+#     # Results
+#     print(f"Method 1 (Matmul with A_inv): {matmul_time:.6f} seconds")
+#     print(f"Method 2 (Solving L y = x): {cholesky_time:.6f} seconds")
+#     print(f"Method 2 (cho_solve from scipy): {cho_solve_time:.6f} seconds")
