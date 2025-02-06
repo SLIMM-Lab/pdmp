@@ -1,14 +1,15 @@
+import matplotlib.pyplot as plt
 import numpy as np
-from coverage.files import flat_rootname
-from scipy.stats import multivariate_normal, wishart
+from scipy.stats import multivariate_normal, wishart, lognorm
 from scipy.optimize import minimize
 
 from pdmp.distributions import (MultivariateNormal, CubicDistribution, GaussianLikelihood, TemperedLikelihood,
-                                FlatLikelihood, Posterior)
+                                FlatLikelihood, Posterior, AffineTransformtion, ExponentialTransformation,
+                                TransformedDistribution, TransformedLikelihood)
 from pdmp.utils import grad_fd, hessian_fd
 from pdmp.forward_model import LinearModel
 
-SMALL = -1e-6
+SMALL = 1e-6
 LARGE = 1e6
 
 
@@ -67,7 +68,7 @@ def test_cubic():
     assert np.allclose(cubic.hessian_log_density(sample), hessian_fd(cubic.log_density, sample), atol=1e-5)
 
     # test limits
-    assert np.isclose(np.exp(cubic.log_density(np.ones(d)*SMALL)), 0.0)
+    assert np.isclose(np.exp(cubic.log_density(np.ones(d)*(-LARGE))), 0.0)
     assert np.isclose(np.exp(cubic.log_density(np.ones(d)*LARGE)), 0.0)
 
     # test symmetry around the mean
@@ -169,3 +170,60 @@ def test_likelihood():
     assert np.isclose(posterior.log_density(sample), prior.log_density(sample), atol=1e-5)
     assert np.allclose(posterior.grad_log_density(sample), prior.grad_log_density(sample), atol=1e-5)
     assert np.allclose(posterior.hessian_log_density(sample), prior.hessian_log_density(sample), atol=1e-5)
+
+
+def test_transformation():
+    # --------------------------- Test AffineTransformation ---------------------------
+    rng = np.random.default_rng(0)
+
+    # get random mean and covariance and initialize the multivariate normal distribution
+    d = rng.integers(2, 10)
+    mean = rng.random(d)
+    cov = wishart(df=d, scale=np.eye(d), seed=rng).rvs()
+    cov = cov / np.linalg.norm(cov)
+    mvn_1 = MultivariateNormal(np.zeros(d), np.eye(d))
+    mvn_2 = MultivariateNormal(mean, cov)
+
+    # get transformed distribution
+    mvn_tr = TransformedDistribution(
+        base_distribution=mvn_2,
+        params={'transformation': 'Affine', 'M': cov, 'b': mean}
+    )
+
+    x = rng.random(d)
+    assert np.isclose(mvn_1.log_density(x), mvn_tr.log_density(x), atol=1e-5)
+    assert np.allclose(mvn_1.grad_log_density(x), mvn_tr.grad_log_density(x), atol=1e-5)
+    assert np.allclose(mvn_1.hessian_log_density(x), mvn_tr.hessian_log_density(x), atol=1e-5)
+
+    # --------------------------- Test ExponentialTransformation ---------------------------
+    cov = np.array([[1.]])
+    mean = np.array([0.])
+    normal = MultivariateNormal(mean, cov)
+    t = ExponentialTransformation()
+
+    x = np.linspace(SMALL, 10, 200)
+    y = np.zeros_like(x)
+    y_sp = np.zeros_like(x)
+
+    for i in range(len(x)):
+        xi = t.inverse_transform(x[i])
+        y[i] = normal.log_density(xi)[0] - np.log(t.log_det_jacobian(x[i]))
+        y_sp[i] = lognorm.logpdf(x[i], s=np.sqrt(cov[0,0]), scale=np.exp(mean[0]))
+
+    assert np.allclose(y, y_sp, atol=1e-5)
+
+    d = rng.integers(2, 10)
+    x = rng.random(d)
+
+    jac = t.jacobian(x)
+    jac_fd = grad_fd(lambda x: t.transform(x), x)
+
+    assert np.allclose(jac, jac_fd, atol=1e-5)
+
+    hess = t.hessian(x)
+    hess_fd = np.zeros((d, d, d))
+
+    for i in range(d):
+        hess_fd[:,:,i] = grad_fd(lambda x: t.jacobian(x)[i], x)
+
+    assert np.allclose(hess, hess_fd, atol=1e-5)
