@@ -9,8 +9,7 @@ from torch.autograd import grad
 import numpy as np
 import matplotlib.pyplot as plt
 
-from typing import cast, Any
-from scipy.optimize import minimize
+from typing import cast
 from tqdm import tqdm
 
 from pdmp.distributions import Distribution, MultivariateNormal, Posterior, find_mean, find_curvature
@@ -210,6 +209,7 @@ class NeuralNetwork(SurrogateModel):
             batch_size: int = 20,
             val_split: float = 0.3,
             patience: int = 100,
+            print_every: int = 10,
             lr_scheduler_step: bool = None,
             lr_scheduler_gamma: bool = None,
             train_on_init: bool = True,
@@ -259,7 +259,7 @@ class NeuralNetwork(SurrogateModel):
                     dtype=torch.float32
                 )
 
-            self.update(epochs=epochs, batch_size=batch_size, patience=patience)
+            self.update(epochs=epochs, batch_size=batch_size, patience=patience, print_every=print_every)
 
     @classmethod
     def from_dict(
@@ -384,16 +384,21 @@ class NeuralNetwork(SurrogateModel):
 
         logger.warning("Training neural network surrogate model ...")
 
-        with tqdm(total=epochs, file=sys.stdout, dynamic_ncols=False) as pbar:
-            for epoch in range(epochs):
-                self.model.train()
-                for x_batch, y_batch in train_loader:
+        # disable tqdm if running on a cluster
+        disable_tqdm = 'PBS_ENVIRONMENT' in os.environ or 'SLURM_JOB_ID' in os.environ
 
-                    if epoch % print_every == 0:
-                        pbar.clear()
-                        logger.debug(f"Epoch {epoch}/{epochs}")
-                        pbar.refresh()
-                        pbar.update()
+        with tqdm(total=epochs, file=sys.stdout, dynamic_ncols=True, leave=True, disable=disable_tqdm) as pbar:
+            for epoch in range(epochs):
+
+                self.model.train()
+
+                if (epoch % print_every) == 0:
+                    pbar.clear()
+                    logger.debug(f"Epoch {epoch}/{epochs}")
+                    pbar.refresh()
+                    pbar.update(print_every)
+
+                for x_batch, y_batch in train_loader:
 
                     self.optimizer.zero_grad()
                     y_pred = self.model(x_batch).squeeze()
