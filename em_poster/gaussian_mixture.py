@@ -7,7 +7,8 @@ from os.path import join
 
 from pdmp.zigzag import ZigZagSampler
 from pdmp.distributions import Posterior, FlatLikelihood, GaussianMixture
-from pdmp.plotting import get_2d_despined_figure, plot_pdf_contours
+from pdmp.plotting import plot_pdf_contours
+from pdmp.plotting_utils import get_2d_despined_figure
 
 sns.set_style('white')
 
