@@ -8,7 +8,7 @@ from os.path import join
 from pdmp.zigzag import ZigZagSampler
 from pdmp.distributions import Posterior, FlatLikelihood, Distribution
 from pdmp.utils import grad_fd
-from pdmp.plotting import get_2d_despined_figure
+from pdmp.plotting_utils import get_2d_despined_figure
 
 
 class EMLogo(Distribution):

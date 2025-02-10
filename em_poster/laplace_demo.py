@@ -9,7 +9,8 @@ from pdmp.project_field import compute_coefficients, squared_exponential_kernel,
 from pdmp.distributions import MultivariateNormal, GaussianLikelihood, Posterior
 from pdmp.mcmc import MetropolisHastingsSampler
 from pdmp.zigzag import ZigZagSampler
-from pdmp.plotting import get_2d_despined_figure, plot_samples, plot_pdf_contours
+from pdmp.plotting import plot_samples, plot_pdf_contours
+from pdmp.plotting_utils import get_2d_despined_figure
 
 sns.set_style('white')
 rng = np.random.default_rng(0)

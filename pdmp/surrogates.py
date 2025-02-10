@@ -1,3 +1,4 @@
+import os.path
 import sys
 import torch
 
@@ -6,12 +7,14 @@ import torch.optim as optim
 from torch.autograd import grad
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 from typing import cast, Any
 from scipy.optimize import minimize
 from tqdm import tqdm
 
 from pdmp.distributions import Distribution, MultivariateNormal, Posterior, find_mean, find_curvature
+from pdmp.plotting_utils import get_2d_despined_figure
 from pdmp import logger
 
 
@@ -422,20 +425,23 @@ class NeuralNetwork(SurrogateModel):
             self.model.load_state_dict(self.best_model_state)
             self.save_model()
 
-        import matplotlib.pyplot as plt
-        from pdmp.plotting import get_2d_despined_figure
+        # plot training and validation loss
         fig, ax = get_2d_despined_figure(
             figsize=(5, 3.5),
             equal_axes=False,
             axes_label=('Epoch', 'MSE'),
             keep_ticks=True
         )
+
         ax.semilogy(np.linspace(0, epoch, len(train_losses)), train_losses, label='Train')
         ax.semilogy(np.linspace(0, epoch, len(val_losses)), val_losses, label='Validation')
         ax.set_ylim(1e-5, 4e1)
         ax.legend()
-        fig.savefig(f'figures/losses_{len(self.x_data)}.pdf')
-        plt.show()
+
+        if not os.path.exists('figures'):
+            os.makedirs('figures')
+        fig.savefig(f'figures/training_validation_loss.pdf')
+        # plt.show()
 
 
         # # Clear stored data
