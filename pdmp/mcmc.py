@@ -10,7 +10,6 @@ from tqdm import tqdm
 
 from pdmp.sampler import Sampler
 from pdmp.distributions import Distribution, MultivariateNormal
-from pdmp.distributions import get_sample
 from pdmp import logger
 
 import seaborn as sns
@@ -84,7 +83,7 @@ class StepSampler(Sampler):
         elif hasattr(self.target_, 'get_prior_sample'):
             self.state_ = self.target_.get_prior_sample()
         else:
-            self.state_ = get_sample(self.target_.get_dim(), rng=self.rng_)
+            self.state_ = np.zeros(self.dim_)
         self.chain_ = np.zeros((self.n_samples_, self.dim_))
         self.chain_[0, :] = self.state_
 
@@ -122,13 +121,17 @@ class StepSampler(Sampler):
         """
         raise NotImplementedError("The step method must be implemented in a subclass.")
 
-    def write_data(self, folder: str):
+    def write_data(self, folder: str, precision: int = 6):
         """
         Write the chain data to a file.
 
         Parameters:
         filename (str): The name of the folder to write the data to.
+        precision (int, optional): The precision of the output. Default is 6.
         """
+
+        if not os.path.exists(folder):
+            os.makedirs(folder)
 
         data = {
             'acceptance_rate': self.n_accept_ / self.n_samples_,
@@ -137,7 +140,7 @@ class StepSampler(Sampler):
         with open(os.path.join(folder, 'other.pkl'), 'wb') as f:
             pickle.dump(data, f)
 
-        np.savetxt(os.path.join(folder, 'samples.dat'), self.chain_)
+        np.savetxt(os.path.join(folder, 'samples.dat'), self.chain_, fmt=f'$.{precision}e')
 
 
 class MetropolisHastingsSampler(StepSampler):
@@ -204,8 +207,10 @@ class MetropolisHastingsSampler(StepSampler):
         """
         Run the Metropolis-Hastings sampler.
         """
+        # disable tqdm if running on a cluster
+        disable_tqdm = 'PBS_ENVIRONMENT' in os.environ or 'SLURM_JOB_ID' in os.environ
 
-        with tqdm(total=self.n_samples_, file=sys.stdout, dynamic_ncols=False) as pbar:
+        with tqdm(total=self.n_samples_, file=sys.stdout, dynamic_ncols=False, disable=disable_tqdm) as pbar:
             for i in range(1, self.n_samples_):
 
                 if i == 1000:
@@ -312,7 +317,10 @@ class LangevinDynamicsSampler(StepSampler):
         """
         Run the Langevin dynamics sampler.
         """
-        with tqdm(total=self.n_samples_, file=sys.stdout, dynamic_ncols=False) as pbar:
+        # disable tqdm if running on a cluster
+        disable_tqdm = 'PBS_ENVIRONMENT' in os.environ or 'SLURM_JOB_ID' in os.environ
+
+        with tqdm(total=self.n_samples_, file=sys.stdout, dynamic_ncols=False, disable=disable_tqdm) as pbar:
             for i in range(1, self.n_samples_):
                 if i == 1000:
                     self.set_preconditioner(self.cov_factor_ * np.power(self.dim_, -1./3.) * self.get_sample_covariance())
@@ -461,7 +469,10 @@ class HamiltonianMonteCarlo(StepSampler):
         """
         Run the HMC sampler.
         """
-        with tqdm(total=self.n_samples_, file=sys.stdout, dynamic_ncols=False) as pbar:
+        # disable tqdm if running on a cluster
+        disable_tqdm = 'PBS_ENVIRONMENT' in os.environ or 'SLURM_JOB_ID' in os.environ
+
+        with tqdm(total=self.n_samples_, file=sys.stdout, dynamic_ncols=False, disable=disable_tqdm) as pbar:
             for i in range(1, self.n_samples_):
                 self.step_()
                 pbar.update()

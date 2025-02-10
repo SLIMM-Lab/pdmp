@@ -6,13 +6,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from typing import cast, Any
+
+from torch.fx.experimental.unification.unification_tools import dissoc
 from tqdm import tqdm
 
 from pdmp import logger
 from pdmp.sampler import Sampler
 from pdmp.distributions import Distribution, MultivariateNormal
 from pdmp.surrogates import SurrogateModel, LaplaceSurrogate, NeuralNetwork
-from pdmp.plotting import get_2d_despined_figure, plot_pdf_contours
+from pdmp.plotting import plot_pdf_contours
+from pdmp.plotting_utils import get_2d_despined_figure
 
 
 class ZigZagSampler(Sampler):
@@ -20,19 +23,21 @@ class ZigZagSampler(Sampler):
     ZigZagSampler class for sampling from a target distribution using the ZigZag process.
     """
 
-    def __init__(self,
-                 target: Distribution, *,
-                 surrogate: SurrogateModel = None,
-                 n_max: int = None,
-                 t_max: float = None,
-                 gamma: float = 1e-6,
-                 rng: np.random.Generator = None,
-                 seed: int = None,
-                 sub_sampling: bool = False,
-                 n_events_accepted: int = None,
-                 print_every: int = 100,
-                 update_bar_every: int = 1,
-                 **kwargs):
+    def __init__(
+            self,
+            target: Distribution, *,
+            surrogate: SurrogateModel = None,
+            n_max: int = None,
+            t_max: float = None,
+            gamma: float = 1e-6,
+            rng: np.random.Generator = None,
+            seed: int = None,
+            sub_sampling: bool = False,
+            n_events_accepted: int = None,
+            print_every: int = 100,
+            update_bar_every: int = 10,
+            **kwargs
+    ):
         """
         Initialize the ZigZagSampler class.
 
@@ -397,14 +402,16 @@ class ZigZagSampler(Sampler):
         """
         logger.warning(f"Running ZigZag sampler with budget n_max={self.n_max_}")
 
-        with tqdm(total=self.n_max_, file=sys.stdout, dynamic_ncols=False) as pbar:
+        # disable tqdm if running on a cluster
+        disable_tqdm = 'PBS_ENVIRONMENT' in os.environ or 'SLURM_JOB_ID' in os.environ
+
+        with tqdm(total=self.n_max_, file=sys.stdout, dynamic_ncols=True, disable=disable_tqdm) as pbar:
             for i in range(1, self.n_max_):
                 if i % self.print_every_ == 0:
                     pbar.clear()
                     logger.debug(f"Sampling event {i}")
                     pbar.refresh()
                 self.step()
-                pbar.update()
                 if self.thinning_:
                     if self.n_accepted_ == self.n_accepted_0_ - 1:
                         break
@@ -418,8 +425,18 @@ class ZigZagSampler(Sampler):
 
         logger.warning(f"Running ZigZag sampler with time limit T={self.t_max_}")
         time = 0.
-        with tqdm(total=self.t_max_, leave=True, file=sys.stdout, dynamic_ncols=False,
-                  bar_format='{l_bar}{bar}| {n:.2f}/{total:.2f} [{elapsed}<{remaining}, {rate_fmt}{postfix}]') as pbar:
+
+        # disable tqdm if running on a cluster
+        disable_tqdm = 'PBS_ENVIRONMENT' in os.environ or 'SLURM_JOB_ID' in os.environ
+
+        with tqdm(
+            total=self.t_max_,
+            leave=True,
+            file=sys.stdout,
+            dynamic_ncols=True,
+            bar_format='{l_bar}{bar}| {n:.2f}/{total:.2f} [{elapsed}<{remaining}, {rate_fmt}{postfix}]',
+            disable=disable_tqdm
+        ) as pbar:
 
             while self.times_[self.iter_] < self.t_max_:
                 if self.iter_ % self.print_every_ == 0:
