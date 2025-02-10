@@ -1362,9 +1362,11 @@ class TransformedLikelihood(Likelihood):
 
             if b is None:
                 b = find_mean(likelihood, x_0=x_0)
+                params['b'] = b
 
             if M is None:
                 M = find_curvature(likelihood, mean=b)
+                params['M'] = M
 
             C = np.linalg.cholesky(M)
 

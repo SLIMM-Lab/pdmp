@@ -10,7 +10,7 @@ from pdmp import logger
 from pdmp.logger_setup import setup_file_handler
 from pdmp.loader import get_target, get_sampler, yaml_to_numpy, save_config
 
-from pdmp.distributions import get_prior, get_likelihood
+from pdmp.distributions import get_prior, get_likelihood, AffineTransformtion, ExponentialTransformation
 from pdmp.forward_model import get_model, Model
 
 def parse_args():
@@ -53,15 +53,32 @@ def generate_observations(
 
     # load the problem configuration
     problem_config = config['problem']
-    assert problem_config['name'] == 'BayesianInverse', "Problem must be BayesianInverse."
 
-    # get the prior distribution and the model
-    prior = get_prior(problem_config['prior'], rng=rng)
-    model = get_model(problem_config['model'])
+    # get prior and model from problem configuration
+    if problem_config['name'] == 'BayesianInverse':
+        prior = get_prior(problem_config['prior'], rng=rng)
+        model = get_model(problem_config['model'])
+        llh_config = problem_config['likelihood']
+
+    elif problem_config['name'] == 'Transformed':
+        prior = get_prior(problem_config['distribution']['prior'], rng=rng)
+        model = get_model(problem_config['distribution']['model'])
+        llh_config = problem_config['distribution']['likelihood']
+    else:
+        raise ValueError("Problem must be BayesianInverse or Transformed.")
 
     # sample ground truth from prior and write to file
     ground_truth = prior.get_sample()
     np.savetxt(os.path.join('ground_truth.dat'), ground_truth)
+
+    if llh_config['name'] == 'TransformedLikelihood':
+        if llh_config['transformation'] == 'Exponential':
+            ground_truth = ExponentialTransformation().transform(ground_truth)
+        elif llh_config['transformation'] == 'AffineTransform':
+            ground_truth = AffineTransformtion(
+                llh_config['b'],
+                llh_config['M']
+            ).transform(ground_truth)
 
     # init array
     obs = np.zeros((n_obs, model.get_dim_out()))
