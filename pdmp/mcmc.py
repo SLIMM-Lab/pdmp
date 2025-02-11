@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from typing import Tuple
 
+import yaml
 from tqdm import tqdm
 
 from pdmp.sampler import Sampler
@@ -23,7 +24,8 @@ class StepSampler(Sampler):
                  rng: np.random.Generator = None,
                  seed: int = None,
                  prec: np.ndarray = None,
-                 cov_factor: float = 1.):
+                 cov_factor: float = 1.,
+                 **kwargs):
         """
         Initialize the StepSampler class.
 
@@ -68,6 +70,21 @@ class StepSampler(Sampler):
             raise Exception("No valid preconditioner specified.")
 
         self.prec_L_ = np.linalg.cholesky(self.prec_)
+
+    @classmethod
+    def from_dict(cls, config: dict, target: Distribution, rng: np.random.Generator = None, **kwargs):
+        """
+        Initialize the StepSampler class from a dictionary.
+
+        Parameters:
+        config (dict): The configuration dictionary.
+        target (Distribution): The target distribution to sample from.
+        rng (np.random.Generator, optional): Random number generator. Default is None.
+
+        Returns:
+        StepSampler: The StepSampler instance.
+        """
+        raise NotImplementedError("The from_dict method must be implemented in a subclass.")
 
     def reset(self, x_0: np.ndarray = None):
         """
@@ -117,7 +134,7 @@ class StepSampler(Sampler):
 
     def run(self):
         """
-        Run the Metropolis-Hastings sampler.
+        Run the StepSampler.
         """
         raise NotImplementedError("The step method must be implemented in a subclass.")
 
@@ -135,17 +152,18 @@ class StepSampler(Sampler):
 
         data = {
             'acceptance_rate': self.n_accept_ / self.n_samples_,
+            'preconditioner': self.prec_
         }
 
         with open(os.path.join(folder, 'other.pkl'), 'wb') as f:
             pickle.dump(data, f)
 
-        np.savetxt(os.path.join(folder, 'samples.dat'), self.chain_, fmt=f'$.{precision}e')
+        np.savetxt(os.path.join(folder, 'samples.dat'), self.chain_, fmt=f'%.{precision}e')
 
 
-class MetropolisHastingsSampler(StepSampler):
+class RandomWalkMetropolisSampler(StepSampler):
     """
-    A class to perform Metropolis-Hastings sampling.
+    A class to perform sampling with the Random-Walk Metropolis algorithm.
     """
 
     def __init__(self,
@@ -156,9 +174,10 @@ class MetropolisHastingsSampler(StepSampler):
                  seed: int = None,
                  prec: np.ndarray = None,
                  cov_factor: float = 1.,
-                 x_0: np.ndarray = None):
+                 x_0: np.ndarray = None,
+                 **kwargs):
         """
-        Initialize the MetropolisHastingsSampler class.
+        Initialize the RandomWalkMetropolisSampler class.
 
         Parameters:
         target (Distribution): The target distribution to sample from.
@@ -177,6 +196,21 @@ class MetropolisHastingsSampler(StepSampler):
         self.accepted_ = np.zeros(self.n_samples_, dtype=bool)
         self.accepted_[0] = True
 
+    @classmethod
+    def from_dict(cls, config: dict, target: Distribution, rng: np.random.Generator = None, **kwargs):
+        """
+        Initialize the RandomWalkMetropolisSampler class from a dictionary.
+
+        Parameters:
+        config (dict): The configuration dictionary.
+        target (Distribution): The target distribution to sample from.
+        rng (np.random.Generator, optional): Random number generator. Default is None.
+
+        Returns:
+        RandomWalkMetropolisSampler: The RandomWalkMetropolisSampler instance.
+        """
+        return cls(target=target, rng=rng, **config)
+
     def reset(self, x_0: np.ndarray = None):
         """
         Reset the sampler state.
@@ -186,7 +220,7 @@ class MetropolisHastingsSampler(StepSampler):
 
     def step(self):
         """
-        Perform a single Metropolis-Hastings step.
+        Perform a single RWM step.
         """
         proposal = self.state_ + self.sigma_ * self.prec_L_ @ self.proposal_dist_.get_sample()
         self.proposals_[self.iter_, :] = proposal
@@ -205,7 +239,7 @@ class MetropolisHastingsSampler(StepSampler):
 
     def run(self):
         """
-        Run the Metropolis-Hastings sampler.
+        Run the RWM sampler.
         """
         # disable tqdm if running on a cluster
         disable_tqdm = 'PBS_ENVIRONMENT' in os.environ or 'SLURM_JOB_ID' in os.environ
@@ -245,7 +279,8 @@ class LangevinDynamicsSampler(StepSampler):
                  rng: np.random.Generator = None,
                  seed: int = None,
                  cov_factor: float = 1.,
-                 x_0: np.ndarray = None):
+                 x_0: np.ndarray = None,
+                 **kwargs):
         """
         Initialize the LangevinDynamicsSampler class.
 
@@ -355,7 +390,8 @@ class HamiltonianMonteCarlo(StepSampler):
                  seed: int = None,
                  plot: bool = False,
                  x_0: np.ndarray = None,
-                 plot_limits: Tuple[float, float] = None):
+                 plot_limits: Tuple[float, float] = None,
+                 **kwargs):
         """
         Initialize the HamiltonianMonteCarlo class.
 
@@ -556,8 +592,8 @@ if __name__ == '__main__':
     n_samples = 20000
     # MALA = LangevinDynamicsSampler(posterior, n_samples=n_samples, sigma=np.sqrt(1.5), adjusted=True, rng=rng,
     #                                prec=cov)
-    Sampler = MetropolisHastingsSampler(posterior, n_samples=n_samples, sigma=np.sqrt(1.5), rng=rng,
-                                        prec=cov)
+    Sampler = RandomWalkMetropolisSampler(posterior, n_samples=n_samples, sigma=np.sqrt(1.5), rng=rng,
+                                          prec=cov)
     Sampler.run()
     samples = Sampler.chain_
     n_vis = 500

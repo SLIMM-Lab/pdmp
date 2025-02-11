@@ -5,7 +5,7 @@ import seaborn as sns
 from pdmp.forward_model import PiecewiseConstantModel
 from pdmp.project_field import compute_coefficients, squared_exponential_kernel, PiecewiseConstantBasis
 from pdmp.distributions import MultivariateNormal, GaussianLikelihood, Posterior
-from pdmp.mcmc import MetropolisHastingsSampler
+from pdmp.mcmc import RandomWalkMetropolisSampler
 from pdmp.plotting import plot_samples, plot_pdf_contours
 from pdmp.plotting_utils import get_2d_despined_figure
 from bisect import bisect_right
@@ -86,7 +86,7 @@ if __name__ == '__main__':
     # x_0 = np.array([2.8, 3.5])
     x_0 = np.array([3.5, 3.0])
     n_samples = 1000
-    sampler = MetropolisHastingsSampler(target, n_samples=n_samples, sigma=np.sqrt(.125), rng=rng, prec=cov, cov_factor=0.5, x_0=x_0)
+    sampler = RandomWalkMetropolisSampler(target, n_samples=n_samples, sigma=np.sqrt(.125), rng=rng, prec=cov, cov_factor=0.5, x_0=x_0)
     sampler.run()
 
     samples = sampler.chain_

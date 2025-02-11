@@ -9,6 +9,7 @@ from pdmp.distributions import get_prior, get_likelihood
 from pdmp.forward_model import get_model
 from pdmp.sampler import Sampler
 from pdmp.zigzag import ZigZagSampler
+from pdmp.mcmc import RandomWalkMetropolisSampler
 from pdmp.surrogates import SurrogateModel, LaplaceSurrogate, NeuralNetwork
 
 def get_target(
@@ -70,6 +71,8 @@ def get_sampler(
 
     if sampler_config['name'] == 'ZigZag':
         return ZigZagSampler.from_dict(sampler_config, target=target, rng=rng, surrogate=surrogate)
+    elif sampler_config['name'] == 'RandomWalkMetropolis':
+        return RandomWalkMetropolisSampler.from_dict(sampler_config, target=target, rng=rng, surrogate=surrogate)
     else:
         raise ValueError(f"Sampler {sampler_config['name']} not recognized.")
 

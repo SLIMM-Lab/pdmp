@@ -1,6 +1,6 @@
 from pdmp.forward_model import PiecewiseConstantModel
 from pdmp.project_field import compute_coefficients, squared_exponential_kernel, PiecewiseConstantBasis
-from pdmp.mcmc import MetropolisHastingsSampler, LangevinDynamicsSampler
+from pdmp.mcmc import RandomWalkMetropolisSampler, LangevinDynamicsSampler
 from pdmp.zigzag import ZigZagSampler
 from pdmp.distributions import MultivariateNormal, GaussianLikelihood, Posterior
 from pdmp.utils import central_moment_from_skeleton
@@ -87,8 +87,8 @@ if __name__ == '__main__':
     # get 'true' mean and variance from mcmc
     # n_samples = 100
     n_samples = 100000
-    Sampler = MetropolisHastingsSampler(target, n_samples=n_samples, sigma=np.sqrt(1.5), rng=rng,
-                                        prec=cov)
+    Sampler = RandomWalkMetropolisSampler(target, n_samples=n_samples, sigma=np.sqrt(1.5), rng=rng,
+                                          prec=cov)
     Sampler.run()
     samples = Sampler.chain_
     samples = samples[5000:]
@@ -119,8 +119,8 @@ if __name__ == '__main__':
         # get 'true' mean and variance from mcmc
         n_samples = 20000
         # n_samples = 200
-        Sampler = MetropolisHastingsSampler(target, n_samples=n_samples, sigma=np.sqrt(1.5), rng=rng,
-                                            prec=cov)
+        Sampler = RandomWalkMetropolisSampler(target, n_samples=n_samples, sigma=np.sqrt(1.5), rng=rng,
+                                              prec=cov)
         Sampler.run()
         samples = Sampler.chain_
         samples = samples[-200:]
