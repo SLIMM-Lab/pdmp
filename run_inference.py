@@ -1,3 +1,5 @@
+import os
+
 import yaml
 import argparse
 import torch
@@ -51,8 +53,12 @@ def main():
     try:
         # load the problem configuration
         target = get_target(config['problem'], rng=rng)
-        surrogate = get_surrogate(config['surrogate'], target=target, rng=rng)
-        sampler = get_sampler(config['sampler'], target=target, surrogate=surrogate, rng=rng)
+
+        if 'surrogate' in config:
+            surrogate = get_surrogate(config.get('surrogate'), target=target, rng=rng)
+            sampler = get_sampler(config['sampler'], target=target, surrogate=surrogate, rng=rng)
+        else:
+            sampler = get_sampler(config['sampler'], target=target, rng=rng)
 
         sampler.run()
         sampler.write_data(config['output']['dir'])

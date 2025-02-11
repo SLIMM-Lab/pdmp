@@ -7,7 +7,7 @@ from scipy.optimize import minimize
 from pdmp.forward_model import PiecewiseConstantModel
 from pdmp.project_field import compute_coefficients, squared_exponential_kernel, PiecewiseConstantBasis
 from pdmp.distributions import MultivariateNormal, GaussianLikelihood, Posterior
-from pdmp.mcmc import MetropolisHastingsSampler
+from pdmp.mcmc import RandomWalkMetropolisSampler
 from pdmp.zigzag import ZigZagSampler
 from pdmp.plotting import plot_samples, plot_pdf_contours
 from pdmp.plotting_utils import get_2d_despined_figure
@@ -142,8 +142,8 @@ if __name__ == '__main__':
     # ------------------------- RWMH -------------------------
     # get 'true' mean and variance from mcmc
     n_samples = 2000
-    mh_sampler = MetropolisHastingsSampler(target, n_samples=n_samples, sigma=np.sqrt(.5), rng=rng,
-                                           prec=cov, cov_factor=0.5, x_0=x_0)
+    mh_sampler = RandomWalkMetropolisSampler(target, n_samples=n_samples, sigma=np.sqrt(.5), rng=rng,
+                                             prec=cov, cov_factor=0.5, x_0=x_0)
     mh_sampler.run()
     mh_samples = mh_sampler.chain_
 
