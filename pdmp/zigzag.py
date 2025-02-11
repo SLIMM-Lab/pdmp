@@ -1,6 +1,7 @@
 import pickle
 import os
 import sys
+import yaml
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -106,8 +107,8 @@ class ZigZagSampler(Sampler):
 
         if 'x_0' in kwargs:
             self.positions_[0] = kwargs['x_0']
-        elif hasattr(self.target_, 'get_prior_sample'):
-            self.positions_[0] = self.target_.get_prior_sample()
+        else:
+            self.positions_[0] = self.rng_.normal(0, 1, self.dim_)
 
         # draw initial velocity from binomial distribution
         if 'v_0' in kwargs:
@@ -129,6 +130,10 @@ class ZigZagSampler(Sampler):
                 self.generate_event_times =  self.inverse_cdf
 
             self.cdf_rates = self.surrogate_rates
+
+            # for later use
+            self.times_all_ = None
+
         else:
             self.generate_event_times = self.inverse_cdf
             self.cdf_rates = self.target_rates
@@ -165,7 +170,7 @@ class ZigZagSampler(Sampler):
         ZigZagSampler: The initialized ZigZagSampler class.
         """
 
-        return ZigZagSampler(target, surrogate=surrogate, rng=rng, **config)
+        return cls(target, surrogate=surrogate, rng=rng, **config)
 
     def target_rates(self, x: np.ndarray, idx_d: int = None, idx_n: int = None) -> np.ndarray:
         """
@@ -388,6 +393,9 @@ class ZigZagSampler(Sampler):
             logger.info(f"    Acceptance rate : {self.n_accepted_ / self.iter_:.3f}")
             logger.info(f"    Final offsets    : {self.offset_}")
 
+            # this is kept so that model evaluations could be tracked
+            self.times_all_ = self.times_
+
             idx = self.n_accepted_ + 1
             self.positions_ = self.positions_[self.accepted_iters_[:idx]]
             self.times_ = self.times_[self.accepted_iters_[:idx]]
@@ -480,6 +488,7 @@ class ZigZagSampler(Sampler):
         np.savetxt(os.path.join(folder, 'positions.dat'), self.positions_, fmt=f'%.{precision}e')
         np.savetxt(os.path.join(folder, 'times.dat'), self.times_, fmt=f'%.{precision}e')
         np.savetxt(os.path.join(folder, 'velocities.dat'), self.velocities_, fmt='%d')
+        np.savetxt(os.path.join(folder, 'times_all.dat'), self.times_all_, fmt=f'%.{precision}e')
 
     def get_acceptance_rate(self) -> float:
         """

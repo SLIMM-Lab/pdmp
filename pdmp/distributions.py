@@ -1236,9 +1236,11 @@ class TransformedDistribution(Distribution):
 
             if b is None:
                 b = find_mean(base_distribution, x_0=x_0)
+                params['b'] = b
 
             if M is None:
                 M = find_curvature(base_distribution, mean=b)
+                params['M'] = M
 
             C = np.linalg.cholesky(M)
 
