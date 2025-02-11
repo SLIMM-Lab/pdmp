@@ -1471,6 +1471,8 @@ def get_likelihood(
 
     if (config['name'] != 'FlatLikelihood') and (config['name'] != 'TransformedLikelihood'):
         obs = np.genfromtxt(config['observation_file'])
+        if obs.ndim == 1:
+            obs = obs.reshape(1, -1)
 
     if config['name'] == 'GaussianLikelihood':
         sigma = config['sigma']
