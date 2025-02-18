@@ -97,10 +97,9 @@ class StepSampler(Sampler):
         # check if self.target_ has a method get_prior_sample, and if so, use it
         if x_0 is not None:
             self.state_ = x_0
-        elif hasattr(self.target_, 'get_prior_sample'):
-            self.state_ = self.target_.get_prior_sample()
         else:
-            self.state_ = np.zeros(self.dim_)
+            self.state_ = self.rng_.random(self.dim_)
+
         self.chain_ = np.zeros((self.n_samples_, self.dim_))
         self.chain_[0, :] = self.state_
 
