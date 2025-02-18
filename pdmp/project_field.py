@@ -181,7 +181,7 @@ def compute_coefficients(kernel: Callable[[np.ndarray, np.ndarray, float, float]
             coefficients_norm[i, j] = coefficients_norm[j, i] = coefficients[i, j] / np.sqrt(
                 coefficients[i, i] * coefficients[j, j])
 
-    logger.debug("Normalized coefficientes:\n  ", coefficients_norm)
+    logger.debug(f"Normalized coefficientes:\n {coefficients_norm}")
 
     return coefficients_norm
 
