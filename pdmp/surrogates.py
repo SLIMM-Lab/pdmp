@@ -299,31 +299,14 @@ class NeuralNetwork(SurrogateModel):
             **config
         )
 
+    @override
     def eval(self, x: np.ndarray, **kwargs) -> np.ndarray:
-        """
-        Evaluate the neural network surrogate model at a point.
-
-        Parameters:
-        x (np.ndarray): The point at which the neural network surrogate model is to be evaluated.
-
-        Returns:
-        float: The value of the neural network surrogate model at the point x.
-        """
         x_tensor = torch.tensor(x, dtype=torch.float32)
         with torch.no_grad():
             return self.model(x_tensor).numpy() + self.laplace.eval(x, delta=True)
 
+    @override
     def grad(self, x: np.ndarray, idx: int = None) -> np.ndarray:
-        """
-        Compute the gradient of the neural network surrogate model at a point.
-
-        Parameters:
-        x (np.ndarray): The point at which the gradient is to be computed.
-        idx (int, optional): The index of the component of the gradient to be computed. Default is None.
-
-        Returns:
-        np.ndarray: The gradient of the neural network surrogate model at the point x.
-        """
         x_tensor = torch.tensor(x, dtype=torch.float32, requires_grad=True)
         y_tensor = self.model(x_tensor)
         gradients = grad(
@@ -338,16 +321,16 @@ class NeuralNetwork(SurrogateModel):
         else:
             return gradients[idx].detach().numpy() + self.laplace.grad(x, idx=idx)
 
+    @override
     def add_data(self, x: np.ndarray, y: np.ndarray) -> None:
-        """
-        Add data to the neural network surrogate model.
-
-        Parameters:
-        x (np.ndarray): The input data.
-        y (np.ndarray): The output data.
-        """
-        self.x_data.append(torch.tensor(x, dtype=torch.float32))
-        self.y_data.append(torch.tensor(y, dtype=torch.float32))
+        self.x_data = torch.stack((
+            self.x_data,
+            torch.tensor(x, dtype=torch.float32)
+        ))
+        self.y_data = torch.stack((
+            self.y_data,
+            torch.tensor(y, dtype=torch.float32)
+        ))
 
     def save_model(self, path: str = 'neural_network.th') -> None:
         """
@@ -431,7 +414,7 @@ class NeuralNetwork(SurrogateModel):
 
                     if val_loss < self.best_val_loss:
                         self.best_val_loss = val_loss
-                        self.best_model_state = self.model.state_dict()
+                        self.best_model_state = copy.deepcopy(self.model.state_dict())
                         patience_counter = 0
                     else:
                         patience_counter += 1
