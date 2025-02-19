@@ -36,6 +36,7 @@ class ZigZagSampler(Sampler):
             n_events_accepted: int = None,
             print_every: int = 100,
             update_bar_every: int = 10,
+            offset_shrinkage: float = 1.0,
             **kwargs
     ):
         """
@@ -90,6 +91,7 @@ class ZigZagSampler(Sampler):
         self.sub_sampling_ = sub_sampling
         self.print_every_ = print_every
         self.update_bar_every = update_bar_every
+        self.offset_shinkage_ = offset_shrinkage
 
         # if 'ss' in kwargs:
         #     self.ss_ = kwargs['ss']
@@ -378,6 +380,7 @@ class ZigZagSampler(Sampler):
         if self.thinning_:
             self.poisson_thinning(j, T)
 
+        self.offset_ *= self.offset_shinkage_
         self.iter_ += 1
 
     def revert_step(self):
