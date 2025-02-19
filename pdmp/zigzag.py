@@ -8,13 +8,12 @@ import numpy as np
 
 from typing import cast, Any
 
-from torch.fx.experimental.unification.unification_tools import dissoc
 from tqdm import tqdm
 
 from pdmp import logger
 from pdmp.sampler import Sampler
 from pdmp.distributions import Distribution, MultivariateNormal
-from pdmp.surrogates import SurrogateModel, LaplaceSurrogate, NeuralNetwork
+from pdmp.surrogates import SurrogateModel, LaplaceSurrogate, NeuralNetwork, GaussianProcess, DerivativeGaussianProcess
 from pdmp.plotting import plot_pdf_contours
 from pdmp.plotting_utils import get_2d_despined_figure
 
@@ -128,6 +127,14 @@ class ZigZagSampler(Sampler):
             if isinstance(surrogate, NeuralNetwork):
                 self.surrogate_ = cast(NeuralNetwork, surrogate)
                 self.generate_event_times =  self.inverse_cdf
+
+            if isinstance(surrogate, GaussianProcess):
+                self.surrogate_ = cast(GaussianProcess, surrogate)
+                self.generate_event_times = self.inverse_cdf
+
+            if isinstance(surrogate, DerivativeGaussianProcess):
+                self.surrogate_ = cast(DerivativeGaussianProcess, surrogate)
+                self.generate_event_times = self.inverse_cdf
 
             self.cdf_rates = self.surrogate_rates
 
