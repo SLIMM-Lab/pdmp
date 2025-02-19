@@ -18,11 +18,12 @@ from linear_operator.utils.warnings import NumericalWarning
 
 import gpytorch
 from gpytorch.models import ExactGP
-from gpytorch.likelihoods import GaussianLikelihood, _GaussianLikelihoodBase
+from gpytorch.likelihoods import GaussianLikelihood, MultitaskGaussianLikelihood, _GaussianLikelihoodBase
 from gpytorch.mlls import ExactMarginalLogLikelihood
-from gpytorch.means import ConstantMean, ZeroMean
-from gpytorch.kernels import RBFKernel, ScaleKernel
+from gpytorch.means import ConstantMean, ZeroMean, ConstantMeanGrad
+from gpytorch.kernels import RBFKernel, ScaleKernel, RBFKernelGrad
 from gpytorch.distributions.multivariate_normal import MultivariateNormal as gpyMultivariateNormal
+from gpytorch.distributions.multitask_multivariate_normal import MultitaskMultivariateNormal
 
 from pdmp.distributions import Distribution, MultivariateNormal, Posterior, find_mean, find_curvature
 from pdmp.plotting_utils import get_2d_despined_figure
@@ -458,13 +459,14 @@ class ExactGPModel(ExactGP):
     ):
 
         super(ExactGPModel, self).__init__(train_x, train_y, likelihood)
-        self.mean_module = ZeroMean()
+        self.mean_module = ConstantMean()
         self.covar_module = ScaleKernel(RBFKernel(ard_num_dims=ard_num_dims))
 
     def forward(self, x: torch.tensor) -> gpyMultivariateNormal:
         mean_x = self.mean_module(x)
         covar_x = self.covar_module(x)
         return gpyMultivariateNormal(mean_x, covar_x)
+
 
 class GaussianProcess(SurrogateModel):
     """
@@ -475,7 +477,7 @@ class GaussianProcess(SurrogateModel):
             target: Distribution = None,
             train_on_init: bool = True,
             n_samples: int = 100,
-            train_iter: int = 100,
+            train_iters: int = 100,
             n_restarts: int = 50,
             lr: float = 0.2,
             lr_scheduler_step: int = None,
@@ -495,15 +497,6 @@ class GaussianProcess(SurrogateModel):
         # define likelihood, get model, and set optimizer
         self.likelihood = GaussianLikelihood()
         self.model = ExactGPModel(None, None, self.likelihood, target.get_dim())
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
-
-        if lr_scheduler_gamma is not None and lr_scheduler_step is not None:
-            self.scheduler = optim.lr_scheduler.StepLR(
-                self.optimizer,
-                step_size=lr_scheduler_step,gamma=lr_scheduler_gamma
-            )
-        else:
-            self.scheduler = None
 
         # train model unless specified otherwise
         if train_on_init:
@@ -517,7 +510,15 @@ class GaussianProcess(SurrogateModel):
                     dtype=torch.float32
                 )
 
-            self.update(train_iter=train_iter, n_restarts=n_restarts, print_every=print_every, rng=rng)
+            self.update(
+                train_iters=train_iters,
+                n_restarts=n_restarts,
+                print_every=print_every,
+                lr=lr,
+                lr_scheduler_step=lr_scheduler_step,
+                lr_scheduler_gamma=lr_scheduler_gamma,
+                rng=rng
+            )
 
         logger.info('Gaussian process surrogate model initialized.')
 
@@ -548,9 +549,12 @@ class GaussianProcess(SurrogateModel):
     @override
     def update(
             self,
-            train_iter: int,
+            train_iters: int,
             n_restarts: int,
             print_every: int,
+            lr: float,
+            lr_scheduler_step: int,
+            lr_scheduler_gamma: float,
             rng: np.random.Generator = None
     ) -> None:
         """
@@ -592,6 +596,18 @@ class GaussianProcess(SurrogateModel):
 
             for restart in range(n_restarts):
 
+                # init optimizer and scheduler
+                optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+
+                if lr_scheduler_gamma is not None and lr_scheduler_step is not None:
+                    scheduler = optim.lr_scheduler.StepLR(
+                        optimizer,
+                        step_size=lr_scheduler_step,
+                        gamma=lr_scheduler_gamma
+                    )
+                else:
+                    scheduler = None
+
                 # set hyperparameters and initialise model
                 hyper_params = {}
                 counter = 0
@@ -605,45 +621,38 @@ class GaussianProcess(SurrogateModel):
 
                 # print hyperparameter values
                 pbar.clear()
-                logger.info(
-                    f"Restart {restart}/{n_restarts} with " +
-                    f" lengthscale: {self.model.covar_module.base_kernel.lengthscale.data}" +
-                    f" noise: {self.model.likelihood.noise.item():.3f}" +
-                    f" outputscale: {self.model.covar_module.outputscale.item():.3f}"
-                )
+                logger.info(f"Restart {restart}/{n_restarts} with \n" + self.log_state_dict())
                 pbar.refresh()
 
                 # try block needed to catch non-PSD errors. in that case, interation is just skipped
                 try:
-                    for i in range(train_iter):
+                    for i in range(train_iters):
 
                         # compute loss and take step
-                        self.optimizer.zero_grad()
+                        optimizer.zero_grad()
                         output = self.model(self.x_data)
                         loss = -mll(output, self.y_data)
                         loss.backward()
-                        self.optimizer.step()
+                        optimizer.step()
 
                         # update learning rate
-                        if self.scheduler is not None:
-                            self.scheduler.step()
+                        if scheduler is not None:
+                            scheduler.step()
 
                         # print current hyperparams and loss
                         if (i % print_every) == 0:
                             pbar.clear()
                             logger.debug(
-                                f"   Iter {i}/{train_iter}"
+                                f"   Iter {i}/{train_iters}"
                                 + f" Loss: {loss.item():.3f},"
-                                + f" lengthscale: {self.model.covar_module.base_kernel.lengthscale.data}"
-                                + f" noise: {self.model.likelihood.noise.item():.3f}"
-                                + f" outputscale: {self.model.covar_module.outputscale.item():.3f}"
+                                + self.log_state_dict(end_of_line=', ')
                             )
                             pbar.refresh()
 
                     # check if current model is best
                     if loss.item() < best_loss:
                         logger.info(f'New best loss: {loss.item()} with params')
-                        [logger.info(f'    {name}: {param.data}') for name, param in self.model.named_parameters()]
+                        logger.info(self.log_state_dict(end_of_line='\n'))
                         best_model = copy.deepcopy(self.model.state_dict())
                         best_loss = loss.item()
 
@@ -657,40 +666,341 @@ class GaussianProcess(SurrogateModel):
 
         # load best model print parameters
         self.model.load_state_dict(best_model)
-        logger.warning(f"Best model parameters: \n"
-                       + f"   lengthscales: {self.model.covar_module.base_kernel.lengthscale.data}\n"
-                       + f"   noise:       {self.model.likelihood.noise.item():.5f}\n"
-                       + f"   outputscale: {self.model.covar_module.outputscale.item():.5f}")
+        logger.warning(f"Best model with loss {best_loss} and params:\n" + self.log_state_dict())
 
         # set model into evaluation mode
         self.model.eval()
         self.likelihood.eval()
 
+    def log_state_dict(self, end_of_line: str = '\n') -> str:
+        """
+        Log the state dictionary of the model.
+
+        Parameters
+        end_of_line : str
+            The end of line character. Default is '\n'.
+
+        Returns
+            str: The state dictionary of the model as a string
+        """
+
+        named_params = ""
+
+        for name, param in self.model.named_parameters():
+            named_params += f"  {name}: {param.data}" + end_of_line
+
+        return named_params
+
     @override
     def eval(self, x: np.ndarray, **kwargs) -> np.ndarray:
 
-        if len(x.shape) == 1:
-            x = x.reshape(1, -1)
-
-        x_tensor = torch.tensor(x, dtype=torch.float32)
+        x_tensor = torch.tensor(
+            np.atleast_2d(x),
+            dtype=torch.float32,
+            requires_grad=False
+        )
         with torch.no_grad(), gpytorch.settings.skip_posterior_variances(True):
-            return self.model(x_tensor).mean.numpy() + self.laplace.eval(x, delta=True)
+            return self.model(x_tensor).mean.squeeze().numpy() + self.laplace.eval(x, delta=True)
 
     @override
     def grad(self, x: np.ndarray, idx: int = None) -> np.ndarray:
-        x_tensor = torch.tensor(x, dtype=torch.float32, requires_grad=True)
-        y_tensor = self.model(x_tensor)
-        gradients = grad(
-            outputs=y_tensor.mean,
-            inputs=x_tensor,
-            grad_outputs=torch.ones_like(y_tensor.mean),
-            create_graph=True
-        )[0]
+
+        x_tensor = torch.tensor(
+            np.atleast_2d(x),
+            dtype=torch.float32,
+            requires_grad=True
+        )
+
+        with gpytorch.settings.skip_posterior_variances(True), gpytorch.settings.fast_computations(
+                False, False, False):
+            y_tensor = self.model(x_tensor).mean
+            gradients = grad(
+                outputs=y_tensor,
+                inputs=x_tensor,
+                grad_outputs=torch.ones_like(y_tensor),
+                create_graph=True
+            )[0].squeeze().detach().numpy()
 
         if idx is None:
-            return gradients.detach().numpy() + self.laplace.grad(x)
+            return gradients + self.laplace.grad(x)
         else:
-            return gradients[idx].detach().numpy() + self.laplace.grad(x, idx=idx)
+            return gradients[idx] + self.laplace.grad(x, idx=idx)
+
+
+class DerivativeGPModel(ExactGP):
+    """
+    Gaussian process model based on GPyTorch that also observes gradients.
+    """
+    def __init__(
+            self,
+            train_x: torch.tensor,
+            train_y: torch.tensor,
+            likelihood: _GaussianLikelihoodBase,
+            ard_num_dims: int
+    ):
+        super().__init__(train_x, train_y, likelihood)
+        self.mean_module = ConstantMeanGrad()
+        self.covar_module = ScaleKernel(RBFKernelGrad(ard_num_dims=ard_num_dims))
+
+    def forward(self, x: torch.tensor) -> MultitaskMultivariateNormal:
+        mean_x = self.mean_module(x)
+        covar_x = self.covar_module(x)
+        return MultitaskMultivariateNormal(mean_x, covar_x)
+
+
+class DerivativeGaussianProcess(SurrogateModel):
+    """
+    Gaussian process surrogate model based on GPyTorch that also observes gradients.
+    """
+
+    def __init__(
+            self,
+            target: Distribution = None,
+            train_on_init: bool = True,
+            n_samples: int = 100,
+            train_iters: int = 100,
+            n_restarts: int = 50,
+            lr: float = 0.2,
+            lr_scheduler_step: int = None,
+            lr_scheduler_gamma: float = None,
+            print_every: int = 1,
+            rng: np.random.Generator = None,
+            **kwargs
+    ):
+        """
+        Initialize the Derivative Gaussian process surrogate model.
+        """
+        super().__init__()
+
+        # get laplace approximation
+        self.laplace = LaplaceSurrogate.from_dict(kwargs, target=target, rng=rng)
+
+        # define likelihood, get model, and set optimizer
+        self.likelihood = MultitaskGaussianLikelihood(num_tasks=target.get_dim() + 1)
+        self.model = DerivativeGPModel(None, None, self.likelihood, target.get_dim())
+
+        # train model unless specified otherwise
+        if train_on_init:
+            samples = self.laplace.get_samples(n_samples)
+            self.x_data = torch.tensor(samples, dtype=torch.float32)
+            self.y_data = torch.zeros(n_samples, target.get_dim() + 1, dtype=torch.float32)
+
+            for i in range(n_samples):
+                self.y_data[i, 0] = torch.tensor(
+                    target.log_density(samples[i]) - self.laplace.eval(samples[i], delta=True),
+                    dtype=torch.float32
+                )
+                self.y_data[i, 1:] = torch.tensor(
+                    target.grad_log_density(samples[i]) - self.laplace.grad(samples[i]),
+                    dtype=torch.float32
+                )
+
+            self.update(
+                train_iters=train_iters,
+                n_restarts=n_restarts,
+                print_every=print_every,
+                lr=lr,
+                lr_scheduler_step=lr_scheduler_step,
+                lr_scheduler_gamma=lr_scheduler_gamma,
+                rng=rng
+            )
+
+        logger.info('Gaussian process surrogate model initialized.')
+
+    @classmethod
+    def from_dict(
+            cls,
+            config: dict,
+            target: Distribution,
+            rng: np.random.Generator = None
+    ):
+        """
+        Create a Gaussian process surrogate model from a dictionary.
+
+        Parameters:
+        config (dict): The configuration dictionary.
+        target (Distribution): The target distribution.
+        rng (np.random.Generator, optional): The random number generator. Default is None.
+
+        Returns:
+        GaussianProcess: The Gaussian process surrogate model.
+        """
+        return cls(
+            target=target,
+            rng=rng,
+            **config
+        )
+
+    @override
+    def update(
+            self,
+            train_iters: int,
+            n_restarts: int,
+            print_every: int,
+            lr: float,
+            lr_scheduler_step: int,
+            lr_scheduler_gamma: float,
+            rng: np.random.Generator = None,
+    ) -> None:
+        """
+        Update the Gaussian process surrogate model.
+        """
+
+        logger.warning(f"Training {self.__class__.__name__} surrogate model ...")
+
+        # set train data and put model in training mode
+        self.model.set_train_data(self.x_data, self.y_data, strict=False)
+        self.model.train()
+        self.likelihood.train()
+
+        # define loss
+        mll = ExactMarginalLogLikelihood(self.likelihood, self.model)
+
+        # disable tqdm if running on a cluster
+        disable_tqdm = 'PBS_ENVIRONMENT' in os.environ or 'SLURM_JOB_ID' in os.environ
+        warnings.simplefilter("ignore", category=NumericalWarning)
+
+        # get hyperparameter initialisations
+        n_params = int(sum([np.prod(param.shape) for name, param in self.model.named_parameters()]))
+        sampler = qmc.LatinHypercube(n_params, scramble=True, rng=rng)
+        sample = sampler.random(n_restarts)
+        scaled_sample = qmc.scale(sample, -10, 20)
+        initial_params = torch.tensor(scaled_sample, dtype=torch.float32)
+
+        # init best model and loss
+        best_model = None
+        best_loss = float('inf')
+
+        with tqdm(
+                total=n_restarts,
+                file=sys.stdout,
+                dynamic_ncols=True,
+                leave=True,
+                disable=disable_tqdm
+        ) as pbar:
+
+            for restart in range(n_restarts):
+
+                # init optimizer and scheduler
+                optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+
+                if lr_scheduler_gamma is not None and lr_scheduler_step is not None:
+                    scheduler = optim.lr_scheduler.StepLR(
+                        optimizer,
+                        step_size=lr_scheduler_step,
+                        gamma=lr_scheduler_gamma
+                    )
+                else:
+                    scheduler = None
+
+                # set hyperparameters and initialise model
+                hyper_params = {}
+                counter = 0
+                for name, param in self.model.named_parameters():
+                    shape = param.shape
+                    len = int(np.prod(shape))
+                    hyper_params[name] = initial_params[restart, counter:counter + len].reshape(shape)
+                    counter += len
+
+                self.model.initialize(**hyper_params)
+
+                # print hyperparameter values
+                pbar.clear()
+                logger.info(f"Restart {restart}/{n_restarts} with \n" + self.log_state_dict())
+                pbar.refresh()
+
+                # try block needed to catch non-PSD errors. in that case, interation is just skipped
+                try:
+                    for i in range(train_iters):
+
+                        # compute loss and take step
+                        optimizer.zero_grad()
+                        output = self.model(self.x_data)
+                        loss = -mll(output, self.y_data)
+                        loss.backward()
+                        optimizer.step()
+
+                        # update learning rate
+                        if scheduler is not None:
+                            scheduler.step()
+
+                        # print current hyperparams and loss
+                        if (i % print_every) == 0:
+                            pbar.clear()
+                            logger.debug(
+                                f" Iter {i}/{train_iters},"
+                                + f" Loss: {loss.item():.3f}\n"
+                                + self.log_state_dict()
+                            )
+                            pbar.refresh()
+
+                    # check if current model is best
+                    if loss.item() < best_loss:
+                        logger.info(f'New best loss: {loss.item()} with params:\n' + self.log_state_dict())
+                        best_model = copy.deepcopy(self.model.state_dict())
+                        best_loss = loss.item()
+
+                # catch exception if non-PSD error occurs
+                except gpytorch.linear_operator.utils.errors.NotPSDError as e:
+                    pbar.clear()
+                    logger.warning(f"Non-PSD error: {e}")
+                    pbar.refresh()
+
+                pbar.update()
+
+        # load best model print parameters
+        self.model.load_state_dict(best_model)
+        logger.warning(f"Best model with loss {best_loss} and params:\n" + self.log_state_dict())
+
+        # set model into evaluation mode
+        self.model.eval()
+        self.likelihood.eval()
+
+    def log_state_dict(self, end_of_line: str = '\n') -> str:
+        """
+        Log the state dictionary of the model.
+
+        Parameters
+        end_of_line : str
+            The end of line character. Default is '\n'.
+
+        Returns
+            str: The state dictionary of the model as a string
+        """
+
+        named_params = ""
+
+        for name, param in self.model.named_parameters():
+            named_params += f"       {name}: {param.data}" + end_of_line
+
+        return named_params
+
+    @override
+    def eval(self, x: np.ndarray, **kwargs) -> np.ndarray:
+
+        x_tensor = torch.tensor(
+            np.atleast_2d(x),
+            dtype=torch.float32,
+            requires_grad=False
+        )
+        with torch.no_grad(), gpytorch.settings.skip_posterior_variances(True):
+            return self.model(x_tensor).mean[:, 0].squeeze().detach().numpy() + self.laplace.eval(x, delta=True)
+
+    @override
+    def grad(self, x: np.ndarray, idx: int = None) -> np.ndarray:
+
+        x_tensor = torch.tensor(
+            np.atleast_2d(x),
+            dtype=torch.float32,
+            requires_grad=True
+        )
+        with torch.no_grad(), gpytorch.settings.skip_posterior_variances(True):
+            gradient = self.model(x_tensor).mean[:, 1:].squeeze().detach().numpy()
+
+        if idx is None:
+            return gradient + self.laplace.grad(x)
+        else:
+            return gradient[idx] + self.laplace.grad(x, idx=idx)
 
 
     # def update(self, target_grad_fn) -> None:
