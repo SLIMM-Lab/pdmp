@@ -362,14 +362,15 @@ class ZigZagSampler(Sampler):
         # logger.debug(f"      ratio: {m/M}")
 
         if m > M:
-            self.offset_[j] += m - M
+            delta_offset = 1.01 * (m - M) + 1e-3
+            self.offset_[j] += delta_offset
             self.offset_history_.append(
                 np.hstack((self.times_[self.iter_], self.offset_)).tolist()
             )
             self.revert_step()
             logger.info(f"  Action at time {self.times_[self.iter_]:.2f}; current position: {self.positions_[self.iter_]}")
             logger.info(f"     upper bound too tight, m: {m:.4f}, M: {M:.4f}")
-            logger.info(f"      ...increasing offset {j} to: {self.offset_[j]:.4f}")
+            logger.info(f"      ...increasing offset {j} by {delta_offset:.4e} to: {self.offset_[j]:.4f}")
         elif u < (m / M):
             self.velocities_[self.iter_ + 1, j] = -self.velocities_[self.iter_, j]
             self.n_accepted_ += 1
