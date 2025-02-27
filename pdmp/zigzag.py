@@ -121,6 +121,7 @@ class ZigZagSampler(Sampler):
             pass
         elif surrogate is not None:
             self.thinning_ = True
+            self.s_ = None
 
             if isinstance(surrogate, LaplaceSurrogate):
                 self.surrogate_ = cast(LaplaceSurrogate, surrogate)
@@ -224,7 +225,11 @@ class ZigZagSampler(Sampler):
         Returns:
         np.ndarray: The generated event times.
         """
-        s = -np.log(self.rng_.uniform(0, 1, self.dim_))
+        # recover rng from previous iteration in case of rejection
+        if self.s_ is None:
+            self.s_ = -np.log(self.rng_.uniform(0, 1, self.dim_))
+        s = self.s_
+
         taus = np.zeros(self.dim_)
 
         j = None
@@ -265,8 +270,13 @@ class ZigZagSampler(Sampler):
         np.ndarray: The generated event times.
         """
 
-        # get samples from the CDF
-        S = -np.log(self.rng_.uniform(0, 1, self.dim_))
+        # # get samples from the CDF
+        # S = -np.log(self.rng_.uniform(0, 1, self.dim_))
+        # recover rng from previous iteration in case of rejection
+        if self.s_ is None:
+            self.s_ = -np.log(self.rng_.uniform(0, 1, self.dim_))
+        S = self.s_
+
         # S = self.ss_[self.iter_]
         # logger.debug(f"S:    {S}")
 
@@ -364,8 +374,10 @@ class ZigZagSampler(Sampler):
             self.velocities_[self.iter_ + 1, j] = -self.velocities_[self.iter_, j]
             self.n_accepted_ += 1
             self.accepted_iters_[self.n_accepted_] = self.iter_ + 1
+            self.s_ = None
         else:
             self.velocities_[self.iter_ + 1, j] = self.velocities_[self.iter_, j]
+            self.s_ = None
 
     def step(self):
         """
