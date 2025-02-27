@@ -64,19 +64,20 @@ class SurrogateModel(object):
         """
         raise NotImplementedError
 
-    def add_data(self, x: np.ndarray, y: np.ndarray) -> None:
+    def add_data(self, x: np.ndarray, y: np.ndarray, dy_dx: np.ndarray = None) -> None:
         """
         Add data to the surrogate model.
 
         Parameters:
         x (np.ndarray): The input data.
         y (np.ndarray): The output data.
+        dy_dx (np.ndarray): The gradient of the output data.
         """
         raise NotImplementedError
 
-    def update(self, *args, **kwargs) -> None:
+    def train(self, *args, **kwargs) -> None:
         """
-        Update the surrogate model.
+        Train the surrogate model.
         """
         raise NotImplementedError
 
@@ -178,19 +179,26 @@ class LaplaceSurrogate(SurrogateModel):
         else:
             return self.gaussian.grad_log_density(x)[idx]
 
-    def add_data(self, x: np.ndarray, y: np.ndarray) -> None:
+    def add_data(self, x: np.ndarray, y: np.ndarray, dy_dx: np.ndarray = None) -> None:
         """
         Add data to the Laplace approximation. Nothing to do here!
-        :param x: The input data.
-        :param y: The output data.
-        :return: None
+
+        Parameters:
+        x (np.ndarray): The input data.
+        y (np.ndarray): The output data
         """
         pass
 
-    def update(self, *args, **kwargs) -> None:
+    def train(self, *args, **kwargs) -> None:
         """
         Update the Laplace approximation. Nothing to do here!
-        :return: None
+
+        Parameters:
+        args: Additional arguments.
+        kwargs: Additional keyword arguments.
+
+        Returns:
+        None
         """
         pass
 
@@ -216,16 +224,18 @@ class NeuralNetwork(SurrogateModel):
             self,
             target: Distribution,
             hidden_layers: list,
-            lr: float = 1e-3,
             n_samples: int = 100,
-            epochs: int = 5000,
+            epochs:  int = 5000,
             batch_size: int = 20,
+            weight_decay: float = 0.0,
             val_split: float = 0.3,
             patience: int = 100,
             print_every: int = 10,
-            lr_scheduler_step: bool = None,
-            lr_scheduler_gamma: bool = None,
+            lr: float = 1e-3,
+            lr_scheduler: str = None,
+            lr_scheduler_params: dict = None,
             train_on_init: bool = True,
+            update_model: list = None,
             rng: np.random.Generator = None,
             **kwargs
     ):
@@ -237,6 +247,8 @@ class NeuralNetwork(SurrogateModel):
         lr (float): Learning rate for the optimizer.
         """
         super().__init__()
+        if update_model is None:
+            update_model = []
         hidden_layers = [target.get_dim()] + hidden_layers + [1]
         layers = []
         for i in range(len(hidden_layers) - 1):
@@ -245,26 +257,39 @@ class NeuralNetwork(SurrogateModel):
                 layers.append(nn.Tanh())
         self.model = nn.Sequential(*layers)
 
-        self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
-        if lr_scheduler_gamma is not None and lr_scheduler_step is not None:
-            self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=lr_scheduler_step, gamma=lr_scheduler_gamma)
-        else:
-            self.scheduler = None
-        self.criterion = nn.MSELoss()
-        self.losses = []
-        self.best_val_loss = float('inf')
-        self.best_model_state = None
-
         self.laplace = LaplaceSurrogate.from_dict(kwargs, target=target, rng=rng)
+
+        # init all data
+        self.x_data = None
+        self.y_data = None
+        self.x_data_new = []
+        self.y_data_new = []
+        self.n_data_buffer = 0
+        if update_model is None:
+            update_model = []
+        self.update_model = copy.deepcopy(update_model)
+
+        self.training_params = {
+            'epochs': epochs,
+            'batch_size': batch_size,
+            'val_split': val_split,
+            'weight_decay': weight_decay,
+            'patience': patience,
+            'print_every': print_every,
+            'lr': lr,
+            'lr_scheduler': lr_scheduler,
+            'lr_scheduler_params': lr_scheduler_params
+        }
+
+        # add initial training data to update model array
+        if len(update_model) > 0:
+            for i in range(0, len(update_model)):
+                self.update_model[i] += n_samples
 
         if train_on_init:
             samples = self.laplace.get_samples(n_samples)
             self.x_data = torch.tensor(samples, dtype=torch.float32)
             self.y_data = torch.zeros(n_samples)
-
-            num_val = int(val_split * len(self.x_data))
-            self.x_train, self.x_val = self.x_data[:-num_val], self.x_data[-num_val:]
-            self.y_train, self.y_val = self.y_data[:-num_val], self.y_data[-num_val:]
 
             for i in range(n_samples):
                 self.y_data[i] = torch.tensor(
@@ -272,7 +297,7 @@ class NeuralNetwork(SurrogateModel):
                     dtype=torch.float32
                 )
 
-            self.update(epochs=epochs, batch_size=batch_size, patience=patience, print_every=print_every)
+            self.train(**self.training_params)
 
     @classmethod
     def from_dict(
@@ -323,15 +348,39 @@ class NeuralNetwork(SurrogateModel):
             return gradients[idx].detach().numpy() + self.laplace.grad(x, idx=idx)
 
     @override
-    def add_data(self, x: np.ndarray, y: np.ndarray) -> None:
-        self.x_data = torch.stack((
-            self.x_data,
-            torch.tensor(x, dtype=torch.float32)
-        ))
-        self.y_data = torch.stack((
-            self.y_data,
-            torch.tensor(y, dtype=torch.float32)
-        ))
+    def add_data(self, x: np.ndarray, y: np.ndarray, dy_dx: np.ndarray = None) -> None:
+
+        x = np.atleast_2d(x)
+        y = np.atleast_1d(y)
+
+        n = x.shape[0]
+
+        self.x_data_new.append(x)
+        self.y_data_new.append(y)
+
+        self.n_data_buffer += n
+
+        if len(self.update_model) > 0:
+            if self.n_data_buffer + self.x_data.shape[0] >= self.update_model[0]:
+                self.update_model.pop(0)
+
+                x_new = np.concat(self.x_data_new)
+                y_new = np.concat(self.y_data_new)
+
+                for i in range(len(y_new)):
+                    y_new[i] -= self.laplace.eval(x_new[i], delta=True)
+
+                x_new = torch.tensor(x_new, dtype=torch.float32)
+                y_new = torch.tensor(y_new, dtype=torch.float32)
+
+                self.x_data = torch.vstack((self.x_data, x_new))
+                self.y_data = torch.hstack((self.y_data, y_new))
+
+                self.train(**self.training_params)
+
+                self.x_data_new = []
+                self.y_data_new = []
+                self.n_data_buffer = 0
 
     def save_model(self, path: str = 'neural_network.th') -> None:
         """
@@ -351,15 +400,18 @@ class NeuralNetwork(SurrogateModel):
         """
         self.model.load_state_dict(torch.load(path, weights_only=True))
 
-    def update(
+    def train(
             self,
             *args,
-            epochs: int = 5000,
-            batch_size: int = 20,
-            print_every: int = 10,
-            patience: int = 10,
-            lr_scheduler_step: int = None,
-            lr_scheduler_gamma: float = None,
+            epochs: int,
+            batch_size: int,
+            print_every: int,
+            patience: int,
+            lr: float,
+            val_split: float,
+            weight_decay: float,
+            lr_scheduler: str,
+            lr_scheduler_params: dict,
             **kwargs
     ) -> None:
         """
@@ -370,15 +422,36 @@ class NeuralNetwork(SurrogateModel):
         batch_size (int): Batch size for training.
         print_every (int): Print training information every print_every epochs.
         patience (int): Number of epochs to wait for improvement in validation loss before stopping early.
+        lr (float): Learning rate for the optimizer.
         lr_scheduler_step (int): Number of epochs after which to reduce the learning rate.
         lr_scheduler_gamma (float): Factor by which to reduce the learning rate.
         """
 
         train_losses = []
         val_losses = []
+        patience_counter = 0
 
-        train_dataset = torch.utils.data.TensorDataset(self.x_train, self.y_train)
+        num_val = int(val_split * len(self.x_data))
+        x_train, x_val = self.x_data[:-num_val], self.x_data[-num_val:]
+        y_train, y_val = self.y_data[:-num_val], self.y_data[-num_val:]
+
+        train_dataset = torch.utils.data.TensorDataset(x_train, y_train)
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+        optimizer = optim.Adam(self.model.parameters(), lr=lr, weight_decay=weight_decay)
+
+        if lr_scheduler == 'StepLR':
+            scheduler = optim.lr_scheduler.StepLR(optimizer, **lr_scheduler_params)
+        elif lr_scheduler == 'ReduceLROnPlateau':
+            scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, **lr_scheduler_params)
+        else:
+            scheduler = None
+
+        criterion = nn.MSELoss()
+        best_val_loss = float('inf')
+        best_model_state = None
+
+        last_lr = lr
 
         logger.warning("Training neural network surrogate model ...")
 
@@ -398,34 +471,45 @@ class NeuralNetwork(SurrogateModel):
 
                 for x_batch, y_batch in train_loader:
 
-                    self.optimizer.zero_grad()
+                    optimizer.zero_grad()
                     y_pred = self.model(x_batch).squeeze()
-                    loss = self.criterion(y_pred, y_batch)
+                    loss = criterion(y_pred, y_batch)
                     train_losses.append(loss.detach().numpy())
                     loss.backward()
-                    self.optimizer.step()
+                    optimizer.step()
 
-                if self.scheduler is not None:
-                    self.scheduler.step()
 
                 self.model.eval()
                 with torch.no_grad():
-                    val_loss = self.criterion(self.model(self.x_val).squeeze(), self.y_val).item()
+                    val_loss = criterion(self.model(x_val).squeeze(), y_val).item()
                     val_losses.append(val_loss)
 
-                    if val_loss < self.best_val_loss:
-                        self.best_val_loss = val_loss
-                        self.best_model_state = copy.deepcopy(self.model.state_dict())
+                    if val_loss < best_val_loss:
+                        best_val_loss = val_loss
+                        best_model_state = copy.deepcopy(self.model.state_dict())
                         patience_counter = 0
                     else:
                         patience_counter += 1
                         if patience_counter >= patience:
                             pbar.clear()
-                            logger.warning(f"Early stopping at epoch {epoch} with validation loss {val_loss:.6f}")
+                            logger.warning(f"Early stopping at epoch {epoch}.")
+                            logger.warning(f"with best validation loss {best_val_loss:.6f}")
                             break
 
-        if self.best_model_state:
-            self.model.load_state_dict(self.best_model_state)
+                if isinstance(scheduler, optim.lr_scheduler.StepLR):
+                    scheduler.step()
+
+                if isinstance(scheduler, optim.lr_scheduler.ReduceLROnPlateau):
+                    scheduler.step(val_loss)
+
+                if last_lr > scheduler.get_last_lr()[-1]:
+                    pbar.clear()
+                    last_lr = scheduler.get_last_lr()[-1]
+                    logger.warning(f"At Iter {epoch} new learning rate: {last_lr}")
+                    pbar.refresh()
+
+        if best_model_state:
+            self.model.load_state_dict(best_model_state)
             self.save_model()
 
         # plot training and validation loss
@@ -443,7 +527,7 @@ class NeuralNetwork(SurrogateModel):
 
         if not os.path.exists('figures'):
             os.makedirs('figures')
-        fig.savefig(f'figures/training_validation_loss.pdf')
+        fig.savefig(f'figures/training_validation_loss_{self.x_data.shape[0]}.pdf')
 
 
 class ExactGPModel(ExactGP):
@@ -510,7 +594,7 @@ class GaussianProcess(SurrogateModel):
                     dtype=torch.float32
                 )
 
-            self.update(
+            self.train(
                 train_iters=train_iters,
                 n_restarts=n_restarts,
                 print_every=print_every,
@@ -547,7 +631,7 @@ class GaussianProcess(SurrogateModel):
         )
 
     @override
-    def update(
+    def train(
             self,
             train_iters: int,
             n_restarts: int,
@@ -795,7 +879,7 @@ class DerivativeGaussianProcess(SurrogateModel):
                     dtype=torch.float32
                 )
 
-            self.update(
+            self.train(
                 train_iters=train_iters,
                 n_restarts=n_restarts,
                 print_every=print_every,
@@ -832,7 +916,7 @@ class DerivativeGaussianProcess(SurrogateModel):
         )
 
     @override
-    def update(
+    def train(
             self,
             train_iters: int,
             n_restarts: int,

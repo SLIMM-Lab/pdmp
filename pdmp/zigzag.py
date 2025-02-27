@@ -194,10 +194,19 @@ class ZigZagSampler(Sampler):
         Returns:
         np.ndarray: The calculated rates.
         """
+
+        grad = self.target_.grad_log_density(x)
+        log_p = self.target_.log_density(x)
+
+        if self.thinning_:
+            self.surrogate_.add_data(x=x, y=log_p, dy_dx=grad)
+
+        rates = np.maximum( - grad * self.velocities_[self.iter_], 0) + self.gamma_
+
         if idx_d is None:
-            return np.maximum(-self.target_.grad_log_density(x) * self.velocities_[self.iter_], 0) + self.gamma_
+            return rates
         else:
-            return np.maximum(0, -self.target_.grad_log_density(x)[idx_d] * self.velocities_[self.iter_, idx_d]) + self.gamma_
+            return rates[idx_d]
 
     def surrogate_rates(self, x: np.ndarray, idx_d: int = None, idx_n: int = None) -> np.ndarray:
         """
