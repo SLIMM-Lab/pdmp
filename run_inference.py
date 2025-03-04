@@ -49,6 +49,7 @@ def main():
     # Generate a random seed for PyTorch from NumPy's RNG
     torch_seed = rng.integers(0, 2 ** 32)  # Get a random 32-bit integer
     torch.manual_seed(torch_seed)
+    torch.set_default_dtype(torch.float64)
 
     try:
         # load the problem configuration

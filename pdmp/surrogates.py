@@ -30,6 +30,9 @@ from pdmp.plotting_utils import get_2d_despined_figure
 from pdmp import logger
 
 
+dtype = torch.float64
+
+
 class SurrogateModel(object):
     """
     Base class for surrogate models.
@@ -291,13 +294,13 @@ class NeuralNetwork(SurrogateModel):
 
         if train_on_init:
             samples = self.laplace.get_samples(n_samples)
-            self.x_data = torch.tensor(samples, dtype=torch.float32)
+            self.x_data = torch.tensor(samples, dtype=dtype)
             self.y_data = torch.zeros(n_samples)
 
             for i in range(n_samples):
                 self.y_data[i] = torch.tensor(
                     target.log_density(samples[i]) - self.laplace.eval(samples[i], delta=True),
-                    dtype=torch.float32
+                    dtype=dtype
                 )
 
             self.train(**self.training_params)
@@ -330,13 +333,13 @@ class NeuralNetwork(SurrogateModel):
 
     @override
     def eval(self, x: np.ndarray, **kwargs) -> np.ndarray:
-        x_tensor = torch.tensor(x, dtype=torch.float32)
+        x_tensor = torch.tensor(x, dtype=dtype)
         with torch.no_grad():
             return self.model(x_tensor).numpy() + self.laplace.eval(x, delta=True)
 
     @override
     def grad(self, x: np.ndarray, idx: int = None) -> np.ndarray:
-        x_tensor = torch.tensor(x, dtype=torch.float32, requires_grad=True)
+        x_tensor = torch.tensor(x, dtype=dtype, requires_grad=True)
         y_tensor = self.model(x_tensor)
         gradients = grad(
             outputs=y_tensor,
@@ -373,8 +376,8 @@ class NeuralNetwork(SurrogateModel):
                 for i in range(len(y_new)):
                     y_new[i] -= self.laplace.eval(x_new[i], delta=True)
 
-                x_new = torch.tensor(x_new, dtype=torch.float32)
-                y_new = torch.tensor(y_new, dtype=torch.float32)
+                x_new = torch.tensor(x_new, dtype=dtype)
+                y_new = torch.tensor(y_new, dtype=dtype)
 
                 self.x_data = torch.vstack((self.x_data, x_new))
                 self.y_data = torch.hstack((self.y_data, y_new))
@@ -598,13 +601,13 @@ class GaussianProcess(SurrogateModel):
         # train model unless specified otherwise
         if train_on_init:
             samples = self.laplace.get_samples(n_samples)
-            self.x_data = torch.tensor(samples, dtype=torch.float32)
+            self.x_data = torch.tensor(samples, dtype=dtype)
             self.y_data = torch.zeros(n_samples)
 
             for i in range(n_samples):
                 self.y_data[i] = torch.tensor(
                     target.log_density(samples[i]) - self.laplace.eval(samples[i], delta=True),
-                    dtype=torch.float32
+                    dtype=dtype
                 )
 
             self.train(**self.training_params)
@@ -670,7 +673,7 @@ class GaussianProcess(SurrogateModel):
         sampler = qmc.LatinHypercube(n_params, scramble=True, rng=self.rng)
         sample = sampler.random(n_restarts)
         scaled_sample = qmc.scale(sample, -10, 20)
-        initial_params = torch.tensor(scaled_sample, dtype=torch.float32)
+        initial_params = torch.tensor(scaled_sample, dtype=dtype)
 
         # init best model and loss
         best_model = None
@@ -821,7 +824,7 @@ class GaussianProcess(SurrogateModel):
 
         x_tensor = torch.tensor(
             np.atleast_2d(x),
-            dtype=torch.float32,
+            dtype=dtype,
             requires_grad=False
         )
         with torch.no_grad(), gpytorch.settings.skip_posterior_variances(True):
@@ -832,7 +835,7 @@ class GaussianProcess(SurrogateModel):
 
         x_tensor = torch.tensor(
             np.atleast_2d(x),
-            dtype=torch.float32,
+            dtype=dtype,
             requires_grad=True
         )
 
@@ -917,17 +920,17 @@ class DerivativeGaussianProcess(SurrogateModel):
         # train model unless specified otherwise
         if train_on_init:
             samples = self.laplace.get_samples(n_samples)
-            self.x_data = torch.tensor(samples, dtype=torch.float32)
-            self.y_data = torch.zeros(n_samples, target.get_dim() + 1, dtype=torch.float32)
+            self.x_data = torch.tensor(samples, dtype=dtype)
+            self.y_data = torch.zeros(n_samples, target.get_dim() + 1, dtype=dtype)
 
             for i in range(n_samples):
                 self.y_data[i, 0] = torch.tensor(
                     target.log_density(samples[i]) - self.laplace.eval(samples[i], delta=True),
-                    dtype=torch.float32
+                    dtype=dtype
                 )
                 self.y_data[i, 1:] = torch.tensor(
                     target.grad_log_density(samples[i]) - self.laplace.grad(samples[i]),
-                    dtype=torch.float32
+                    dtype=dtype
                 )
 
             self.train(**self.training_params)
@@ -993,7 +996,7 @@ class DerivativeGaussianProcess(SurrogateModel):
         sampler = qmc.LatinHypercube(n_params, scramble=True, rng=self.rng)
         sample = sampler.random(n_restarts)
         scaled_sample = qmc.scale(sample, -10, 20)
-        initial_params = torch.tensor(scaled_sample, dtype=torch.float32)
+        initial_params = torch.tensor(scaled_sample, dtype=dtype)
 
         # init best model and loss
         best_model = None
@@ -1143,7 +1146,7 @@ class DerivativeGaussianProcess(SurrogateModel):
 
         x_tensor = torch.tensor(
             np.atleast_2d(x),
-            dtype=torch.float32,
+            dtype=dtype,
             requires_grad=False
         )
         with torch.no_grad(), gpytorch.settings.skip_posterior_variances(True):
@@ -1154,7 +1157,7 @@ class DerivativeGaussianProcess(SurrogateModel):
 
         x_tensor = torch.tensor(
             np.atleast_2d(x),
-            dtype=torch.float32,
+            dtype=dtype,
             requires_grad=True
         )
         with torch.no_grad(), gpytorch.settings.skip_posterior_variances(True):
