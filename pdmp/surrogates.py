@@ -1167,39 +1167,3 @@ class DerivativeGaussianProcess(SurrogateModel):
             return gradient + self.laplace.grad(x)
         else:
             return gradient[idx] + self.laplace.grad(x, idx=idx)
-
-
-    # def update(self, target_grad_fn) -> None:
-    #     """
-    #     Update the neural network surrogate model using added data.
-    #
-    #     Parameters:
-    #     target_grad_fn (callable): A function that computes the gradient of the true negative log-pdf.
-    #     """
-    #     if not self.x_data:
-    #         return
-    #
-    #     x_batch = torch.stack(self.x_data)
-    #     y_batch = torch.stack(self.y_data)
-    #
-    #     self.optimizer.zero_grad()
-    #
-    #     # Compute loss on function values
-    #     y_pred = self.model(x_batch).squeeze()
-    #     loss = self.criterion(y_pred, y_batch)
-    #
-    #     # Compute gradient penalty
-    #     x_batch.requires_grad = True
-    #     y_pred = self.model(x_batch)
-    #     grad_pred = grad(outputs=y_pred, inputs=x_batch, grad_outputs=torch.ones_like(y_pred), create_graph=True)[0]
-    #     grad_target = target_grad_fn(x_batch.detach().numpy())
-    #     grad_penalty = torch.mean(
-    #         torch.clamp(torch.abs(grad_pred) - torch.abs(torch.tensor(grad_target, dtype=torch.float32)), min=0) ** 2)
-    #
-    #     total_loss = loss + grad_penalty
-    #     total_loss.backward()
-    #     self.optimizer.step()
-    #
-    #     # Clear stored data
-    #     self.x_data.clear()
-    #     self.y_data.clear()
