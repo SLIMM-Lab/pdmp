@@ -568,8 +568,8 @@ class GaussianProcess(SurrogateModel):
             train_iters: int = 100,
             n_restarts: int = 50,
             lr: float = 0.2,
-            lr_scheduler_step: int = None,
-            lr_scheduler_gamma: float = None,
+            lr_scheduler: str = None,
+            lr_scheduler_params: dict = None,
             print_every: int = 1,
             **kwargs
     ):
@@ -584,6 +584,16 @@ class GaussianProcess(SurrogateModel):
         # define likelihood, get model, and set optimizer
         self.likelihood = GaussianLikelihood()
         self.model = ExactGPModel(None, None, self.likelihood, target.get_dim())
+        self.rng = rng
+
+        self.training_params = {
+            'train_iters': train_iters,
+            'n_restarts': n_restarts,
+            'print_every': print_every,
+            'lr': lr,
+            'lr_scheduler': lr_scheduler,
+            'lr_scheduler_params': lr_scheduler_params
+        }
 
         # train model unless specified otherwise
         if train_on_init:
@@ -597,15 +607,7 @@ class GaussianProcess(SurrogateModel):
                     dtype=torch.float32
                 )
 
-            self.train(
-                train_iters=train_iters,
-                n_restarts=n_restarts,
-                print_every=print_every,
-                lr=lr,
-                lr_scheduler_step=lr_scheduler_step,
-                lr_scheduler_gamma=lr_scheduler_gamma,
-                rng=rng
-            )
+            self.train(**self.training_params)
 
         logger.info('Gaussian process surrogate model initialized.')
 
@@ -636,13 +638,14 @@ class GaussianProcess(SurrogateModel):
     @override
     def train(
             self,
+            *args,
             train_iters: int,
             n_restarts: int,
             print_every: int,
             lr: float,
-            lr_scheduler_step: int,
-            lr_scheduler_gamma: float,
-            rng: np.random.Generator = None
+            lr_scheduler: str,
+            lr_scheduler_params: dict,
+            **kwargs
     ) -> None:
         """
         Update the Gaussian process surrogate model.
@@ -664,7 +667,7 @@ class GaussianProcess(SurrogateModel):
 
         # get hyperparameter initialisations
         n_params = int(sum([np.prod(param.shape) for name, param in self.model.named_parameters()]))
-        sampler = qmc.LatinHypercube(n_params, scramble=True, rng=rng)
+        sampler = qmc.LatinHypercube(n_params, scramble=True, rng=self.rng)
         sample = sampler.random(n_restarts)
         scaled_sample = qmc.scale(sample, -10, 20)
         initial_params = torch.tensor(scaled_sample, dtype=torch.float32)
@@ -672,6 +675,18 @@ class GaussianProcess(SurrogateModel):
         # init best model and loss
         best_model = None
         best_loss = float('inf')
+
+        # plot training and validation loss
+        fig, ax = get_2d_despined_figure(
+            figsize=(5, 3.5),
+            equal_axes=False,
+            axes_label=('Iter', 'MLL'),
+            keep_ticks=True
+        )
+        losses_min = 1e10
+        losses_max = -1e10
+        best_iter = 0
+        train_losses_all = []
 
         with tqdm(
             total=n_restarts,
@@ -683,15 +698,15 @@ class GaussianProcess(SurrogateModel):
 
             for restart in range(n_restarts):
 
+                train_losses = []
+
                 # init optimizer and scheduler
                 optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
 
-                if lr_scheduler_gamma is not None and lr_scheduler_step is not None:
-                    scheduler = optim.lr_scheduler.StepLR(
-                        optimizer,
-                        step_size=lr_scheduler_step,
-                        gamma=lr_scheduler_gamma
-                    )
+                if lr_scheduler == 'StepLR':
+                    scheduler = optim.lr_scheduler.StepLR(optimizer, **lr_scheduler_params)
+                elif lr_scheduler == 'ReduceLROnPlateau':
+                    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, **lr_scheduler_params)
                 else:
                     scheduler = None
 
@@ -700,9 +715,9 @@ class GaussianProcess(SurrogateModel):
                 counter = 0
                 for name, param in self.model.named_parameters():
                     shape = param.shape
-                    len = int(np.prod(shape))
-                    hyper_params[name] = initial_params[restart, counter:counter+len].reshape(shape)
-                    counter += len
+                    length = int(np.prod(shape))
+                    hyper_params[name] = initial_params[restart, counter:counter + length].reshape(shape)
+                    counter += length
 
                 self.model.initialize(**hyper_params)
 
@@ -719,12 +734,16 @@ class GaussianProcess(SurrogateModel):
                         optimizer.zero_grad()
                         output = self.model(self.x_data)
                         loss = -mll(output, self.y_data)
+                        train_losses.append(loss.detach().numpy())
                         loss.backward()
                         optimizer.step()
 
                         # update learning rate
-                        if scheduler is not None:
+                        if isinstance(scheduler, optim.lr_scheduler.StepLR):
                             scheduler.step()
+
+                        if isinstance(scheduler, optim.lr_scheduler.ReduceLROnPlateau):
+                            scheduler.step(loss)
 
                         # print current hyperparams and loss
                         if (i % print_every) == 0:
@@ -738,22 +757,41 @@ class GaussianProcess(SurrogateModel):
 
                     # check if current model is best
                     if loss.item() < best_loss:
-                        logger.info(f'New best loss: {loss.item()} with params')
-                        logger.info(self.log_state_dict(end_of_line='\n'))
+                        logger.info(f'New best loss: {loss.item()} with params:')
+                        logger.info(self.log_state_dict())
                         best_model = copy.deepcopy(self.model.state_dict())
                         best_loss = loss.item()
+                        best_iter = restart
 
                 # catch exception if non-PSD error occurs
                 except gpytorch.linear_operator.utils.errors.NotPSDError as e:
                     pbar.clear()
-                    logger.warning(f"Non-PSD error: {e}")
+                    logger.info(f"Non-PSD error: {e}")
                     pbar.refresh()
 
+                train_losses_np = np.array(train_losses)
+                if len(train_losses) > 0:
+                    losses_min = np.min((np.min(train_losses_np), losses_min))
+                train_losses_all.append(train_losses_np)
                 pbar.update()
 
         # load best model print parameters
         self.model.load_state_dict(best_model)
         logger.warning(f"Best model with loss {best_loss} and params:\n" + self.log_state_dict())
+
+        for i in range(n_restarts):
+            if i == best_iter:
+                ax.plot(train_losses_all[i], color='C0', alpha=1, lw=1.5)
+            else:
+                ax.plot(train_losses_all[i], color='C0', alpha=0.3, lw=1.)
+
+        ax.set_ylim(losses_min - 0.2*np.abs(losses_min), losses_min + 10.)
+
+        # fig.show()
+
+        if not os.path.exists('figures'):
+            os.makedirs('figures')
+        fig.savefig(f'figures/mll_{self.x_data.shape[0]}.pdf')
 
         # set model into evaluation mode
         self.model.eval()
@@ -849,8 +887,8 @@ class DerivativeGaussianProcess(SurrogateModel):
             train_iters: int = 100,
             n_restarts: int = 50,
             lr: float = 0.2,
-            lr_scheduler_step: int = None,
-            lr_scheduler_gamma: float = None,
+            lr_scheduler: str = None,
+            lr_scheduler_params: dict = None,
             print_every: int = 1,
             **kwargs
     ):
@@ -865,6 +903,16 @@ class DerivativeGaussianProcess(SurrogateModel):
         # define likelihood, get model, and set optimizer
         self.likelihood = MultitaskGaussianLikelihood(num_tasks=target.get_dim() + 1)
         self.model = DerivativeGPModel(None, None, self.likelihood, target.get_dim())
+        self.rng = rng
+
+        self.training_params = {
+            'train_iters': train_iters,
+            'n_restarts': n_restarts,
+            'print_every': print_every,
+            'lr': lr,
+            'lr_scheduler': lr_scheduler,
+            'lr_scheduler_params': lr_scheduler_params
+        }
 
         # train model unless specified otherwise
         if train_on_init:
@@ -882,15 +930,7 @@ class DerivativeGaussianProcess(SurrogateModel):
                     dtype=torch.float32
                 )
 
-            self.train(
-                train_iters=train_iters,
-                n_restarts=n_restarts,
-                print_every=print_every,
-                lr=lr,
-                lr_scheduler_step=lr_scheduler_step,
-                lr_scheduler_gamma=lr_scheduler_gamma,
-                rng=rng
-            )
+            self.train(**self.training_params)
 
         logger.info('Gaussian process surrogate model initialized.')
 
@@ -921,13 +961,14 @@ class DerivativeGaussianProcess(SurrogateModel):
     @override
     def train(
             self,
+            *args,
             train_iters: int,
             n_restarts: int,
             print_every: int,
             lr: float,
-            lr_scheduler_step: int,
-            lr_scheduler_gamma: float,
-            rng: np.random.Generator = None,
+            lr_scheduler: str,
+            lr_scheduler_params: dict,
+            **kwargs
     ) -> None:
         """
         Update the Gaussian process surrogate model.
@@ -949,7 +990,7 @@ class DerivativeGaussianProcess(SurrogateModel):
 
         # get hyperparameter initialisations
         n_params = int(sum([np.prod(param.shape) for name, param in self.model.named_parameters()]))
-        sampler = qmc.LatinHypercube(n_params, scramble=True, rng=rng)
+        sampler = qmc.LatinHypercube(n_params, scramble=True, rng=self.rng)
         sample = sampler.random(n_restarts)
         scaled_sample = qmc.scale(sample, -10, 20)
         initial_params = torch.tensor(scaled_sample, dtype=torch.float32)
@@ -957,6 +998,18 @@ class DerivativeGaussianProcess(SurrogateModel):
         # init best model and loss
         best_model = None
         best_loss = float('inf')
+
+        # plot training and validation loss
+        fig, ax = get_2d_despined_figure(
+            figsize=(5, 3.5),
+            equal_axes=False,
+            axes_label=('Iter', 'MLL'),
+            keep_ticks=True
+        )
+        losses_min = 1e10
+        losses_max = -1e10
+        best_restart = 0
+        train_losses_all = []
 
         with tqdm(
                 total=n_restarts,
@@ -968,15 +1021,15 @@ class DerivativeGaussianProcess(SurrogateModel):
 
             for restart in range(n_restarts):
 
+                train_losses = []
+
                 # init optimizer and scheduler
                 optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
 
-                if lr_scheduler_gamma is not None and lr_scheduler_step is not None:
-                    scheduler = optim.lr_scheduler.StepLR(
-                        optimizer,
-                        step_size=lr_scheduler_step,
-                        gamma=lr_scheduler_gamma
-                    )
+                if lr_scheduler == 'StepLR':
+                    scheduler = optim.lr_scheduler.StepLR(optimizer, **lr_scheduler_params)
+                elif lr_scheduler == 'ReduceLROnPlateau':
+                    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, **lr_scheduler_params)
                 else:
                     scheduler = None
 
@@ -985,9 +1038,9 @@ class DerivativeGaussianProcess(SurrogateModel):
                 counter = 0
                 for name, param in self.model.named_parameters():
                     shape = param.shape
-                    len = int(np.prod(shape))
-                    hyper_params[name] = initial_params[restart, counter:counter + len].reshape(shape)
-                    counter += len
+                    length = int(np.prod(shape))
+                    hyper_params[name] = initial_params[restart, counter:counter + length].reshape(shape)
+                    counter += length
 
                 self.model.initialize(**hyper_params)
 
@@ -1004,12 +1057,16 @@ class DerivativeGaussianProcess(SurrogateModel):
                         optimizer.zero_grad()
                         output = self.model(self.x_data)
                         loss = -mll(output, self.y_data)
+                        train_losses.append(loss.detach().numpy())
                         loss.backward()
                         optimizer.step()
 
                         # update learning rate
-                        if scheduler is not None:
+                        if isinstance(scheduler, optim.lr_scheduler.StepLR):
                             scheduler.step()
+
+                        if isinstance(scheduler, optim.lr_scheduler.ReduceLROnPlateau):
+                            scheduler.step(loss)
 
                         # print current hyperparams and loss
                         if (i % print_every) == 0:
@@ -1023,21 +1080,40 @@ class DerivativeGaussianProcess(SurrogateModel):
 
                     # check if current model is best
                     if loss.item() < best_loss:
-                        logger.info(f'New best loss: {loss.item()} with params:\n' + self.log_state_dict())
+                        logger.info(f'New best loss: {loss.item()} with params:')
+                        logger.info(self.log_state_dict())
                         best_model = copy.deepcopy(self.model.state_dict())
                         best_loss = loss.item()
+                        best_restart = restart
 
                 # catch exception if non-PSD error occurs
                 except gpytorch.linear_operator.utils.errors.NotPSDError as e:
                     pbar.clear()
-                    logger.warning(f"Non-PSD error: {e}")
+                    logger.info(f"Non-PSD error: {e}")
                     pbar.refresh()
 
+                train_losses_np = np.array(train_losses)
+                if len(train_losses) > 0:
+                    losses_min = np.min((np.min(train_losses_np), losses_min))
+                train_losses_all.append(train_losses_np)
                 pbar.update()
 
         # load best model print parameters
         self.model.load_state_dict(best_model)
         logger.warning(f"Best model with loss {best_loss} and params:\n" + self.log_state_dict())
+
+        for i in range(n_restarts):
+            if i == best_restart:
+                ax.plot(train_losses_all[i], color='C0', alpha=1, lw=1.5)
+            else:
+                ax.plot(train_losses_all[i], color='C0', alpha=0.3, lw=1.)
+
+        ax.set_ylim(losses_min - 0.2*np.abs(losses_min), losses_min + 10.)
+        # fig.show()
+
+        if not os.path.exists('figures'):
+            os.makedirs('figures')
+        fig.savefig(f'figures/mll_{self.x_data.shape[0]}.pdf')
 
         # set model into evaluation mode
         self.model.eval()
