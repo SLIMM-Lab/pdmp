@@ -41,7 +41,7 @@ def main():
     setup_file_handler(logger, config['output']['dir'], **config['output']['logging'])
 
     # # convert the configuration to numpy arrays
-    config = yaml_to_numpy(config, exclude_keys={'hidden_layers'})
+    config = yaml_to_numpy(config, exclude_keys={'hidden_layers', 'update_model'})
 
     # collect seed for rng
     rng = np.random.default_rng(config.get('seed', 0))
