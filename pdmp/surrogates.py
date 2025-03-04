@@ -574,6 +574,7 @@ class GaussianProcess(SurrogateModel):
             lr_scheduler: str = None,
             lr_scheduler_params: dict = None,
             print_every: int = 1,
+            update_model: list = None,
             **kwargs
     ):
         """
@@ -588,6 +589,16 @@ class GaussianProcess(SurrogateModel):
         self.likelihood = GaussianLikelihood()
         self.model = ExactGPModel(None, None, self.likelihood, target.get_dim())
         self.rng = rng
+
+        # init all data
+        self.x_data = None
+        self.y_data = None
+        self.x_data_new = []
+        self.y_data_new = []
+        self.n_data_buffer = 0
+        if update_model is None:
+            update_model = []
+        self.update_model = copy.deepcopy(update_model)
 
         self.training_params = {
             'train_iters': train_iters,
@@ -637,6 +648,41 @@ class GaussianProcess(SurrogateModel):
             rng=rng,
             **config
         )
+
+    @override
+    def add_data(self, x: np.ndarray, y: np.ndarray, dy_dx: np.ndarray = None) -> None:
+
+        x = np.atleast_2d(x)
+        y = np.atleast_1d(y)
+
+        n = x.shape[0]
+
+        self.x_data_new.append(x)
+        self.y_data_new.append(y)
+
+        self.n_data_buffer += n
+
+        if len(self.update_model) > 0:
+            if self.n_data_buffer + self.x_data.shape[0] >= self.update_model[0]:
+                self.update_model.pop(0)
+
+                x_new = np.concat(self.x_data_new)
+                y_new = np.concat(self.y_data_new)
+
+                for i in range(len(y_new)):
+                    y_new[i] -= self.laplace.eval(x_new[i], delta=True)
+
+                x_new = torch.tensor(x_new, dtype=dtype)
+                y_new = torch.tensor(y_new, dtype=dtype)
+
+                self.x_data = torch.vstack((self.x_data, x_new))
+                self.y_data = torch.hstack((self.y_data, y_new))
+
+                self.train(**self.training_params)
+
+                self.x_data_new = []
+                self.y_data_new = []
+                self.n_data_buffer = 0
 
     @override
     def train(
@@ -893,6 +939,7 @@ class DerivativeGaussianProcess(SurrogateModel):
             lr_scheduler: str = None,
             lr_scheduler_params: dict = None,
             print_every: int = 1,
+            update_model: list = None,
             **kwargs
     ):
         """
@@ -907,6 +954,16 @@ class DerivativeGaussianProcess(SurrogateModel):
         self.likelihood = MultitaskGaussianLikelihood(num_tasks=target.get_dim() + 1)
         self.model = DerivativeGPModel(None, None, self.likelihood, target.get_dim())
         self.rng = rng
+
+        # init all data
+        self.x_data = None
+        self.y_data = None
+        self.x_data_new = []
+        self.y_data_new = []
+        self.n_data_buffer = 0
+        if update_model is None:
+            update_model = []
+        self.update_model = copy.deepcopy(update_model)
 
         self.training_params = {
             'train_iters': train_iters,
@@ -960,6 +1017,41 @@ class DerivativeGaussianProcess(SurrogateModel):
             rng=rng,
             **config
         )
+
+    @override
+    def add_data(self, x: np.ndarray, y: np.ndarray, dy_dx: np.ndarray = None) -> None:
+
+        x = np.atleast_2d(x)
+        y = np.atleast_1d(y)
+
+        n = x.shape[0]
+
+        self.x_data_new.append(x)
+        self.y_data_new.append(y)
+
+        self.n_data_buffer += n
+
+        if len(self.update_model) > 0:
+            if self.n_data_buffer + self.x_data.shape[0] >= self.update_model[0]:
+                self.update_model.pop(0)
+
+                x_new = np.concat(self.x_data_new)
+                y_new = np.concat(self.y_data_new)
+
+                for i in range(len(y_new)):
+                    y_new[i] -= self.laplace.eval(x_new[i], delta=True)
+
+                x_new = torch.tensor(x_new, dtype=dtype)
+                y_new = torch.tensor(y_new, dtype=dtype)
+
+                self.x_data = torch.vstack((self.x_data, x_new))
+                self.y_data = torch.hstack((self.y_data, y_new))
+
+                self.train(**self.training_params)
+
+                self.x_data_new = []
+                self.y_data_new = []
+                self.n_data_buffer = 0
 
     @override
     def train(
