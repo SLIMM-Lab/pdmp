@@ -88,7 +88,8 @@ class LaplaceSurrogate(SurrogateModel):
     """
     def __init__(
             self,
-            target: Distribution = None,
+            target: Distribution,
+            rng: np.random.Generator,
             mean: np.ndarray = None,
             cov: np.ndarray = None,
             x_0: np.ndarray = None,
@@ -123,22 +124,23 @@ class LaplaceSurrogate(SurrogateModel):
             self.mean = mean
             self.cov = cov
 
-        self.gaussian = MultivariateNormal(self.mean, self.cov)
+        self.gaussian = MultivariateNormal(self.mean, self.cov, rng=rng)
         self.delta = self.gaussian.log_density(self.mean) - target.log_density(self.mean)
 
     @classmethod
     def from_dict(
             cls,
             config: dict,
-            target = None,
-            rng: np.random.Generator = None
+            target: Distribution,
+            rng: np.random.Generator
     ):
         """
         Create a Laplace approximation from a dictionary.
 
         Parameters:
         config (dict): The configuration dictionary.
-        rng (np.random.Generator, optional): The random number generator. Default is None.
+        target (Distribution): The target distribution.
+        rng (np.random.Generator): The random number generator.
 
         Returns:
         LaplaceSurrogate: The Laplace approximation.
@@ -148,7 +150,8 @@ class LaplaceSurrogate(SurrogateModel):
         return cls(
             mean=mean,
             cov=cov,
-            target=target
+            target=target,
+            rng=rng
         )
 
     def eval(self, x: np.ndarray, delta: bool=False, **kwargs) -> np.ndarray:
@@ -224,6 +227,7 @@ class NeuralNetwork(SurrogateModel):
             self,
             target: Distribution,
             hidden_layers: list,
+            rng: np.random.Generator,
             n_samples: int = 100,
             epochs:  int = 5000,
             batch_size: int = 20,
@@ -236,7 +240,6 @@ class NeuralNetwork(SurrogateModel):
             lr_scheduler_params: dict = None,
             train_on_init: bool = True,
             update_model: list = None,
-            rng: np.random.Generator = None,
             **kwargs
     ):
         """
@@ -304,7 +307,7 @@ class NeuralNetwork(SurrogateModel):
             cls,
             config: dict,
             target: Distribution,
-            rng: np.random.Generator = None,
+            rng: np.random.Generator,
             train_on_init: bool = True
     ):
         """
@@ -558,7 +561,8 @@ class GaussianProcess(SurrogateModel):
     """
     def __init__(
             self,
-            target: Distribution = None,
+            rng: np.random.Generator,
+            target: Distribution,
             train_on_init: bool = True,
             n_samples: int = 100,
             train_iters: int = 100,
@@ -567,7 +571,6 @@ class GaussianProcess(SurrogateModel):
             lr_scheduler_step: int = None,
             lr_scheduler_gamma: float = None,
             print_every: int = 1,
-            rng: np.random.Generator = None,
             **kwargs
     ):
         """
@@ -839,7 +842,8 @@ class DerivativeGaussianProcess(SurrogateModel):
 
     def __init__(
             self,
-            target: Distribution = None,
+            rng: np.random.Generator,
+            target: Distribution,
             train_on_init: bool = True,
             n_samples: int = 100,
             train_iters: int = 100,
@@ -848,7 +852,6 @@ class DerivativeGaussianProcess(SurrogateModel):
             lr_scheduler_step: int = None,
             lr_scheduler_gamma: float = None,
             print_every: int = 1,
-            rng: np.random.Generator = None,
             **kwargs
     ):
         """
