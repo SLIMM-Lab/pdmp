@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Union, cast
 
 import matplotlib.colors
 import numpy as np
@@ -103,13 +103,75 @@ def plot_trace(
 
     return fig, ax
 
+def plot_pdf_grad_contours(
+        target: Union[Distribution, SurrogateModel],
+        ax: plt.Axes,
+        plot_limits: tuple[list[float], list[float]],
+        idx: int = 0,
+        n_grid: int = 100,
+        alpha: float = 0.6,
+        levels: Union[int, np.ndarray] = None,
+        cmap: matplotlib.colors.Colormap = sns.color_palette('rocket', as_cmap=True),
+        transformation: Transformation = None
+) -> plt.Axes:
+    """
+    Plot the probability density function (PDF) contours of a distribution.
+
+    Parameters:
+    taget (Distribution, SurrogateModel): The target distribution to plot.
+    ax (plt.Axes): The matplotlib axes object to plot on.
+    plot_limits (tuple): A tuple containing two lists, each specifying the x and y axis limits respectively.
+    n_grid (int, optional): Number of grid points for the x and y axes. Default is 100.
+    alpha (float, optional): Transparency level of the contour plot. Default is 0.6.
+    n_levels (int, optional): Number of contour levels to plot. Default is 20.
+    cmap (sns.palettes._ColorPalette, optional): Colormap to use for the contour plot. Default is 'rocket' colormap.
+    transformation (Transformation, optional): The transformation to apply to the target distribution. Default is None.
+
+    Returns:
+    plt.Axes: The matplotlib axes object with the PDF contours plotted.
+    """
+
+    # check if levels are given or already defined
+    if levels is None:
+        for child in ax.get_children():
+            if isinstance(child, matplotlib.contour.QuadContourSet):
+                levels = child.levels
+
+    if levels is None:
+        levels = 20
+
+    if transformation is None:
+        transformation = AffineTransformtion(M = np.eye(2), b = np.zeros(2))
+
+    if isinstance(target, SurrogateModel):
+        f_eval = lambda x: target.grad(x, idx=idx)
+    else:
+        f_eval = lambda x: target.grad_log_density(x)[idx]
+
+    x = np.linspace(*plot_limits[0], n_grid)
+    y = np.linspace(*plot_limits[1], n_grid)
+    X, Y = np.meshgrid(x, y)
+    Z = np.zeros_like(X)
+
+    for i in range(n_grid):
+        for j in range(n_grid):
+
+            x_i = np.array([X[i, j], Y[i, j]])
+            xi_i = transformation.inverse_transform(x_i)
+
+            Z[i, j] = np.exp(f_eval(xi_i) - transformation.log_det_jacobian(x_i))
+
+    ax.contour(X, Y, Z, levels=levels, zorder=1, alpha=alpha, cmap=cmap)
+
+    return ax
+
 def plot_pdf_contours(
         target: Union[Distribution, SurrogateModel],
         ax: plt.Axes,
         plot_limits: tuple[list[float], list[float]],
         n_grid: int = 100,
         alpha: float = 0.6,
-        levels: Union[int, np.ndarray] = 20,
+        levels: Union[int, np.ndarray] = None,
         log = False,
         cmap: matplotlib.colors.Colormap = sns.color_palette('rocket', as_cmap=True),
         transformation: Transformation = None
@@ -131,6 +193,16 @@ def plot_pdf_contours(
     plt.Axes: The matplotlib axes object with the PDF contours plotted.
     """
 
+    # check if levels are given or already defined
+    if levels is None:
+        for child in ax.get_children():
+            if isinstance(child, matplotlib.contour.QuadContourSet):
+                levels = child.levels
+
+    if levels is None:
+        levels = 20
+
+    # set identity transformation if none is given
     if transformation is None:
         transformation = AffineTransformtion(M = np.eye(2), b = np.zeros(2))
 
