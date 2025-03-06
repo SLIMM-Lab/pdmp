@@ -10,7 +10,7 @@ from torch.autograd import grad
 
 import numpy as np
 
-from typing import override
+from typing import override, Optional
 from scipy.stats import qmc
 from typing import cast
 from tqdm import tqdm
@@ -28,7 +28,6 @@ from gpytorch.distributions.multitask_multivariate_normal import MultitaskMultiv
 from pdmp.distributions import Distribution, MultivariateNormal, Posterior, find_mean, find_curvature
 from pdmp.plotting_utils import get_2d_despined_figure
 from pdmp import logger
-
 
 dtype = torch.float64
 
@@ -600,8 +599,8 @@ class GaussianProcessBase(SurrogateModel):
         self.rng = rng
 
         # init all data
-        self.x_data = None
-        self.y_data = None
+        self.x_data: torch.tensor = None
+        self.y_data: torch.tensor = None
         self.x_data_new = []
         self.y_data_new = []
         self.n_data_buffer = 0
@@ -625,8 +624,9 @@ class GaussianProcessBase(SurrogateModel):
             'lr_scheduler_params': lr_scheduler_params
         }
 
-        self.model = None
-        self.likelihood = None
+        # these will be overwritten in derived classes
+        self.model: Optional[gpytorch.models.ExactGP] = None
+        self.likelihood: Optional[gpytorch.likelihoods._GaussianLikelihoodBase] = None
 
         if eval_strategy == 'mean':
             self.eval_ = self.eval_mean
