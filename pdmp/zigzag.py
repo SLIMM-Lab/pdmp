@@ -143,6 +143,7 @@ class ZigZagSampler(Sampler):
 
             # for later use
             self.times_all_ = None
+            self.eval_times_ = []
 
         else:
             self.generate_event_times = self.inverse_cdf
@@ -400,6 +401,7 @@ class ZigZagSampler(Sampler):
         self.velocities_[self.iter_ + 1, j] = - self.velocities_[self.iter_, j]
 
         if self.thinning_:
+            self.eval_times_.append(self.times_[self.iter_ + 1])
             self.poisson_thinning(j, T)
 
         dt = self.times_[self.iter_ + 1] - self.times_[self.iter_]
@@ -526,6 +528,13 @@ class ZigZagSampler(Sampler):
         np.savetxt(os.path.join(folder, 'velocities.dat'), self.velocities_, fmt='%d')
         np.savetxt(os.path.join(folder, 'times_all.dat'), self.times_all_, fmt=f'%.{precision}e')
 
+        self.eval_times_.sort()
+        np.savetxt(
+            os.path.join(folder, 'eval_times.dat'),
+            np.array(self.eval_times_),
+            fmt=f'%.{precision}e'
+        )
+
     def get_acceptance_rate(self) -> float:
         """
         Get the acceptance rate.
@@ -534,6 +543,7 @@ class ZigZagSampler(Sampler):
         float: The acceptance rate.
         """
         return self.n_accepted_ / self.iter_
+        # return self.n_accepted_ / len(self.eval_times_)
 
     def get_offset(self):
         """
