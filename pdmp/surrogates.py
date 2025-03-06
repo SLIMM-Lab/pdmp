@@ -575,6 +575,7 @@ class GaussianProcessBase(SurrogateModel):
             print_every: int = 1,
             update_model: list = None,
             retrain_when_update: bool = False,
+            eval_strategy: str = 'mean',
             **kwargs
     ):
         """
@@ -626,6 +627,16 @@ class GaussianProcessBase(SurrogateModel):
 
         self.model = None
         self.likelihood = None
+
+        if eval_strategy == 'mean':
+            self.eval_ = self.eval_mean
+            self.grad_ = self.grad_mean
+        elif eval_strategy == 'mean_plus_std':
+            self.eval_ = self.eval_mean_plus_std
+            self.grad_ = self.grad_mean_plus_std
+        else:
+            raise ValueError(f"Evaluation strategy {eval_strategy} not implemented.\n" +
+                             "Choose from: 'mean', 'mean_plus_std'")
 
     @classmethod
     def from_dict(
@@ -865,6 +876,67 @@ class GaussianProcessBase(SurrogateModel):
 
         return named_params
 
+    @override
+    def eval(self, x: np.ndarray, **kwargs) -> np.ndarray:
+        return self.eval_(x, **kwargs)
+
+    @override
+    def grad(self, x: np.ndarray, idx: int = None) -> np.ndarray:
+        return self.grad_(x, idx=idx)
+
+    def eval_mean(self, x: np.ndarray, **kwargs) -> np.ndarray:
+        """
+        Evaluate the mean of the Gaussian process model.
+
+        Parameters:
+        x (np.ndarray): The input data.
+        kwargs: Additional keyword arguments
+
+        Returns:
+        np.ndarray: The mean of the Gaussian process model.
+        """
+        raise NotImplementedError
+
+    def eval_mean_plus_std(self, x: np.ndarray, **kwargs) -> np.ndarray:
+        """
+        Evaluate the mean of the Gaussian process model and add the standard deviation.
+
+        Parameters:
+        x (np.ndarray): The input data.
+        kwargs: Additional keyword arguments
+
+        Returns:
+        np.ndarray: The mean of the Gaussian process model plus the standard deviation.
+        """
+        raise NotImplementedError
+
+    def grad_mean(self, x: np.ndarray, idx: int = None) -> np.ndarray:
+        """
+        Compute the gradient of the mean of the Gaussian process model.
+
+        Parameters:
+        x (np.ndarray): The input data.
+        idx (int): The index of the component of the gradient to be computed. Default is None.
+
+        Returns:
+        np.ndarray: The gradient of the mean of the Gaussian process model.
+        """
+        raise NotImplementedError
+
+    def grad_mean_plus_std(self, x: np.ndarray, idx: int = None) -> np.ndarray:
+        """
+        Compute the gradient of the mean of the Gaussian process model plus the standard deviation.
+
+        Parameters:
+        x (np.ndarray): The input data.
+        idx (int): The index of the component of the gradient to be computed. Default is None.
+
+        Returns:
+        np.ndarray: The gradient of the mean of the Gaussian process model plus the standard deviation.
+        """
+        raise NotImplementedError
+
+
 class GaussianProcess(GaussianProcessBase):
     """
     Gaussian process surrogate model based on GPyTorch.
@@ -943,18 +1015,41 @@ class GaussianProcess(GaussianProcessBase):
             self.add_data_ = self.add_data_off
 
     @override
-    def eval(self, x: np.ndarray, **kwargs) -> np.ndarray:
+    def eval_mean(self, x: np.ndarray, **kwargs) -> np.ndarray:
 
         x_tensor = torch.tensor(
             np.atleast_2d(x),
             dtype=dtype,
             requires_grad=False
         )
-        with torch.no_grad(), gpytorch.settings.skip_posterior_variances(True):
+
+        with (
+            torch.no_grad(),
+            gpytorch.settings.skip_posterior_variances(True)
+        ):
             return self.model(x_tensor).mean.squeeze().numpy() + self.laplace.eval(x, delta=True)
 
     @override
-    def grad(self, x: np.ndarray, idx: int = None) -> np.ndarray:
+    def eval_mean_plus_std(self, x: np.ndarray, **kwargs) -> np.ndarray:
+
+        x_tensor = torch.tensor(
+            np.atleast_2d(x),
+            dtype=dtype,
+            requires_grad=False
+        )
+
+        with (
+            torch.no_grad(),
+            gpytorch.settings.fast_pred_var(True)
+        ):
+            y = self.model(x_tensor)
+
+        gp = y.mean.squeeze().numpy() + y.variance.sqrt().squeeze().numpy()
+
+        return gp + self.laplace.eval(x, delta=True)
+
+    @override
+    def grad_mean(self, x: np.ndarray, idx: int = None) -> np.ndarray:
 
         x_tensor = torch.tensor(
             np.atleast_2d(x),
@@ -965,6 +1060,32 @@ class GaussianProcess(GaussianProcessBase):
         with gpytorch.settings.skip_posterior_variances(True), gpytorch.settings.fast_computations(
                 False, False, False):
             y_tensor = self.model(x_tensor).mean
+            gradients = grad(
+                outputs=y_tensor,
+                inputs=x_tensor,
+                grad_outputs=torch.ones_like(y_tensor),
+                create_graph=True
+            )[0].squeeze().detach().numpy()
+
+        if idx is None:
+            return gradients + self.laplace.grad(x)
+        else:
+            return gradients[idx] + self.laplace.grad(x, idx=idx)
+
+    @override
+    def grad_mean_plus_std(self, x: np.ndarray, idx: int = None):
+        x_tensor = torch.tensor(
+            np.atleast_2d(x),
+            dtype=dtype,
+            requires_grad=True
+        )
+        with (
+            gpytorch.settings.skip_posterior_variances(False),
+            gpytorch.settings.fast_computations(False, False, False),
+            gpytorch.settings.fast_pred_var(True)
+        ):
+            model_output = self.model(x_tensor)
+            y_tensor = model_output.mean + model_output.variance.sqrt()
             gradients = grad(
                 outputs=y_tensor,
                 inputs=x_tensor,
@@ -1086,26 +1207,77 @@ class DerivativeGaussianProcess(GaussianProcessBase):
             self.add_data_ = self.add_data_off
 
     @override
-    def eval(self, x: np.ndarray, **kwargs) -> np.ndarray:
+    def eval_mean(self, x: np.ndarray, **kwargs) -> np.ndarray:
 
         x_tensor = torch.tensor(
             np.atleast_2d(x),
             dtype=dtype,
             requires_grad=False
         )
-        with torch.no_grad(), gpytorch.settings.skip_posterior_variances(True):
+
+        with (
+            torch.no_grad(),
+            gpytorch.settings.skip_posterior_variances(True),
+            gpytorch.settings.fast_computations(False, False, False),
+        ):
             return self.model(x_tensor).mean[:, 0].squeeze().detach().numpy() + self.laplace.eval(x, delta=True)
 
     @override
-    def grad(self, x: np.ndarray, idx: int = None) -> np.ndarray:
+    def eval_mean_plus_std(self, x: np.ndarray, **kwargs) -> np.ndarray:
+
+        x_tensor = torch.tensor(
+            np.atleast_2d(x),
+            dtype=dtype,
+            requires_grad=False
+        )
+
+        with (
+            torch.no_grad(),
+            gpytorch.settings.fast_computations(False, False, False),
+            gpytorch.settings.fast_pred_var(True)
+        ):
+            y = self.model(x_tensor)
+
+        gp = y.mean[:, 0].squeeze().detach().numpy() + y.variance[:, 0].sqrt().squeeze().detach().numpy()
+        return gp + self.laplace.eval(x, delta=True)
+
+    @override
+    def grad_mean(self, x: np.ndarray, idx: int = None) -> np.ndarray:
 
         x_tensor = torch.tensor(
             np.atleast_2d(x),
             dtype=dtype,
             requires_grad=True
         )
-        with torch.no_grad(), gpytorch.settings.skip_posterior_variances(True):
+
+        with (
+            torch.no_grad(),
+            gpytorch.settings.skip_posterior_variances(True),
+            gpytorch.settings.fast_computations(False, False, False)
+        ):
             gradient = self.model(x_tensor).mean[:, 1:].squeeze().detach().numpy()
+
+        if idx is None:
+            return gradient + self.laplace.grad(x)
+        else:
+            return gradient[idx] + self.laplace.grad(x, idx=idx)
+
+    @override
+    def grad_mean_plus_std(self, x: np.ndarray, idx: int = None) -> np.ndarray:
+
+        x_tensor = torch.tensor(
+            np.atleast_2d(x),
+            dtype=dtype,
+            requires_grad=True
+        )
+
+        with (
+            torch.no_grad(),
+            gpytorch.settings.fast_computations(False, False, False),
+            gpytorch.settings.fast_pred_var(True)
+        ):
+            y = self.model(x_tensor)
+            gradient = y.mean[:, 1:].squeeze().detach().numpy() + y.variance[:, 1:].sqrt().squeeze().detach().numpy()
 
         if idx is None:
             return gradient + self.laplace.grad(x)
