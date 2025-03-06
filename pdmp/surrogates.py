@@ -838,6 +838,7 @@ class GaussianProcessBase(SurrogateModel):
         # load best model print parameters
         self.model.load_state_dict(best_model)
         logger.warning(f"Best model with loss {best_loss} and params:\n" + self.log_state_dict())
+        self.save_model()
 
         for i in range(n_restarts):
             if i == best_iter:
@@ -936,6 +937,37 @@ class GaussianProcessBase(SurrogateModel):
         """
         raise NotImplementedError
 
+    def save_model(self, path: str = 'model_params') -> None:
+        """
+        Save the neural network model to a file.
+
+        Parameters:
+        path (str): The path to the file.
+        """
+
+        if not os.path.exists(path):
+            os.makedirs(path)
+
+        torch.save(self.model.state_dict(), os.path.join(path, 'model_params.th'))
+        np.savetxt(os.path.join(path, 'x_data.dat'), self.x_data.numpy())
+        np.savetxt(os.path.join(path, 'y_data.dat'), self.y_data.numpy())
+
+    def load_model(self, path: str = 'model_params') -> None:
+        """
+        Load the neural network model from a file.
+
+        Parameters:
+        path (str): The path to the file.
+        """
+
+        model_params = torch.load(os.path.join(path, 'model_params.th'))
+        self.x_data = torch.tensor(np.loadtxt(os.path.join(path, 'x_data.dat')), dtype=dtype)
+        self.y_data = torch.tensor(np.loadtxt(os.path.join(path, 'y_data.dat')), dtype=dtype)
+
+        self.model.load_state_dict(model_params)
+        self.model.set_train_data(self.x_data, self.y_data, strict=False)
+        self.model.eval()
+        self.likelihood.eval()
 
 class GaussianProcess(GaussianProcessBase):
     """
