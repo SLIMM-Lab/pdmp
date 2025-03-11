@@ -565,13 +565,13 @@ class GaussianProcessBase(SurrogateModel):
             self,
             rng: np.random.Generator,
             target: Distribution,
-            train_iters: int = 100,
+            lbfgs_steps: int = 5,
             n_restarts: int = 50,
             n_samples: int = 100,
-            lr: float = 0.2,
-            lr_scheduler: str = None,
-            lr_scheduler_params: dict = None,
             print_every: int = 1,
+            lr: float = 0.5,
+            tolerance_grad: float = 1e-7,
+            tolerance_change: float = 1e-9,
             update_model: list = None,
             retrain_when_update: bool = False,
             eval_strategy: str = 'mean',
@@ -616,12 +616,12 @@ class GaussianProcessBase(SurrogateModel):
         self.add_data_ = self.add_data_on
 
         self.training_params = {
-            'train_iters': train_iters,
+            'lbfgs_steps': lbfgs_steps,
             'n_restarts': n_restarts,
             'print_every': print_every,
             'lr': lr,
-            'lr_scheduler': lr_scheduler,
-            'lr_scheduler_params': lr_scheduler_params
+            'tolerance_grad': tolerance_grad,
+            'tolerance_change': tolerance_change
         }
 
         # these will be overwritten in derived classes
@@ -699,12 +699,12 @@ class GaussianProcessBase(SurrogateModel):
     def train(
             self,
             *args,
-            train_iters: int,
+            lbfgs_steps: int,
             n_restarts: int,
             print_every: int,
             lr: float,
-            lr_scheduler: str,
-            lr_scheduler_params: dict,
+            tolerance_grad: float,
+            tolerance_change: float,
             **kwargs
     ) -> None:
         """
@@ -761,14 +761,21 @@ class GaussianProcessBase(SurrogateModel):
                 train_losses = []
 
                 # init optimizer and scheduler
-                optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+                optimizer = torch.optim.LBFGS(
+                    self.model.parameters(),
+                    lr=lr,
+                    max_iter=lbfgs_steps,
+                    tolerance_grad=tolerance_grad,
+                    tolerance_change=tolerance_change,
+                    line_search_fn='strong_wolfe'
+                )
 
-                if lr_scheduler == 'StepLR':
-                    scheduler = optim.lr_scheduler.StepLR(optimizer, **lr_scheduler_params)
-                elif lr_scheduler == 'ReduceLROnPlateau':
-                    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, **lr_scheduler_params)
-                else:
-                    scheduler = None
+                def closure():
+                    optimizer.zero_grad()
+                    output = self.model(self.x_data)
+                    loss = -mll(output, self.y_data)
+                    loss.backward()
+                    return loss
 
                 # set hyperparameters and initialise model
                 hyper_params = {}
@@ -788,28 +795,16 @@ class GaussianProcessBase(SurrogateModel):
 
                 # try block needed to catch non-PSD errors. in that case, interation is just skipped
                 try:
-                    for i in range(train_iters):
+                    for i in range(lbfgs_steps):
 
-                        # compute loss and take step
-                        optimizer.zero_grad()
-                        output = self.model(self.x_data)
-                        loss = -mll(output, self.y_data)
-                        train_losses.append(loss.detach().numpy())
-                        loss.backward()
-                        optimizer.step()
-
-                        # update learning rate
-                        if isinstance(scheduler, optim.lr_scheduler.StepLR):
-                            scheduler.step()
-
-                        if isinstance(scheduler, optim.lr_scheduler.ReduceLROnPlateau):
-                            scheduler.step(loss)
+                        loss = optimizer.step(closure)
+                        train_losses.append(loss.item())
 
                         # print current hyperparams and loss
                         if (i % print_every) == 0:
                             pbar.clear()
                             logger.debug(
-                                f"   Iter {i}/{train_iters}"
+                                f"   Iter {i}/{lbfgs_steps}"
                                 + f" Loss: {loss.item():.3f},"
                                 + self.log_state_dict(end_of_line=', ')
                             )
@@ -827,6 +822,11 @@ class GaussianProcessBase(SurrogateModel):
                 except gpytorch.linear_operator.utils.errors.NotPSDError as e:
                     pbar.clear()
                     logger.info(f"Non-PSD error: {e}")
+                    pbar.refresh()
+
+                except gpytorch.linear_operator.utils.errors.NanError as e:
+                    pbar.clear()
+                    logger.info(f"NaN error: {e}")
                     pbar.refresh()
 
                 train_losses_np = np.array(train_losses)
@@ -847,8 +847,6 @@ class GaussianProcessBase(SurrogateModel):
                 ax.plot(train_losses_all[i], color='C0', alpha=0.3, lw=1.)
 
         ax.set_ylim(losses_min - 0.2*np.abs(losses_min), losses_min + 10.)
-
-        # fig.show()
 
         if not os.path.exists('figures'):
             os.makedirs('figures')
