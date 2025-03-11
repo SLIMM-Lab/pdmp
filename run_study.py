@@ -8,16 +8,7 @@ import subprocess as sp
 
 if __name__ == '__main__':
 
-    # get pdmp dir from environment
-    pdmp_dir = os.environ['PDMP']
-
     parser = argparse.ArgumentParser(description='Run all listed in the --job-file in the --study-dir.')
-    parser.add_argument(
-        '--study-dir',
-        type=str,
-        required=True,
-        help='The relative path to the study directory.',
-    )
     parser.add_argument(
         '--job-file',
         type=str,
@@ -39,18 +30,21 @@ if __name__ == '__main__':
 
     # read all arguments
     args = parser.parse_args()
-    study_dir = args.study_dir
+    # study_dir = args.study_dir
     job_file = args.job_file
     job_limit = args.job_limit
     sleep_time = args.sleep_time
 
+    # get working directory
+    study_dir = os.getcwd()
+
     # read jobs file
-    with open(os.path.join(pdmp_dir, study_dir, 'jobs.txt'), 'r') as file:
+    with open(os.path.join(study_dir, job_file), 'r') as file:
         jobs = file.read().splitlines()
 
     # convert all relative paths to absolute paths
     for i, job in enumerate(jobs):
-        jobs[i] = os.path.join(pdmp_dir, job)
+        jobs[i] = os.path.join(study_dir, job)
 
     # loop over all jobs and submit
     for job in jobs:
@@ -72,10 +66,6 @@ if __name__ == '__main__':
 
         # run the job
         sp.run(f'bash -c "cd {job};qsub job"', shell=True)
-
-        # # wait a bit before checking again
-        # nJobs = int(str(sp.run('qstat | grep lriccius | wc', shell=True,
-        #                        stderr=sp.DEVNULL, stdout=sp.PIPE).stdout).split()[1])
 
         print(f'Currently running {nJobs} jobs')
         time.sleep(1.)
