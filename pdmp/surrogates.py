@@ -573,7 +573,7 @@ class GaussianProcessBase(SurrogateModel):
             tolerance_grad: float = 1e-7,
             tolerance_change: float = 1e-9,
             update_model: list = None,
-            retrain_when_update: bool = False,
+            retrain_threshold: int = 1000,
             eval_strategy: str = 'mean',
             **kwargs
     ):
@@ -610,7 +610,7 @@ class GaussianProcessBase(SurrogateModel):
         for i in range(len(update_model)):
             self.update_model[i] += n_samples
 
-        self.retrain_when_update = retrain_when_update
+        self.retrain_threshold = retrain_threshold
 
         # default is add_data_on because it changes to add_data_off when update_model is empty
         self.add_data_ = self.add_data_on
@@ -1033,9 +1033,11 @@ class GaussianProcess(GaussianProcessBase):
                 self.x_data = torch.vstack((self.x_data, x_new))
                 self.y_data = torch.hstack((self.y_data, y_new))
 
-                if self.retrain_when_update:
+                if len(self.x_data) < self.retrain_threshold:
+                    logger.info(f'Retraining model with {len(self.x_data)} data points.')
                     self.train(**self.training_params)
                 else:
+                    logger.info(f'Updating model with {len(self.x_data)} data points.')
                     self.model.set_train_data(self.x_data, self.y_data, strict=False)
 
                 self.x_data_new = []
