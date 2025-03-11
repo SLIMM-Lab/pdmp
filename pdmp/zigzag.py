@@ -82,7 +82,7 @@ class ZigZagSampler(Sampler):
         self.iter_ = 0
         self.gamma_ = gamma
         self.offset_ = np.zeros(self.dim_)
-        self.offset_history_ = [(1 + self.dim_) * [0.0]] # [[time, offsets]]
+        self.offset_history_ = np.zeros((self.n_max_, self.dim_))
         self.plot_ = False
         self.thinning_ = False
         self.n_accepted_ = 0
@@ -374,9 +374,6 @@ class ZigZagSampler(Sampler):
         if m > M:
             delta_offset = 1.01 * (m - M) + 1e-3
             self.offset_[j] += delta_offset
-            self.offset_history_.append(
-                np.hstack((self.times_[self.iter_], self.offset_)).tolist()
-            )
             self.revert_step()
             logger.info(f"  Action at time {self.times_[self.iter_]:.2f}; current position: {self.positions_[self.iter_]}")
             logger.info(f"     upper bound too tight, m: {m:.4f}, M: {M:.4f}")
@@ -406,6 +403,7 @@ class ZigZagSampler(Sampler):
 
         dt = self.times_[self.iter_ + 1] - self.times_[self.iter_]
         self.offset_ *= np.exp(- self.offset_shrinkage_ * dt)
+        self.offset_history_[self.iter_ + 1] = self.offset_
         self.iter_ += 1
 
     def revert_step(self):
@@ -415,6 +413,7 @@ class ZigZagSampler(Sampler):
         self.times_[self.iter_ + 1] = 0.
         self.positions_[self.iter_ + 1] = 0.
         self.velocities_[self.iter_ + 1] = 0
+        self.offset_history_[self.iter_ + 1] = 0.
 
         dt = self.times_[self.iter_] - self.times_[self.iter_ - 1]
         self.offset_ *= np.exp(self.offset_shrinkage_ * dt)
@@ -428,7 +427,7 @@ class ZigZagSampler(Sampler):
 
         logger.info("Shutting down ZigZag sampler. Summary:")
         if self.thinning_:
-            logger.info(f"    Acceptance rate : {self.n_accepted_ / self.iter_:.3f}")
+            logger.info(f"    Acceptance rate : {self.acceptance_rate:.3f}")
             logger.info(f"    Final offsets    : {self.offset_}")
 
             # this is kept so that model evaluations could be tracked
@@ -516,7 +515,7 @@ class ZigZagSampler(Sampler):
 
         data = {}
         if self.thinning_:
-            data['acceptance_rate'] = self.n_accepted_ / self.iter_
+            data['acceptance_rate'] = self.acceptance_rate
             data['offset'] = self.offset_
             data['offset_history'] = self.offset_history_
 
@@ -535,17 +534,18 @@ class ZigZagSampler(Sampler):
             fmt=f'%.{precision}e'
         )
 
-    def get_acceptance_rate(self) -> float:
+    @property
+    def acceptance_rate(self) -> float:
         """
         Get the acceptance rate.
 
         Returns:
         float: The acceptance rate.
         """
-        return self.n_accepted_ / self.iter_
-        # return self.n_accepted_ / len(self.eval_times_)
+        return self.n_accepted_ / len(self.eval_times_)
 
-    def get_offset(self):
+    @property
+    def offset(self):
         """
         Get the offset.
 
