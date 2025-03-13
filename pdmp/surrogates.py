@@ -833,9 +833,16 @@ class GaussianProcessBase(SurrogateModel):
                     logger.info(f"NaN error: {e}")
                     pbar.refresh()
 
+                except RuntimeError as e:
+                    pbar.clear()
+                    logger.info(f"Runtime error: {e}")
+                    pbar.refresh()
+
                 train_losses_np = np.array(train_losses)
                 if len(train_losses) > 0:
-                    losses_min = np.min((np.min(train_losses_np), losses_min))
+                    # check if train_losses_np contains nan
+                    if not np.any(np.isnan(train_losses_np)):
+                        losses_min = np.min((np.min(train_losses_np), losses_min))
                 train_losses_all.append(train_losses_np)
                 pbar.update()
 
