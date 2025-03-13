@@ -1226,7 +1226,7 @@ class DerivativeGaussianProcess(GaussianProcessBase):
                 self.x_data = torch.vstack((self.x_data, x_new))
                 self.y_data = torch.vstack((self.y_data, y_new))
 
-                if self.retrain_when_update:
+                if len(self.x_data) < self.retrain_threshold:
                     self.train(**self.training_params)
                 else:
                     self.model.set_train_data(self.x_data, self.y_data, strict=False)
