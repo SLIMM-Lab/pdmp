@@ -722,7 +722,11 @@ class GaussianProcessBase(SurrogateModel):
         mll = ExactMarginalLogLikelihood(self.likelihood, self.model)
 
         # disable tqdm if running on a cluster
-        disable_tqdm = 'PBS_ENVIRONMENT' in os.environ or 'SLURM_JOB_ID' in os.environ
+        disable_tqdm = (
+                'PBS_ENVIRONMENT' in os.environ
+                or 'SLURM_JOB_ID' in os.environ
+                or 'GIO_LAUNCHED_DESKTOP_FILE' in os.environ
+        )
         warnings.simplefilter("ignore", category=NumericalWarning)
 
         # get hyperparameter initialisations
