@@ -6,6 +6,40 @@ import argparse
 import subprocess as sp
 
 
+def get_n_cups():
+    # Command to sum ppn values for jobs that specify Resource_List.nodes
+    cmd_primary = (
+        "qstat -f -u lriccius | awk '/Resource_List.nodes/ { "
+        "if (match($0, /:ppn=([0-9]+)/, arr)) { sum += arr[1] } else { sum += 1 } "
+        "} END { print sum }'"
+    )
+    # "qstat -f -u lriccius | grep 'Resource_List.nodes' | sed -E 's/.*:ppn=([0-9]+).*/\1/' | awk '{sum += $1} END {print sum}'"
+    primary_process = sp.run(cmd_primary, shell=True, stderr=sp.DEVNULL,
+                             stdout=sp.PIPE, text=True)
+    primary_sum_str = primary_process.stdout.strip()
+    primary_sum = int(primary_sum_str) if primary_sum_str else 0
+
+    # Count how many jobs have Resource_List.nodes specified
+    cmd_count_with_nodes = "qstat -f -u lriccius | grep -c 'Resource_List.nodes'"
+    with_nodes_process = sp.run(cmd_count_with_nodes, shell=True, stderr=sp.DEVNULL,
+                                stdout=sp.PIPE, text=True)
+    count_with_nodes_str = with_nodes_process.stdout.strip()
+    count_with_nodes = int(count_with_nodes_str) if count_with_nodes_str else 0
+
+    # Count total number of jobs (assuming each job prints a line starting with a digit)
+    cmd_total_jobs = "qstat -u lriccius | grep -E '^[0-9]+' | wc -l"
+    total_jobs_process = sp.run(cmd_total_jobs, shell=True, stderr=sp.DEVNULL,
+                                stdout=sp.PIPE, text=True)
+    total_jobs_str = total_jobs_process.stdout.strip()
+    total_jobs = int(total_jobs_str) if total_jobs_str else 0
+
+    # For jobs that don't specify any node/ppn, assume 1 CPU per job.
+    fallback_count = total_jobs - count_with_nodes
+
+    # Total CPUs in use: sum from jobs with resource specification + fallback (1 per job)
+    return primary_sum + fallback_count
+
+
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Run all listed in the --job-file in the --study-dir.')
@@ -16,10 +50,10 @@ if __name__ == '__main__':
         help='The name of the jobfile.',
     )
     parser.add_argument(
-        '--job-limit',
+        '--cpu-limit',
         type=int,
         default=100,
-        help='The maximum number of jobs in the cue.',
+        help='The maximum number of cpus occupied simultaniously.',
     )
     parser.add_argument(
         '--sleep-time',
@@ -30,9 +64,8 @@ if __name__ == '__main__':
 
     # read all arguments
     args = parser.parse_args()
-    # study_dir = args.study_dir
     job_file = args.job_file
-    job_limit = args.job_limit
+    cpu_limit = args.cpu_limit
     sleep_time = args.sleep_time
 
     # get working directory
@@ -49,25 +82,22 @@ if __name__ == '__main__':
     # loop over all jobs and submit
     for job in jobs:
 
-        # get current number of jobs
-        nJobs = int(str(sp.run('qstat | grep lriccius | wc', shell=True,
-                               stderr=sp.DEVNULL, stdout=sp.PIPE).stdout).split()[1])
+        cpus_used = get_n_cups()
 
-        # wait until there is a vacancy
-        if nJobs > (job_limit - 1):
-            print(f'Waiting for queue vacancy... Currently running {nJobs} jobs')
+        # wait until there are available CPUs
+        if cpus_used >= cpu_limit:
+            print(f'Waiting for CPU vacancy... Currently using {cpus_used} CPUs out of {cpu_limit}')
 
-            while nJobs > (job_limit - 1):
+            while cpus_used >= cpu_limit:
                 time.sleep(sleep_time)
-                nJobs = int(str(sp.run('qstat | grep lriccius | wc', shell=True,
-                                       stderr=sp.DEVNULL, stdout=sp.PIPE).stdout).split()[1])
+                cpus_used = get_n_cups()
 
         print(f'Found vacancy! Running job in {job}')
 
         # run the job
         sp.run(f'bash -c "cd {job};qsub job"', shell=True)
 
-        print(f'Currently running {nJobs} jobs')
+        print(f'Currently using {cpus_used} CPUs')
         time.sleep(1.)
 
     print(f'Done running all {len(jobs)} jobs!')
