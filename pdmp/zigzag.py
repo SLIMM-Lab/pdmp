@@ -437,7 +437,7 @@ class ZigZagSampler(Sampler):
             self.positions_ = self.positions_[self.accepted_iters_[:idx]]
             self.times_ = self.times_[self.accepted_iters_[:idx]]
             self.velocities_ = self.velocities_[self.accepted_iters_[:idx]]
-            self.offset_history_ = np.array(self.offset_history_)
+            self.offset_history_ = self.offset_history_[self.accepted_iters_[:idx]]
 
         logger.info("Run successfully completed.")
 
@@ -526,6 +526,7 @@ class ZigZagSampler(Sampler):
         np.savetxt(os.path.join(folder, 'times.dat'), self.times_, fmt=f'%.{precision}e')
         np.savetxt(os.path.join(folder, 'velocities.dat'), self.velocities_, fmt='%d')
         np.savetxt(os.path.join(folder, 'times_all.dat'), self.times_all_, fmt=f'%.{precision}e')
+        np.savetxt(os.path.join(folder, 'offset_history.dat'), self.offset_history_, fmt=f'%.{precision}e')
 
         self.eval_times_.sort()
         np.savetxt(
