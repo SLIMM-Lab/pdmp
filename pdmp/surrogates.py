@@ -711,7 +711,7 @@ class GaussianProcessBase(SurrogateModel):
         Update the Gaussian process surrogate model.
         """
 
-        logger.warning(f"Training {self.__class__.__name__} surrogate model ...")
+        logger.info(f"Training {self.__class__.__name__} surrogate model ...")
 
         # set train data and put model in training mode
         self.model.set_train_data(self.x_data, self.y_data, strict=False)
@@ -977,6 +977,7 @@ class GaussianProcessBase(SurrogateModel):
         self.model.set_train_data(self.x_data, self.y_data, strict=False)
         self.model.eval()
         self.likelihood.eval()
+
 
 class GaussianProcess(GaussianProcessBase):
     """
