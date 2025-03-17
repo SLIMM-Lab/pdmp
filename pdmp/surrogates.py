@@ -40,6 +40,7 @@ class SurrogateModel(object):
         """
         Initialize the surrogate model.
         """
+        self.gaussian = None
 
     def eval(self, x: np.ndarray, **kwargs) -> np.ndarray:
         """
@@ -88,7 +89,7 @@ class ConstantSurrogate(SurrogateModel):
     """
     Constant surrogate model.
     """
-    def __init__(self, target: Distribution, rng: np.random.Generator, **kwargs):
+    def __init__(self, *args, **kwargs):
         """
         Initialize the constant surrogate model.
 
@@ -101,9 +102,9 @@ class ConstantSurrogate(SurrogateModel):
     @classmethod
     def from_dict(
             cls,
-            config: dict,
             target: Distribution,
-            rng: np.random.Generator
+            rng: np.random.Generator,
+            **kwargs
     ):
         """
         Create a constant surrogate model from a dictionary.
@@ -161,19 +162,19 @@ class LaplaceSurrogate(SurrogateModel):
             assert target is not None, "Target distribution must be provided if mean and cov are not provided."
 
             if mean is None:
-                self.mean = find_mean(target, x_0)
+                self._mean = find_mean(target, x_0)
             else:
-                self.mean = mean
+                self._mean = mean
             if cov is None:
-                self.cov = find_curvature(target, mean)
+                self._cov = find_curvature(target, mean)
             else:
-                self.cov = cov
+                self._cov = cov
         else:
-            self.mean = mean
-            self.cov = cov
+            self._mean = mean
+            self._cov = cov
 
-        self.gaussian = MultivariateNormal(self.mean, self.cov, rng=rng)
-        self.delta = self.gaussian.log_density(self.mean) - target.log_density(self.mean)
+        self.gaussian = MultivariateNormal(self._mean, self._cov, rng=rng)
+        self._delta = self.gaussian.log_density(self._mean) - target.log_density(self._mean)
 
     @classmethod
     def from_dict(
@@ -212,7 +213,7 @@ class LaplaceSurrogate(SurrogateModel):
         Returns:
         float: The value of the Laplace approximation at the point x.
         """
-        return self.gaussian.log_density(x) - delta * self.delta
+        return self.gaussian.log_density(x) - delta * self._delta
 
     def grad(self, x: np.ndarray, idx: int = None) -> np.ndarray:
         """
@@ -294,8 +295,21 @@ class NeuralNetwork(SurrogateModel):
         Initialize the neural network surrogate model.
 
         Parameters:
-        layer_sizes (list): List containing the number of neurons per layer.
+        target (Distribution): The target distribution.
+        hidden_layers (list): The number of hidden layers in the neural network.
+        rng (np.random.Generator): The random number generator.
+        n_samples (int): The number of samples to generate.
+        epochs (int): Number of training epochs.
+        batch_size (int): Batch size for training.
+        weight_decay (float): Weight decay for the optimizer.
+        val_split (float): Fraction of data to use for validation.
+        patience (int): Number of epochs to wait for improvement in validation loss before stopping early.
+        print_every (int): Print training information every print_every epochs.
         lr (float): Learning rate for the optimizer.
+        lr_scheduler (str): Learning rate scheduler.
+        lr_scheduler_params (dict): Learning rate scheduler parameters.
+        train_on_init (bool): Whether to train the model on initialization.
+        update_model (list): List of number of samples after which to update the model.
         """
         super().__init__()
         if update_model is None:
@@ -306,21 +320,21 @@ class NeuralNetwork(SurrogateModel):
             layers.append(nn.Linear(hidden_layers[i], hidden_layers[i + 1]))
             if i < len(hidden_layers) - 2:
                 layers.append(nn.Tanh())
-        self.model = nn.Sequential(*layers)
+        self._model = nn.Sequential(*layers)
 
-        self.laplace = LaplaceSurrogate.from_dict(kwargs, target=target, rng=rng)
+        self._laplace = LaplaceSurrogate.from_dict(kwargs, target=target, rng=rng)
 
         # init all data
-        self.x_data = None
-        self.y_data = None
-        self.x_data_new = []
-        self.y_data_new = []
-        self.n_data_buffer = 0
+        self._x_data = None
+        self._y_data = None
+        self._x_data_new = []
+        self._y_data_new = []
+        self._n_data_buffer = 0
         if update_model is None:
             update_model = []
-        self.update_model = copy.deepcopy(update_model)
+        self._update_model = copy.deepcopy(update_model)
 
-        self.training_params = {
+        self._training_params = {
             'epochs': epochs,
             'batch_size': batch_size,
             'val_split': val_split,
@@ -335,20 +349,20 @@ class NeuralNetwork(SurrogateModel):
         # add initial training data to update model array
         if len(update_model) > 0:
             for i in range(0, len(update_model)):
-                self.update_model[i] += n_samples
+                self._update_model[i] += n_samples
 
         if train_on_init:
-            samples = self.laplace.get_samples(n_samples)
-            self.x_data = torch.tensor(samples, dtype=dtype)
-            self.y_data = torch.zeros(n_samples)
+            samples = self._laplace.get_samples(n_samples)
+            self._x_data = torch.tensor(samples, dtype=dtype)
+            self._y_data = torch.zeros(n_samples)
 
             for i in range(n_samples):
-                self.y_data[i] = torch.tensor(
-                    target.log_density(samples[i]) - self.laplace.eval(samples[i], delta=True),
+                self._y_data[i] = torch.tensor(
+                    target.log_density(samples[i]) - self._laplace.eval(samples[i], delta=True),
                     dtype=dtype
                 )
 
-            self.train(**self.training_params)
+            self.train(**self._training_params)
 
     @classmethod
     def from_dict(
@@ -380,12 +394,12 @@ class NeuralNetwork(SurrogateModel):
     def eval(self, x: np.ndarray, **kwargs) -> np.ndarray:
         x_tensor = torch.tensor(x, dtype=dtype)
         with torch.no_grad():
-            return self.model(x_tensor).numpy() + self.laplace.eval(x, delta=True)
+            return self._model(x_tensor).numpy() + self._laplace.eval(x, delta=True)
 
     @override
     def grad(self, x: np.ndarray, idx: int = None) -> np.ndarray:
         x_tensor = torch.tensor(x, dtype=dtype, requires_grad=True)
-        y_tensor = self.model(x_tensor)
+        y_tensor = self._model(x_tensor)
         gradients = grad(
             outputs=y_tensor,
             inputs=x_tensor,
@@ -394,9 +408,9 @@ class NeuralNetwork(SurrogateModel):
         )[0]
 
         if idx is None:
-            return gradients.detach().numpy() + self.laplace.grad(x)
+            return gradients.detach().numpy() + self._laplace.grad(x)
         else:
-            return gradients[idx].detach().numpy() + self.laplace.grad(x, idx=idx)
+            return gradients[idx].detach().numpy() + self._laplace.grad(x, idx=idx)
 
     @override
     def add_data(self, x: np.ndarray, y: np.ndarray, dy_dx: np.ndarray = None) -> None:
@@ -406,32 +420,32 @@ class NeuralNetwork(SurrogateModel):
 
         n = x.shape[0]
 
-        self.x_data_new.append(x)
-        self.y_data_new.append(y)
+        self._x_data_new.append(x)
+        self._y_data_new.append(y)
 
-        self.n_data_buffer += n
+        self._n_data_buffer += n
 
-        if len(self.update_model) > 0:
-            if self.n_data_buffer + self.x_data.shape[0] >= self.update_model[0]:
-                self.update_model.pop(0)
+        if len(self._update_model) > 0:
+            if self._n_data_buffer + self._x_data.shape[0] >= self._update_model[0]:
+                self._update_model.pop(0)
 
-                x_new = np.concat(self.x_data_new)
-                y_new = np.concat(self.y_data_new)
+                x_new = np.concat(self._x_data_new)
+                y_new = np.concat(self._y_data_new)
 
                 for i in range(len(y_new)):
-                    y_new[i] -= self.laplace.eval(x_new[i], delta=True)
+                    y_new[i] -= self._laplace.eval(x_new[i], delta=True)
 
                 x_new = torch.tensor(x_new, dtype=dtype)
                 y_new = torch.tensor(y_new, dtype=dtype)
 
-                self.x_data = torch.vstack((self.x_data, x_new))
-                self.y_data = torch.hstack((self.y_data, y_new))
+                self._x_data = torch.vstack((self._x_data, x_new))
+                self._y_data = torch.hstack((self._y_data, y_new))
 
-                self.train(**self.training_params)
+                self.train(**self._training_params)
 
-                self.x_data_new = []
-                self.y_data_new = []
-                self.n_data_buffer = 0
+                self._x_data_new = []
+                self._y_data_new = []
+                self._n_data_buffer = 0
 
     def save_model(self, path: str = 'neural_network.th') -> None:
         """
@@ -440,7 +454,7 @@ class NeuralNetwork(SurrogateModel):
         Parameters:
         path (str): The path to the file.
         """
-        torch.save(self.model.state_dict(), path)
+        torch.save(self._model.state_dict(), path)
 
     def load_model(self, path: str = 'neural_network.th') -> None:
         """
@@ -449,7 +463,7 @@ class NeuralNetwork(SurrogateModel):
         Parameters:
         path (str): The path to the file.
         """
-        self.model.load_state_dict(torch.load(path, weights_only=True))
+        self._model.load_state_dict(torch.load(path, weights_only=True))
 
     def train(
             self,
@@ -474,22 +488,22 @@ class NeuralNetwork(SurrogateModel):
         print_every (int): Print training information every print_every epochs.
         patience (int): Number of epochs to wait for improvement in validation loss before stopping early.
         lr (float): Learning rate for the optimizer.
-        lr_scheduler_step (int): Number of epochs after which to reduce the learning rate.
-        lr_scheduler_gamma (float): Factor by which to reduce the learning rate.
+        lr_scheduler (str): Type of learning rate scheduler. Admissible values are 'StepLR' and 'ReduceLROnPlateau'.
+        lr_scheduler_params (dict): Parameters for the learning rate scheduler.
         """
 
         train_losses = []
         val_losses = []
         patience_counter = 0
 
-        num_val = int(val_split * len(self.x_data))
-        x_train, x_val = self.x_data[:-num_val], self.x_data[-num_val:]
-        y_train, y_val = self.y_data[:-num_val], self.y_data[-num_val:]
+        num_val = int(val_split * len(self._x_data))
+        x_train, x_val = self._x_data[:-num_val], self._x_data[-num_val:]
+        y_train, y_val = self._y_data[:-num_val], self._y_data[-num_val:]
 
         train_dataset = torch.utils.data.TensorDataset(x_train, y_train)
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-        optimizer = optim.Adam(self.model.parameters(), lr=lr, weight_decay=weight_decay)
+        optimizer = optim.Adam(self._model.parameters(), lr=lr, weight_decay=weight_decay)
 
         if lr_scheduler == 'StepLR':
             scheduler = optim.lr_scheduler.StepLR(optimizer, **lr_scheduler_params)
@@ -512,7 +526,7 @@ class NeuralNetwork(SurrogateModel):
         with tqdm(total=epochs, file=sys.stdout, dynamic_ncols=True, leave=True, disable=disable_tqdm) as pbar:
             for epoch in range(epochs):
 
-                self.model.train()
+                self._model.train()
 
                 if (epoch % print_every) == 0:
                     pbar.clear()
@@ -523,21 +537,21 @@ class NeuralNetwork(SurrogateModel):
                 for x_batch, y_batch in train_loader:
 
                     optimizer.zero_grad()
-                    y_pred = self.model(x_batch).squeeze()
+                    y_pred = self._model(x_batch).squeeze()
                     loss = criterion(y_pred, y_batch)
                     train_losses.append(loss.detach().numpy())
                     loss.backward()
                     optimizer.step()
 
 
-                self.model.eval()
+                self._model.eval()
                 with torch.no_grad():
-                    val_loss = criterion(self.model(x_val).squeeze(), y_val).item()
+                    val_loss = criterion(self._model(x_val).squeeze(), y_val).item()
                     val_losses.append(val_loss)
 
                     if val_loss < best_val_loss:
                         best_val_loss = val_loss
-                        best_model_state = copy.deepcopy(self.model.state_dict())
+                        best_model_state = copy.deepcopy(self._model.state_dict())
                         patience_counter = 0
                     else:
                         patience_counter += 1
@@ -560,7 +574,7 @@ class NeuralNetwork(SurrogateModel):
                     pbar.refresh()
 
         if best_model_state:
-            self.model.load_state_dict(best_model_state)
+            self._model.load_state_dict(best_model_state)
             self.save_model()
 
         # plot training and validation loss
@@ -578,7 +592,7 @@ class NeuralNetwork(SurrogateModel):
 
         if not os.path.exists('figures'):
             os.makedirs('figures')
-        fig.savefig(f'figures/training_validation_loss_{self.x_data.shape[0]}.pdf')
+        fig.savefig(f'figures/training_validation_loss_{self._x_data.shape[0]}.pdf')
 
 
 class ExactGPModel(ExactGP):
@@ -594,12 +608,12 @@ class ExactGPModel(ExactGP):
     ):
 
         super(ExactGPModel, self).__init__(train_x, train_y, likelihood)
-        self.mean_module = ConstantMean()
-        self.covar_module = ScaleKernel(RBFKernel(ard_num_dims=ard_num_dims))
+        self._mean_module = ConstantMean()
+        self._covar_module = ScaleKernel(RBFKernel(ard_num_dims=ard_num_dims))
 
     def forward(self, x: torch.tensor) -> gpyMultivariateNormal:
-        mean_x = self.mean_module(x)
-        covar_x = self.covar_module(x)
+        mean_x = self._mean_module(x)
+        covar_x = self._covar_module(x)
         return gpyMultivariateNormal(mean_x, covar_x)
 
 
@@ -636,32 +650,33 @@ class GaussianProcessBase(SurrogateModel):
         lr_scheduler_params (dict): Learning rate scheduler parameters.
         print_every (int): Print training information every print_every iterations.
         update_model (list): List of number of samples after which to update the model.
-        retrain_when_update (bool): Retrain the model when new data is added.
+        retrain_threshold (int): Number of samples after which to retrain the model.
+        eval_strategy (str): Evaluation strategy. Admissible values are 'mean' and 'mean_plus_std'.
         """
         super().__init__()
 
         # get laplace approximation
-        self.laplace = LaplaceSurrogate.from_dict(kwargs, target=target, rng=rng)
-        self.rng = rng
+        self._laplace = LaplaceSurrogate.from_dict(kwargs, target=target, rng=rng)
+        self._rng = rng
 
         # init all data
-        self.x_data: torch.tensor = None
-        self.y_data: torch.tensor = None
-        self.x_data_new = []
-        self.y_data_new = []
-        self.n_data_buffer = 0
+        self._x_data: torch.tensor = None
+        self._y_data: torch.tensor = None
+        self._x_data_new = []
+        self._y_data_new = []
+        self._n_data_buffer = 0
         if update_model is None:
             update_model = []
-        self.update_model = copy.deepcopy(update_model)
+        self._update_model = copy.deepcopy(update_model)
         for i in range(len(update_model)):
-            self.update_model[i] += n_samples
+            self._update_model[i] += n_samples
 
-        self.retrain_threshold = retrain_threshold
+        self._retrain_threshold = retrain_threshold
 
         # default is add_data_on because it changes to add_data_off when update_model is empty
-        self.add_data_ = self.add_data_on
+        self._add_data = self._add_data_on
 
-        self.training_params = {
+        self._training_params = {
             'lbfgs_steps': lbfgs_steps,
             'n_restarts': n_restarts,
             'print_every': print_every,
@@ -671,15 +686,15 @@ class GaussianProcessBase(SurrogateModel):
         }
 
         # these will be overwritten in derived classes
-        self.model: Optional[gpytorch.models.ExactGP] = None
-        self.likelihood: Optional[gpytorch.likelihoods._GaussianLikelihoodBase] = None
+        self._model: Optional[gpytorch.models.ExactGP] = None
+        self._likelihood: Optional[gpytorch.likelihoods._GaussianLikelihoodBase] = None
 
         if eval_strategy == 'mean':
-            self.eval_ = self.eval_mean
-            self.grad_ = self.grad_mean
+            self._eval = self._eval_mean
+            self._grad = self._grad_mean
         elif eval_strategy == 'mean_plus_std':
-            self.eval_ = self.eval_mean_plus_std
-            self.grad_ = self.grad_mean_plus_std
+            self._eval = self._eval_mean_plus_std
+            self._grad = self._grad_mean_plus_std
         else:
             raise ValueError(f"Evaluation strategy {eval_strategy} not implemented.\n" +
                              "Choose from: 'mean', 'mean_plus_std'")
@@ -717,9 +732,9 @@ class GaussianProcessBase(SurrogateModel):
         x (np.ndarray): The input data.
         y (np.ndarray): The output data
         """
-        return self.add_data_(x, y, dy_dx)
+        return self._add_data(x, y, dy_dx)
 
-    def add_data_on(self, x: np.ndarray, y: np.ndarray, dy_dx: np.ndarray = None) -> None:
+    def _add_data_on(self, x: np.ndarray, y: np.ndarray, dy_dx: np.ndarray = None) -> None:
         """
         Add data to the Gaussian process surrogate model. Nothing to do here!
 
@@ -730,7 +745,7 @@ class GaussianProcessBase(SurrogateModel):
         """
         raise NotImplementedError
 
-    def add_data_off(self, x: np.ndarray, y: np.ndarray, dy_dx: np.ndarray = None) -> None:
+    def _add_data_off(self, x: np.ndarray, y: np.ndarray, dy_dx: np.ndarray = None) -> None:
         """
         Add data to the Gaussian process surrogate model. Nothing to do here!
 
@@ -760,12 +775,12 @@ class GaussianProcessBase(SurrogateModel):
         logger.info(f"Training {self.__class__.__name__} surrogate model ...")
 
         # set train data and put model in training mode
-        self.model.set_train_data(self.x_data, self.y_data, strict=False)
-        self.model.train()
-        self.likelihood.train()
+        self._model.set_train_data(self._x_data, self._y_data, strict=False)
+        self._model.train()
+        self._likelihood.train()
 
         # define loss
-        mll = ExactMarginalLogLikelihood(self.likelihood, self.model)
+        mll = ExactMarginalLogLikelihood(self._likelihood, self._model)
 
         # disable tqdm if running on a cluster
         disable_tqdm = (
@@ -776,8 +791,8 @@ class GaussianProcessBase(SurrogateModel):
         warnings.simplefilter("ignore", category=NumericalWarning)
 
         # get hyperparameter initialisations
-        n_params = int(sum([np.prod(param.shape) for name, param in self.model.named_parameters()]))
-        sampler = qmc.LatinHypercube(n_params, scramble=True, rng=self.rng)
+        n_params = int(sum([np.prod(param.shape) for name, param in self._model.named_parameters()]))
+        sampler = qmc.LatinHypercube(n_params, scramble=True, rng=self._rng)
         sample = sampler.random(n_restarts)
         scaled_sample = qmc.scale(sample, -10, 20)
         initial_params = torch.tensor(scaled_sample, dtype=dtype)
@@ -812,7 +827,7 @@ class GaussianProcessBase(SurrogateModel):
 
                 # init optimizer and scheduler
                 optimizer = torch.optim.LBFGS(
-                    self.model.parameters(),
+                    self._model.parameters(),
                     lr=lr,
                     max_iter=lbfgs_steps,
                     tolerance_grad=tolerance_grad,
@@ -822,25 +837,25 @@ class GaussianProcessBase(SurrogateModel):
 
                 def closure():
                     optimizer.zero_grad()
-                    output = self.model(self.x_data)
-                    loss = -mll(output, self.y_data)
+                    output = self._model(self._x_data)
+                    loss = -mll(output, self._y_data)
                     loss.backward()
                     return loss
 
                 # set hyperparameters and initialise model
                 hyper_params = {}
                 counter = 0
-                for name, param in self.model.named_parameters():
+                for name, param in self._model.named_parameters():
                     shape = param.shape
                     length = int(np.prod(shape))
                     hyper_params[name] = initial_params[restart, counter:counter + length].reshape(shape)
                     counter += length
 
-                self.model.initialize(**hyper_params)
+                self._model.initialize(**hyper_params)
 
                 # print hyperparameter values
                 pbar.clear()
-                logger.info(f"Restart {restart}/{n_restarts} with \n" + self.log_state_dict())
+                logger.info(f"Restart {restart}/{n_restarts} with \n" + self._log_state_dict())
                 pbar.refresh()
 
                 # try block needed to catch non-PSD errors. in that case, interation is just skipped
@@ -856,15 +871,15 @@ class GaussianProcessBase(SurrogateModel):
                             logger.debug(
                                 f"   Iter {i}/{lbfgs_steps}"
                                 + f" Loss: {loss.item():.3f},"
-                                + self.log_state_dict(end_of_line=', ')
+                                + self._log_state_dict(end_of_line=', ')
                             )
                             pbar.refresh()
 
                     # check if current model is best
                     if loss.item() < best_loss:
                         logger.info(f'New best loss: {loss.item()} with params:')
-                        logger.info(self.log_state_dict())
-                        best_model = copy.deepcopy(self.model.state_dict())
+                        logger.info(self._log_state_dict())
+                        best_model = copy.deepcopy(self._model.state_dict())
                         best_loss = loss.item()
                         best_iter = restart
 
@@ -893,8 +908,8 @@ class GaussianProcessBase(SurrogateModel):
                 pbar.update()
 
         # load best model print parameters
-        self.model.load_state_dict(best_model)
-        logger.warning(f"Best model with loss {best_loss} and params:\n" + self.log_state_dict())
+        self._model.load_state_dict(best_model)
+        logger.warning(f"Best model with loss {best_loss} and params:\n" + self._log_state_dict())
         self.save_model()
 
         for i in range(n_restarts):
@@ -907,13 +922,13 @@ class GaussianProcessBase(SurrogateModel):
 
         if not os.path.exists('figures'):
             os.makedirs('figures')
-        fig.savefig(f'figures/mll_{self.x_data.shape[0]}.pdf')
+        fig.savefig(f'figures/mll_{self._x_data.shape[0]}.pdf')
 
         # set model into evaluation mode
-        self.model.eval()
-        self.likelihood.eval()
+        self._model.eval()
+        self._likelihood.eval()
 
-    def log_state_dict(self, end_of_line: str = '\n') -> str:
+    def _log_state_dict(self, end_of_line: str = '\n') -> str:
         """
         Log the state dictionary of the model.
 
@@ -927,20 +942,20 @@ class GaussianProcessBase(SurrogateModel):
 
         named_params = ""
 
-        for name, param in self.model.named_parameters():
+        for name, param in self._model.named_parameters():
             named_params += f"  {name}: {param.data}" + end_of_line
 
         return named_params
 
     @override
     def eval(self, x: np.ndarray, **kwargs) -> np.ndarray:
-        return self.eval_(x, **kwargs)
+        return self._eval(x, **kwargs)
 
     @override
     def grad(self, x: np.ndarray, idx: int = None) -> np.ndarray:
-        return self.grad_(x, idx=idx)
+        return self._grad(x, idx=idx)
 
-    def eval_mean(self, x: np.ndarray, **kwargs) -> np.ndarray:
+    def _eval_mean(self, x: np.ndarray, **kwargs) -> np.ndarray:
         """
         Evaluate the mean of the Gaussian process model.
 
@@ -953,7 +968,7 @@ class GaussianProcessBase(SurrogateModel):
         """
         raise NotImplementedError
 
-    def eval_mean_plus_std(self, x: np.ndarray, **kwargs) -> np.ndarray:
+    def _eval_mean_plus_std(self, x: np.ndarray, **kwargs) -> np.ndarray:
         """
         Evaluate the mean of the Gaussian process model and add the standard deviation.
 
@@ -966,7 +981,7 @@ class GaussianProcessBase(SurrogateModel):
         """
         raise NotImplementedError
 
-    def grad_mean(self, x: np.ndarray, idx: int = None) -> np.ndarray:
+    def _grad_mean(self, x: np.ndarray, idx: int = None) -> np.ndarray:
         """
         Compute the gradient of the mean of the Gaussian process model.
 
@@ -979,7 +994,7 @@ class GaussianProcessBase(SurrogateModel):
         """
         raise NotImplementedError
 
-    def grad_mean_plus_std(self, x: np.ndarray, idx: int = None) -> np.ndarray:
+    def _grad_mean_plus_std(self, x: np.ndarray, idx: int = None) -> np.ndarray:
         """
         Compute the gradient of the mean of the Gaussian process model plus the standard deviation.
 
@@ -1003,9 +1018,9 @@ class GaussianProcessBase(SurrogateModel):
         if not os.path.exists(path):
             os.makedirs(path)
 
-        torch.save(self.model.state_dict(), os.path.join(path, 'model_params.th'))
-        np.savetxt(os.path.join(path, 'x_data.dat'), self.x_data.numpy())
-        np.savetxt(os.path.join(path, 'y_data.dat'), self.y_data.numpy())
+        torch.save(self._model.state_dict(), os.path.join(path, 'model_params.th'))
+        np.savetxt(os.path.join(path, 'x_data.dat'), self._x_data.numpy())
+        np.savetxt(os.path.join(path, 'y_data.dat'), self._y_data.numpy())
 
     def load_model(self, path: str = 'model_params') -> None:
         """
@@ -1016,13 +1031,13 @@ class GaussianProcessBase(SurrogateModel):
         """
 
         model_params = torch.load(os.path.join(path, 'model_params.th'))
-        self.x_data = torch.tensor(np.loadtxt(os.path.join(path, 'x_data.dat')), dtype=dtype)
-        self.y_data = torch.tensor(np.loadtxt(os.path.join(path, 'y_data.dat')), dtype=dtype)
+        self._x_data = torch.tensor(np.loadtxt(os.path.join(path, 'x_data.dat')), dtype=dtype)
+        self._y_data = torch.tensor(np.loadtxt(os.path.join(path, 'y_data.dat')), dtype=dtype)
 
-        self.model.load_state_dict(model_params)
-        self.model.set_train_data(self.x_data, self.y_data, strict=False)
-        self.model.eval()
-        self.likelihood.eval()
+        self._model.load_state_dict(model_params)
+        self._model.set_train_data(self._x_data, self._y_data, strict=False)
+        self._model.eval()
+        self._likelihood.eval()
 
 
 class GaussianProcess(GaussianProcessBase):
@@ -1043,69 +1058,69 @@ class GaussianProcess(GaussianProcessBase):
         super().__init__(rng=rng, target=target, n_samples=n_samples, **kwargs)
 
         # define likelihood, get model, and set optimizer
-        self.likelihood = GaussianLikelihood()
-        self.model = ExactGPModel(None, None, self.likelihood, target.get_dim())
+        self._likelihood = GaussianLikelihood()
+        self._model = ExactGPModel(None, None, self._likelihood, target.get_dim())
 
         # train model unless specified otherwise
         if train_on_init:
-            samples = self.laplace.get_samples(n_samples)
-            self.x_data = torch.tensor(samples, dtype=dtype)
-            self.y_data = torch.zeros(n_samples)
+            samples = self._laplace.get_samples(n_samples)
+            self._x_data = torch.tensor(samples, dtype=dtype)
+            self._y_data = torch.zeros(n_samples)
 
             for i in range(n_samples):
-                self.y_data[i] = torch.tensor(
-                    target.log_density(samples[i]) - self.laplace.eval(samples[i], delta=True),
+                self._y_data[i] = torch.tensor(
+                    target.log_density(samples[i]) - self._laplace.eval(samples[i], delta=True),
                     dtype=dtype
                 )
 
-            self.train(**self.training_params)
+            self.train(**self._training_params)
 
         logger.info(f'{self.__class__.__name__} surrogate model initialized.')
 
     @override
-    def add_data_on(self, x: np.ndarray, y: np.ndarray, dy_dx: np.ndarray = None) -> None:
+    def _add_data_on(self, x: np.ndarray, y: np.ndarray, dy_dx: np.ndarray = None) -> None:
 
         x = np.atleast_2d(x)
         y = np.atleast_1d(y)
 
         n = x.shape[0]
 
-        self.x_data_new.append(x)
-        self.y_data_new.append(y)
+        self._x_data_new.append(x)
+        self._y_data_new.append(y)
 
-        self.n_data_buffer += n
+        self._n_data_buffer += n
 
-        if len(self.update_model) > 0:
-            if self.n_data_buffer + self.x_data.shape[0] >= self.update_model[0]:
-                self.update_model.pop(0)
+        if len(self._update_model) > 0:
+            if self._n_data_buffer + self._x_data.shape[0] >= self._update_model[0]:
+                self._update_model.pop(0)
 
-                x_new = np.concat(self.x_data_new)
-                y_new = np.concat(self.y_data_new)
+                x_new = np.concat(self._x_data_new)
+                y_new = np.concat(self._y_data_new)
 
                 for i in range(len(y_new)):
-                    y_new[i] -= self.laplace.eval(x_new[i], delta=True)
+                    y_new[i] -= self._laplace.eval(x_new[i], delta=True)
 
                 x_new = torch.tensor(x_new, dtype=dtype)
                 y_new = torch.tensor(y_new, dtype=dtype)
 
-                self.x_data = torch.vstack((self.x_data, x_new))
-                self.y_data = torch.hstack((self.y_data, y_new))
+                self._x_data = torch.vstack((self._x_data, x_new))
+                self._y_data = torch.hstack((self._y_data, y_new))
 
-                if len(self.x_data) < self.retrain_threshold:
-                    logger.info(f'Retraining model with {len(self.x_data)} data points.')
-                    self.train(**self.training_params)
+                if len(self._x_data) < self._retrain_threshold:
+                    logger.info(f'Retraining model with {len(self._x_data)} data points.')
+                    self.train(**self._training_params)
                 else:
-                    logger.info(f'Updating model with {len(self.x_data)} data points.')
-                    self.model.set_train_data(self.x_data, self.y_data, strict=False)
+                    logger.info(f'Updating model with {len(self._x_data)} data points.')
+                    self._model.set_train_data(self._x_data, self._y_data, strict=False)
 
-                self.x_data_new = []
-                self.y_data_new = []
-                self.n_data_buffer = 0
+                self._x_data_new = []
+                self._y_data_new = []
+                self._n_data_buffer = 0
         else:
-            self.add_data_ = self.add_data_off
+            self._add_data = self._add_data_off
 
     @override
-    def eval_mean(self, x: np.ndarray, **kwargs) -> np.ndarray:
+    def _eval_mean(self, x: np.ndarray, **kwargs) -> np.ndarray:
 
         x_tensor = torch.tensor(
             np.atleast_2d(x),
@@ -1117,10 +1132,10 @@ class GaussianProcess(GaussianProcessBase):
             torch.no_grad(),
             gpytorch.settings.skip_posterior_variances(True)
         ):
-            return self.model(x_tensor).mean.squeeze().numpy() + self.laplace.eval(x, delta=True)
+            return self._model(x_tensor).mean.squeeze().numpy() + self._laplace.eval(x, delta=True)
 
     @override
-    def eval_mean_plus_std(self, x: np.ndarray, **kwargs) -> np.ndarray:
+    def _eval_mean_plus_std(self, x: np.ndarray, **kwargs) -> np.ndarray:
 
         x_tensor = torch.tensor(
             np.atleast_2d(x),
@@ -1132,14 +1147,14 @@ class GaussianProcess(GaussianProcessBase):
             torch.no_grad(),
             gpytorch.settings.fast_pred_var(True)
         ):
-            y = self.model(x_tensor)
+            y = self._model(x_tensor)
 
         gp = y.mean.squeeze().numpy() + y.variance.sqrt().squeeze().numpy()
 
-        return gp + self.laplace.eval(x, delta=True)
+        return gp + self._laplace.eval(x, delta=True)
 
     @override
-    def grad_mean(self, x: np.ndarray, idx: int = None) -> np.ndarray:
+    def _grad_mean(self, x: np.ndarray, idx: int = None) -> np.ndarray:
 
         x_tensor = torch.tensor(
             np.atleast_2d(x),
@@ -1149,7 +1164,7 @@ class GaussianProcess(GaussianProcessBase):
 
         with gpytorch.settings.skip_posterior_variances(True), gpytorch.settings.fast_computations(
                 False, False, False):
-            y_tensor = self.model(x_tensor).mean
+            y_tensor = self._model(x_tensor).mean
             gradients = grad(
                 outputs=y_tensor,
                 inputs=x_tensor,
@@ -1158,12 +1173,12 @@ class GaussianProcess(GaussianProcessBase):
             )[0].squeeze().detach().numpy()
 
         if idx is None:
-            return gradients + self.laplace.grad(x)
+            return gradients + self._laplace.grad(x)
         else:
-            return gradients[idx] + self.laplace.grad(x, idx=idx)
+            return gradients[idx] + self._laplace.grad(x, idx=idx)
 
     @override
-    def grad_mean_plus_std(self, x: np.ndarray, idx: int = None):
+    def _grad_mean_plus_std(self, x: np.ndarray, idx: int = None):
         x_tensor = torch.tensor(
             np.atleast_2d(x),
             dtype=dtype,
@@ -1174,7 +1189,7 @@ class GaussianProcess(GaussianProcessBase):
             gpytorch.settings.fast_computations(False, False, False),
             gpytorch.settings.fast_pred_var(True)
         ):
-            model_output = self.model(x_tensor)
+            model_output = self._model(x_tensor)
             y_tensor = model_output.mean + model_output.variance.sqrt()
             gradients = grad(
                 outputs=y_tensor,
@@ -1184,9 +1199,9 @@ class GaussianProcess(GaussianProcessBase):
             )[0].squeeze().detach().numpy()
 
         if idx is None:
-            return gradients + self.laplace.grad(x)
+            return gradients + self._laplace.grad(x)
         else:
-            return gradients[idx] + self.laplace.grad(x, idx=idx)
+            return gradients[idx] + self._laplace.grad(x, idx=idx)
 
 
 class DerivativeGPModel(ExactGP):
@@ -1201,12 +1216,12 @@ class DerivativeGPModel(ExactGP):
             ard_num_dims: int
     ):
         super().__init__(train_x, train_y, likelihood)
-        self.mean_module = ConstantMeanGrad()
-        self.covar_module = ScaleKernel(RBFKernelGrad(ard_num_dims=ard_num_dims))
+        self._mean_module = ConstantMeanGrad()
+        self._covar_module = ScaleKernel(RBFKernelGrad(ard_num_dims=ard_num_dims))
 
     def forward(self, x: torch.tensor) -> MultitaskMultivariateNormal:
-        mean_x = self.mean_module(x)
-        covar_x = self.covar_module(x)
+        mean_x = self._mean_module(x)
+        covar_x = self._covar_module(x)
         return MultitaskMultivariateNormal(mean_x, covar_x)
 
 
@@ -1229,31 +1244,31 @@ class DerivativeGaussianProcess(GaussianProcessBase):
         super().__init__(rng=rng, target=target, n_samples=n_samples, **kwargs)
 
         # define likelihood, get model, and set optimizer
-        self.likelihood = MultitaskGaussianLikelihood(num_tasks=target.get_dim() + 1)
-        self.model = DerivativeGPModel(None, None, self.likelihood, target.get_dim())
+        self._likelihood = MultitaskGaussianLikelihood(num_tasks=target.get_dim() + 1)
+        self._model = DerivativeGPModel(None, None, self._likelihood, target.get_dim())
 
         # train model unless specified otherwise
         if train_on_init:
-            samples = self.laplace.get_samples(n_samples)
-            self.x_data = torch.tensor(samples, dtype=dtype)
-            self.y_data = torch.zeros(n_samples, target.get_dim() + 1, dtype=dtype)
+            samples = self._laplace.get_samples(n_samples)
+            self._x_data = torch.tensor(samples, dtype=dtype)
+            self._y_data = torch.zeros(n_samples, target.get_dim() + 1, dtype=dtype)
 
             for i in range(n_samples):
-                self.y_data[i, 0] = torch.tensor(
-                    target.log_density(samples[i]) - self.laplace.eval(samples[i], delta=True),
+                self._y_data[i, 0] = torch.tensor(
+                    target.log_density(samples[i]) - self._laplace.eval(samples[i], delta=True),
                     dtype=dtype
                 )
-                self.y_data[i, 1:] = torch.tensor(
-                    target.grad_log_density(samples[i]) - self.laplace.grad(samples[i]),
+                self._y_data[i, 1:] = torch.tensor(
+                    target.grad_log_density(samples[i]) - self._laplace.grad(samples[i]),
                     dtype=dtype
                 )
 
-            self.train(**self.training_params)
+            self.train(**self._training_params)
 
         logger.info(f'{self.__class__.__name__} surrogate model initialized.')
 
     @override
-    def add_data_on(self, x: np.ndarray, y: np.ndarray, dy_dx: np.ndarray = None) -> None:
+    def _add_data_on(self, x: np.ndarray, y: np.ndarray, dy_dx: np.ndarray = None) -> None:
 
         x = np.atleast_2d(x)
         y = np.atleast_2d(y)
@@ -1262,42 +1277,42 @@ class DerivativeGaussianProcess(GaussianProcessBase):
 
         n = x.shape[0]
 
-        self.x_data_new.append(x)
-        self.y_data_new.append(y)
+        self._x_data_new.append(x)
+        self._y_data_new.append(y)
 
-        self.n_data_buffer += n
+        self._n_data_buffer += n
 
-        if len(self.update_model) > 0:
-            if self.n_data_buffer + self.x_data.shape[0] >= self.update_model[0]:
-                self.update_model.pop(0)
+        if len(self._update_model) > 0:
+            if self._n_data_buffer + self._x_data.shape[0] >= self._update_model[0]:
+                self._update_model.pop(0)
 
-                x_new = np.concat(self.x_data_new)
-                y_new = np.concat(self.y_data_new)
+                x_new = np.concat(self._x_data_new)
+                y_new = np.concat(self._y_data_new)
 
                 for i in range(len(y_new)):
-                    y_new[i, 0]  -= self.laplace.eval(x_new[i], delta=True)
-                    y_new[i, 1:] -= self.laplace.grad(x_new[i])
+                    y_new[i, 0]  -= self._laplace.eval(x_new[i], delta=True)
+                    y_new[i, 1:] -= self._laplace.grad(x_new[i])
 
                 x_new = torch.tensor(x_new, dtype=dtype)
                 y_new = torch.tensor(y_new, dtype=dtype)
 
-                self.x_data = torch.vstack((self.x_data, x_new))
-                self.y_data = torch.vstack((self.y_data, y_new))
+                self._x_data = torch.vstack((self._x_data, x_new))
+                self._y_data = torch.vstack((self._y_data, y_new))
 
-                if len(self.x_data) < self.retrain_threshold:
-                    self.train(**self.training_params)
+                if len(self._x_data) < self._retrain_threshold:
+                    self.train(**self._training_params)
                 else:
-                    self.model.set_train_data(self.x_data, self.y_data, strict=False)
+                    self._model.set_train_data(self._x_data, self._y_data, strict=False)
 
-                self.x_data_new = []
-                self.y_data_new = []
-                self.n_data_buffer = 0
+                self._x_data_new = []
+                self._y_data_new = []
+                self._n_data_buffer = 0
 
         else:
-            self.add_data_ = self.add_data_off
+            self._add_data = self._add_data_off
 
     @override
-    def eval_mean(self, x: np.ndarray, **kwargs) -> np.ndarray:
+    def _eval_mean(self, x: np.ndarray, **kwargs) -> np.ndarray:
 
         x_tensor = torch.tensor(
             np.atleast_2d(x),
@@ -1310,10 +1325,10 @@ class DerivativeGaussianProcess(GaussianProcessBase):
             gpytorch.settings.skip_posterior_variances(True),
             gpytorch.settings.fast_computations(False, False, False),
         ):
-            return self.model(x_tensor).mean[:, 0].squeeze().detach().numpy() + self.laplace.eval(x, delta=True)
+            return self._model(x_tensor).mean[:, 0].squeeze().detach().numpy() + self._laplace.eval(x, delta=True)
 
     @override
-    def eval_mean_plus_std(self, x: np.ndarray, **kwargs) -> np.ndarray:
+    def _eval_mean_plus_std(self, x: np.ndarray, **kwargs) -> np.ndarray:
 
         x_tensor = torch.tensor(
             np.atleast_2d(x),
@@ -1326,13 +1341,13 @@ class DerivativeGaussianProcess(GaussianProcessBase):
             gpytorch.settings.fast_computations(False, False, False),
             gpytorch.settings.fast_pred_var(True)
         ):
-            y = self.model(x_tensor)
+            y = self._model(x_tensor)
 
         gp = y.mean[:, 0].squeeze().detach().numpy() + y.variance[:, 0].sqrt().squeeze().detach().numpy()
-        return gp + self.laplace.eval(x, delta=True)
+        return gp + self._laplace.eval(x, delta=True)
 
     @override
-    def grad_mean(self, x: np.ndarray, idx: int = None) -> np.ndarray:
+    def _grad_mean(self, x: np.ndarray, idx: int = None) -> np.ndarray:
 
         x_tensor = torch.tensor(
             np.atleast_2d(x),
@@ -1345,15 +1360,15 @@ class DerivativeGaussianProcess(GaussianProcessBase):
             gpytorch.settings.skip_posterior_variances(True),
             gpytorch.settings.fast_computations(False, False, False)
         ):
-            gradient = self.model(x_tensor).mean[:, 1:].squeeze().detach().numpy()
+            gradient = self._model(x_tensor).mean[:, 1:].squeeze().detach().numpy()
 
         if idx is None:
-            return gradient + self.laplace.grad(x)
+            return gradient + self._laplace.grad(x)
         else:
-            return gradient[idx] + self.laplace.grad(x, idx=idx)
+            return gradient[idx] + self._laplace.grad(x, idx=idx)
 
     @override
-    def grad_mean_plus_std(self, x: np.ndarray, idx: int = None) -> np.ndarray:
+    def _grad_mean_plus_std(self, x: np.ndarray, idx: int = None) -> np.ndarray:
 
         x_tensor = torch.tensor(
             np.atleast_2d(x),
@@ -1366,10 +1381,10 @@ class DerivativeGaussianProcess(GaussianProcessBase):
             gpytorch.settings.fast_computations(False, False, False),
             gpytorch.settings.fast_pred_var(True)
         ):
-            y = self.model(x_tensor)
+            y = self._model(x_tensor)
             gradient = y.mean[:, 1:].squeeze().detach().numpy() + y.variance[:, 1:].sqrt().squeeze().detach().numpy()
 
         if idx is None:
-            return gradient + self.laplace.grad(x)
+            return gradient + self._laplace.grad(x)
         else:
-            return gradient[idx] + self.laplace.grad(x, idx=idx)
+            return gradient[idx] + self._laplace.grad(x, idx=idx)
