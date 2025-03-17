@@ -75,13 +75,59 @@ class SurrogateModel(object):
         y (np.ndarray): The output data.
         dy_dx (np.ndarray): The gradient of the output data.
         """
-        raise NotImplementedError
+        pass
 
     def train(self, *args, **kwargs) -> None:
         """
         Train the surrogate model.
         """
         raise NotImplementedError
+
+
+class ConstantSurrogate(SurrogateModel):
+    """
+    Constant surrogate model.
+    """
+    def __init__(self, target: Distribution, rng: np.random.Generator, **kwargs):
+        """
+        Initialize the constant surrogate model.
+
+        Parameters:
+        target (Distribution): The target distribution.
+        rng (np.random.Generator): The random number generator.
+        """
+        super().__init__()
+
+    @classmethod
+    def from_dict(
+            cls,
+            config: dict,
+            target: Distribution,
+            rng: np.random.Generator
+    ):
+        """
+        Create a constant surrogate model from a dictionary.
+
+        Parameters:
+        config (dict): The configuration dictionary.
+        target (Distribution): The target distribution.
+        rng (np.random.Generator): The random number generator.
+
+        Returns:
+        ConstantSurrogate: The constant surrogate model.
+        """
+        return cls(target=target, rng=rng)
+
+    @override
+    def eval(self, x: np.ndarray, **kwargs) -> np.ndarray:
+        return np.array(0.0)
+
+    @override
+    def grad(self, x: np.ndarray, idx: int = None) -> np.ndarray:
+        if idx is None:
+            return np.zeros_like(x)
+        else:
+            return np.array(0.0)
 
 
 class LaplaceSurrogate(SurrogateModel):

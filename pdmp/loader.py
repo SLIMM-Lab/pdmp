@@ -10,7 +10,9 @@ from pdmp.forward_model import get_model
 from pdmp.sampler import Sampler
 from pdmp.zigzag import ZigZagSampler
 from pdmp.mcmc import RandomWalkMetropolisSampler
-from pdmp.surrogates import SurrogateModel, LaplaceSurrogate, NeuralNetwork, GaussianProcess, DerivativeGaussianProcess
+from pdmp.surrogates import (
+    SurrogateModel, LaplaceSurrogate, NeuralNetwork, GaussianProcess, DerivativeGaussianProcess, ConstantSurrogate
+)
 
 def get_target(
         config: dict[str, Any],
@@ -104,6 +106,9 @@ def get_surrogate(
 
     if config['name'] == 'DerivativeGaussianProcess':
         return DerivativeGaussianProcess.from_dict(config, target=target, rng=rng)
+
+    if config['name'] == 'Constant':
+        return ConstantSurrogate.from_dict(config, target=target, rng=rng)
 
 
 def yaml_to_numpy(data: Any, exclude_keys: set = None):
