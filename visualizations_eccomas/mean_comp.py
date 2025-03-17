@@ -67,7 +67,7 @@ if __name__ == '__main__':
     Sampler = RandomWalkMetropolisSampler(target, n_samples=n_samples, sigma=np.sqrt(1.5), rng=rng,
                                           prec=cov)
     Sampler.run()
-    samples = Sampler.chain_
+    samples = Sampler.chain
     true_mean = np.mean(samples, axis=0)
     # true_var = np.cov(samples.transpose())
     # true_var = np.var(samples, axis=0)
@@ -97,7 +97,7 @@ if __name__ == '__main__':
         Sampler = RandomWalkMetropolisSampler(target, n_samples=n_samples, sigma=np.sqrt(1.5), rng=rng,
                                               prec=cov)
         Sampler.run()
-        samples = Sampler.chain_
+        samples = Sampler.chain
         means_mh[i] = np.mean(samples, axis=0)
 
     print(f"True mean: {true_mean}")

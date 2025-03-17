@@ -145,7 +145,7 @@ if __name__ == '__main__':
     mh_sampler = RandomWalkMetropolisSampler(target, n_samples=n_samples, sigma=np.sqrt(.5), rng=rng,
                                              prec=cov, cov_factor=0.5, x_0=x_0)
     mh_sampler.run()
-    mh_samples = mh_sampler.chain_
+    mh_samples = mh_sampler.chain
 
     # get figure and plot pdfs
     fig, ax = get_2d_despined_figure(plot_limits, figsize=figsize, axes_label='E')
