@@ -89,9 +89,9 @@ if __name__ == '__main__':
     sampler = RandomWalkMetropolisSampler(target, n_samples=n_samples, sigma=np.sqrt(.125), rng=rng, prec=cov, cov_factor=0.5, x_0=x_0)
     sampler.run()
 
-    samples = sampler.chain_
+    samples = sampler.chain
     proposals = sampler.proposals_
-    accepted = sampler.accepted_
+    accepted = sampler._accepted
 
     # plot_samples(samples, ax, color_code=False, n_vis=2000, size=1.5)
     # plot_samples(proposals, ax, color_code=False, n_vis=2000, size=1.5, color='C1')
