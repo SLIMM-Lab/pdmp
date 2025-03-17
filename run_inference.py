@@ -22,8 +22,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run Monte Carlo simulation.")
     parser.add_argument(
         "--config",
+        default='config.yml',
         type=str,
-        required=True,
         help="The path to the configuration file.",
     )
 
