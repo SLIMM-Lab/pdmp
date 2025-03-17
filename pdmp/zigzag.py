@@ -59,41 +59,40 @@ class ZigZagSampler(Sampler):
         """
         super().__init__()
 
-        self.target_ = target
-        self.dim_ = self.target_.get_dim()
-        # self.n_obs_ = self.target_.get_n_obs()
+        self.target = target
+        self._dim = self.target.get_dim()
+        # self.n_obs_ = self.target.get_n_obs()
 
         if n_max is not None:
-            self.n_max_ = n_max
-            self.run = self.run_budget
+            self._n_max = n_max
+            self.run = self._run_budget
 
         # make very large skeleton if algorithm is run with time limit
         if t_max is not None:
-            self.t_max_ = float(t_max)
-            self.n_max_ = 10000000 #TODO this might be too large, find a better way to handle this
-            n_events_accepted = self.n_max_
-            self.run = self.run_time
+            self._t_max = float(t_max)
+            self._n_max = 10000000 #TODO this might be too large, find a better way to handle this
+            n_events_accepted = self._n_max
+            self.run = self._run_time
 
         if n_max is None and t_max is None:
-            self.n_max_ = 1000
-            self.run = self.run_budget
+            self._n_max = 1000
+            self.run = self._run_budget
 
-        self.times_ = np.zeros(self.n_max_)
-        self.positions_ = np.zeros((self.n_max_, self.dim_))
-        self.velocities_ = np.zeros((self.n_max_, self.dim_))
-        self.iter_ = 0
-        self.gamma_ = gamma
-        self.offset_ = np.zeros(self.dim_)
-        self.offset_history_ = np.zeros((self.n_max_, self.dim_))
-        self.plot_ = False
-        self.thinning_ = False
-        self.n_accepted_ = 0
-        self.n_accepted_0_ = n_events_accepted
-        self.accepted_iters_ = np.zeros(self.n_accepted_0_, dtype=int)
-        self.sub_sampling_ = sub_sampling
-        self.print_every_ = print_every
-        self.update_bar_every = update_bar_every
-        self.offset_shrinkage_ = offset_shrinkage
+        self.times = np.zeros(self._n_max)
+        self.positions = np.zeros((self._n_max, self._dim))
+        self.velocities = np.zeros((self._n_max, self._dim))
+        self._iter = 0
+        self._gamma = gamma
+        self._offset = np.zeros(self._dim)
+        self._offset_history = np.zeros((self._n_max, self._dim))
+        self._thinning = False
+        self._n_accepted = 0
+        self._n_accepted_0 = n_events_accepted
+        self._accepted_iters = np.zeros(self._n_accepted_0, dtype=int)
+        self._sub_sampling = sub_sampling
+        self._print_every = print_every
+        self._update_bar_every = update_bar_every
+        self._offset_shrinkage = offset_shrinkage
 
         # if 'ss' in kwargs:
         #     self.ss_ = kwargs['ss']
@@ -102,68 +101,64 @@ class ZigZagSampler(Sampler):
         #     self.us_ = kwargs['us']
 
         if rng is None and seed is None:
-            self.rng_ = np.random.default_rng(0)
+            self._rng = np.random.default_rng(0)
         elif rng is None:
-            self.rng_ = np.random.default_rng(seed)
+            self._rng = np.random.default_rng(seed)
         else:
-            self.rng_ = rng
+            self._rng = rng
 
         if 'x_0' in kwargs:
-            self.positions_[0] = kwargs['x_0']
+            self.positions[0] = kwargs['x_0']
         else:
-            self.positions_[0] = self.rng_.normal(0, 1, self.dim_)
+            self.positions[0] = self._rng.normal(0, 1, self._dim)
 
         # draw initial velocity from binomial distribution
         if 'v_0' in kwargs:
-            self.velocities_[0] = kwargs['v_0']
+            self.velocities[0] = kwargs['v_0']
         else:
-            self.velocities_[0] = 2 * self.rng_.binomial(1, 0.5, self.dim_) - 1
+            self.velocities[0] = 2 * self._rng.binomial(1, 0.5, self._dim) - 1
 
-        if hasattr(self.target_, 'get_bounds'):
+        if hasattr(self.target, 'get_bounds'):
             pass
         elif surrogate is not None:
-            self.thinning_ = True
-            self.s_ = None
+            self._thinning = True
+            self._s = None
 
             if isinstance(surrogate, LaplaceSurrogate):
-                self.surrogate_ = cast(LaplaceSurrogate, surrogate)
-                self.generate_event_times = self.inverse_cdf_linear
+                self.surrogate = cast(LaplaceSurrogate, surrogate)
+                self._generate_event_times = self._inverse_cdf_linear
 
             if isinstance(surrogate, NeuralNetwork):
-                self.surrogate_ = cast(NeuralNetwork, surrogate)
-                self.generate_event_times =  self.inverse_cdf
+                self.surrogate = cast(NeuralNetwork, surrogate)
+                self._generate_event_times =  self._inverse_cdf
 
             if isinstance(surrogate, GaussianProcess):
-                self.surrogate_ = cast(GaussianProcess, surrogate)
-                self.generate_event_times = self.inverse_cdf
+                self.surrogate = cast(GaussianProcess, surrogate)
+                self._generate_event_times = self._inverse_cdf
 
             if isinstance(surrogate, DerivativeGaussianProcess):
-                self.surrogate_ = cast(DerivativeGaussianProcess, surrogate)
-                self.generate_event_times = self.inverse_cdf
+                self.surrogate = cast(DerivativeGaussianProcess, surrogate)
+                self._generate_event_times = self._inverse_cdf
 
             if isinstance(surrogate, ConstantSurrogate):
-                self.surrogate_ = cast(ConstantSurrogate, surrogate)
-                self.generate_event_times = self.inverse_cdf
-                self.offset_ = np.ones_like(self.offset_)
+                self.surrogate = cast(ConstantSurrogate, surrogate)
+                self._generate_event_times = self._inverse_cdf
+                self._offset = np.ones_like(self._offset)
 
-            self.cdf_rates = self.surrogate_rates
+            self._cdf_rates = self._surrogate_rates
 
             # for later use
-            self.times_all_ = None
-            self.eval_times_ = []
+            self._times_all = None
+            self._eval_times = []
 
         else:
-            self.generate_event_times = self.inverse_cdf
-            self.cdf_rates = self.target_rates
+            self._generate_event_times = self._inverse_cdf
+            self._cdf_rates = self._target_rates
 
         if 'dt' in kwargs:
-            self.dt_ = kwargs['dt']
+            self._dt = kwargs['dt']
         else:
-            self.dt_ = 0.001
-
-        if 'plot' in kwargs:
-            self.plot_ = kwargs['plot']
-            self.ax_ = kwargs['ax']
+            self._dt = 0.001
 
         logger.info("ZigZagSampler initialized.")
 
@@ -190,7 +185,7 @@ class ZigZagSampler(Sampler):
 
         return cls(target, surrogate=surrogate, rng=rng, **config)
 
-    def target_rates(self, x: np.ndarray, idx_d: int = None, idx_n: int = None) -> np.ndarray:
+    def _target_rates(self, x: np.ndarray, idx_d: int = None, idx_n: int = None) -> np.ndarray:
         """
         Calculate the rates for the target ZigZag process.
 
@@ -203,20 +198,20 @@ class ZigZagSampler(Sampler):
         np.ndarray: The calculated rates.
         """
 
-        grad = self.target_.grad_log_density(x)
-        log_p = self.target_.log_density(x)
+        grad = self.target.grad_log_density(x)
+        log_p = self.target.log_density(x)
 
-        if self.thinning_:
-            self.surrogate_.add_data(x=x, y=log_p, dy_dx=grad)
+        if self._thinning:
+            self.surrogate.add_data(x=x, y=log_p, dy_dx=grad)
 
-        rates = np.maximum( - grad * self.velocities_[self.iter_], 0) + self.gamma_
+        rates = np.maximum(- grad * self.velocities[self._iter], 0) + self._gamma
 
         if idx_d is None:
             return rates
         else:
             return rates[idx_d]
 
-    def surrogate_rates(self, x: np.ndarray, idx_d: int = None, idx_n: int = None) -> np.ndarray:
+    def _surrogate_rates(self, x: np.ndarray, idx_d: int = None, idx_n: int = None) -> np.ndarray:
         """
         Calculate the surrogate rates for the surrogate ZigZag process.
 
@@ -229,13 +224,13 @@ class ZigZagSampler(Sampler):
         np.ndarray: The calculated surrogate rates.
         """
         if idx_d is None:
-            rates = - self.surrogate_.grad(x) * self.velocities_[self.iter_] + self.offset_
-            return np.maximum(rates, 0) + self.gamma_
+            rates = - self.surrogate.grad(x) * self.velocities[self._iter] + self._offset
+            return np.maximum(rates, 0) + self._gamma
         else:
-            rate = - self.surrogate_.grad(x, idx_d) * self.velocities_[self.iter_, idx_d] + self.offset_[idx_d]
-            return np.maximum(rate, 0) + self.gamma_
+            rate = - self.surrogate.grad(x, idx_d) * self.velocities[self._iter, idx_d] + self._offset[idx_d]
+            return np.maximum(rate, 0) + self._gamma
 
-    def inverse_cdf(self) -> tuple[np.ndarray, int]:
+    def _inverse_cdf(self) -> tuple[np.ndarray, int]:
         """
         Generate event times using the inverse cdf method.
 
@@ -243,31 +238,31 @@ class ZigZagSampler(Sampler):
         np.ndarray: The generated event times.
         """
         # recover rng from previous iteration in case of rejection
-        if self.s_ is None:
-            self.s_ = -np.log(self.rng_.uniform(0, 1, self.dim_))
-        s = self.s_
+        if self._s is None:
+            self._s = -np.log(self._rng.uniform(0, 1, self._dim))
+        s = self._s
 
-        taus = np.zeros(self.dim_)
+        taus = np.zeros(self._dim)
 
         j = None
 
-        # if self.sub_sampling_:
-        #     j = self.rng_.integers(self.n_obs_)
+        # if self._sub_sampling:
+        #     j = self._rng.integers(self.n_obs_)
         #
         # print(f"Sampling likelihood component {j}")
 
-        integral = np.zeros(self.dim_)
-        rate_t0 = self.cdf_rates(self.positions_[self.iter_], idx_n=j)
+        integral = np.zeros(self._dim)
+        rate_t0 = self._cdf_rates(self.positions[self._iter], idx_n=j)
         rate_t1 = np.zeros_like(rate_t0)
 
         # advance all process until one reaches s
         while np.all(integral < s):
-            rate_t1 = self.cdf_rates(
-                self.positions_[self.iter_] + (taus + self.dt_) * self.velocities_[self.iter_],
+            rate_t1 = self._cdf_rates(
+                self.positions[self._iter] + (taus + self._dt) * self.velocities[self._iter],
                 idx_n=j
             )
-            integral += np.trapezoid(np.array([rate_t0, rate_t1]), dx=self.dt_, axis=0)
-            taus += self.dt_
+            integral += np.trapezoid(np.array([rate_t0, rate_t1]), dx=self._dt, axis=0)
+            taus += self._dt
             rate_t0 = rate_t1
 
         # linear correction to last step
@@ -279,7 +274,7 @@ class ZigZagSampler(Sampler):
         i = np.argmin(taus)
         return taus[i], i
 
-    def inverse_cdf_linear(self) -> tuple[np.ndarray, int]:
+    def _inverse_cdf_linear(self) -> tuple[np.ndarray, int]:
         """
         Generate event times using the inverse cdf method assuming b linear rate function.
 
@@ -288,61 +283,61 @@ class ZigZagSampler(Sampler):
         """
 
         # # get samples from the CDF
-        # S = -np.log(self.rng_.uniform(0, 1, self.dim_))
+        # S = -np.log(self._rng.uniform(0, 1, self._dim))
         # recover rng from previous iteration in case of rejection
-        if self.s_ is None:
-            self.s_ = -np.log(self.rng_.uniform(0, 1, self.dim_))
-        S = self.s_
+        if self._s is None:
+            self._s = -np.log(self._rng.uniform(0, 1, self._dim))
+        S = self._s
 
-        # S = self.ss_[self.iter_]
+        # S = self.ss_[self._iter]
         # logger.debug(f"S:    {S}")
 
         # init variables
-        s = np.zeros(self.dim_)
-        taus = S / ( self.gamma_ + self.offset_ )
+        s = np.zeros(self._dim)
+        taus = S / (self._gamma + self._offset)
 
         # get the linear approximation of the rates
-        a = self.velocities_[self.iter_] * (self.surrogate_.gaussian.get_inv_cov() @ self.velocities_[self.iter_])
-        b = (self.velocities_[self.iter_] *
-             (self.surrogate_.gaussian.get_inv_cov()
-              @ (self.positions_[self.iter_] - self.surrogate_.gaussian.get_mean()))
-             + self.offset_)
+        a = self.velocities[self._iter] * (self.surrogate.gaussian.get_inv_cov() @ self.velocities[self._iter])
+        b = (self.velocities[self._iter] *
+             (self.surrogate.gaussian.get_inv_cov()
+              @ (self.positions[self._iter] - self.surrogate.gaussian.get_mean()))
+             + self._offset)
 
         # compute root
         taus_0 = - b / a
 
         # check for each component where the intersection with the x-axis is and compute integral accordingly
-        for i in range(self.dim_):
+        for i in range(self._dim):
 
             if (a[i] >= 0) and (b[i] >= 0):
-                b_i = b[i] + self.gamma_
+                b_i = b[i] + self._gamma
                 taus[i] = (np.sqrt(b_i ** 2 + 2 * a[i] * S[i]) - b_i) / a[i]
             elif (a[i] >= 0) and (b[i] < 0):
-                taus_const = S[i] / self.gamma_
+                taus_const = S[i] / self._gamma
                 if taus_const < taus_0[i]:
                     taus[i] = taus_const
                 else:
-                    s[i] += taus_0[i] * self.gamma_
+                    s[i] += taus_0[i] * self._gamma
                     d_s = S[i] - s[i]
-                    b_i = b[i] + self.gamma_
+                    b_i = b[i] + self._gamma
                     taus[i] = taus_0[i] + (np.sqrt((b_i + a[i] * taus_0[i]) ** 2 + 2 * a[i] * d_s)
                                            - (b_i + a[i] * taus_0[i])) / a[i]
             elif (a[i] < 0) and (b[i] >= 0):
-                s_0 = (0.5 * b[i] + self.gamma_) * taus_0[i]
+                s_0 = (0.5 * b[i] + self._gamma) * taus_0[i]
                 if S[i] > s_0:
-                    taus[i] = taus_0[i] + (S[i] - s_0) / self.gamma_
+                    taus[i] = taus_0[i] + (S[i] - s_0) / self._gamma
                 else:
-                    taus[i] = (np.sqrt((b[i] + self.gamma_) ** 2 + 2 * a[i] * S[i])
-                               - (b[i] + self.gamma_)) / a[i]
+                    taus[i] = (np.sqrt((b[i] + self._gamma) ** 2 + 2 * a[i] * S[i])
+                               - (b[i] + self._gamma)) / a[i]
             else:
-                taus[i] = S[i] / self.gamma_
+                taus[i] = S[i] / self._gamma
 
             # logger.debug(f"taus: {taus}")
 
         j = np.argmin(taus)
         return taus[j], j
 
-    def approximate_rates(self, x: np.ndarray, idx=None) -> np.ndarray:
+    def _approximate_rates(self, x: np.ndarray, idx=None) -> np.ndarray:
         """
         Calculate the approximate rates for the ZigZag process.
 
@@ -355,13 +350,13 @@ class ZigZagSampler(Sampler):
         """
 
         if idx is None:
-            rates = - self.velocities_[self.iter_] * self.surrogate_.grad(x) + self.offset_
-            return np.maximum(rates, 0) + self.gamma_
+            rates = - self.velocities[self._iter] * self.surrogate.grad(x) + self._offset
+            return np.maximum(rates, 0) + self._gamma
         else:
-            rate = - self.velocities_[self.iter_, idx] * self.surrogate_.grad(x, idx) + self.offset_[idx]
-            return np.maximum(rate, 0) + self.gamma_
+            rate = - self.velocities[self._iter, idx] * self.surrogate.grad(x, idx) + self._offset[idx]
+            return np.maximum(rate, 0) + self._gamma
 
-    def poisson_thinning(self, j: int, T: np.ndarray):
+    def _poisson_thinning(self, j: int, T: np.ndarray):
         """
         Perform Poisson thinning for the ZigZag process.
 
@@ -369,120 +364,120 @@ class ZigZagSampler(Sampler):
         j (int): Dimension index.
         T (np.ndarray): Time increment.
         """
-        pos = self.positions_[self.iter_] + T * self.velocities_[self.iter_]
-        m = self.target_rates(pos, idx_d=j)
-        M = self.approximate_rates(pos, idx=j)
-        u = self.rng_.uniform(0, 1)
-        # u = self.us_[self.iter_]
+        pos = self.positions[self._iter] + T * self.velocities[self._iter]
+        m = self._target_rates(pos, idx_d=j)
+        M = self._approximate_rates(pos, idx=j)
+        u = self._rng.uniform(0, 1)
+        # u = self.us_[self._iter]
         # logger.debug(f"      u:    {u}")
 
         # logger.debug(f"      ratio: {m/M}")
 
         if m > M:
             delta_offset = 1.01 * (m - M) + 1e-3
-            self.offset_[j] += delta_offset
-            self.revert_step()
-            logger.info(f"  Action at time {self.times_[self.iter_]:.2f}; current position: {self.positions_[self.iter_]}")
+            self._offset[j] += delta_offset
+            self._revert_step()
+            logger.info(f"  Action at time {self.times[self._iter]:.2f}; current position: {self.positions[self._iter]}")
             logger.info(f"     upper bound too tight, m: {m:.4f}, M: {M:.4f}")
-            logger.info(f"      ...increasing offset {j} by {delta_offset:.4e} to: {self.offset_[j]:.4f}")
+            logger.info(f"      ...increasing offset {j} by {delta_offset:.4e} to: {self._offset[j]:.4f}")
         elif u < (m / M):
-            self.velocities_[self.iter_ + 1, j] = -self.velocities_[self.iter_, j]
-            self.n_accepted_ += 1
-            self.accepted_iters_[self.n_accepted_] = self.iter_ + 1
-            self.s_ = None
+            self.velocities[self._iter + 1, j] = -self.velocities[self._iter, j]
+            self._n_accepted += 1
+            self._accepted_iters[self._n_accepted] = self._iter + 1
+            self._s = None
         else:
-            self.velocities_[self.iter_ + 1, j] = self.velocities_[self.iter_, j]
-            self.s_ = None
+            self.velocities[self._iter + 1, j] = self.velocities[self._iter, j]
+            self._s = None
 
-    def step(self):
+    def _step(self):
         """
         Perform a single ZigZag step.
         """
-        T, j = self.generate_event_times()
-        self.times_[self.iter_ + 1] = self.times_[self.iter_] + T
-        self.positions_[self.iter_ + 1] = self.positions_[self.iter_] + T * self.velocities_[self.iter_]
-        self.velocities_[self.iter_ + 1] = self.velocities_[self.iter_]
-        self.velocities_[self.iter_ + 1, j] = - self.velocities_[self.iter_, j]
+        T, j = self._generate_event_times()
+        self.times[self._iter + 1] = self.times[self._iter] + T
+        self.positions[self._iter + 1] = self.positions[self._iter] + T * self.velocities[self._iter]
+        self.velocities[self._iter + 1] = self.velocities[self._iter]
+        self.velocities[self._iter + 1, j] = - self.velocities[self._iter, j]
 
-        if self.thinning_:
-            self.eval_times_.append(self.times_[self.iter_ + 1])
-            self.poisson_thinning(j, T)
+        if self._thinning:
+            self._eval_times.append(self.times[self._iter + 1])
+            self._poisson_thinning(j, T)
 
-        dt = self.times_[self.iter_ + 1] - self.times_[self.iter_]
-        self.offset_ *= np.exp(- self.offset_shrinkage_ * dt)
-        self.offset_history_[self.iter_ + 1] = self.offset_
-        self.iter_ += 1
+        dt = self.times[self._iter + 1] - self.times[self._iter]
+        self._offset *= np.exp(- self._offset_shrinkage * dt)
+        self._offset_history[self._iter + 1] = self._offset
+        self._iter += 1
 
-    def revert_step(self):
+    def _revert_step(self):
         """
         Revert the last ZigZag step.
         """
-        self.times_[self.iter_ + 1] = 0.
-        self.positions_[self.iter_ + 1] = 0.
-        self.velocities_[self.iter_ + 1] = 0
-        self.offset_history_[self.iter_ + 1] = 0.
+        self.times[self._iter + 1] = 0.
+        self.positions[self._iter + 1] = 0.
+        self.velocities[self._iter + 1] = 0
+        self._offset_history[self._iter + 1] = 0.
 
-        dt = self.times_[self.iter_] - self.times_[self.iter_ - 1]
-        self.offset_ *= np.exp(self.offset_shrinkage_ * dt)
-        self.iter_ -= 1
+        dt = self.times[self._iter] - self.times[self._iter - 1]
+        self._offset *= np.exp(self._offset_shrinkage * dt)
+        self._iter -= 1
 
 
-    def shutdown(self):
+    def _shutdown(self):
         """
         Shutdown the ZigZag sampler.
         """
 
         logger.info("Shutting down ZigZag sampler. Summary:")
-        if self.thinning_:
+        if self._thinning:
             logger.info(f"    Acceptance rate : {self.acceptance_rate:.3f}")
-            logger.info(f"    Final offsets    : {self.offset_}")
+            logger.info(f"    Final offsets    : {self._offset}")
 
             # this is kept so that model evaluations could be tracked
-            self.times_all_ = self.times_
+            self._times_all = self.times
 
-            idx = self.n_accepted_ + 1
-            self.positions_ = self.positions_[self.accepted_iters_[:idx]]
-            self.times_ = self.times_[self.accepted_iters_[:idx]]
-            self.velocities_ = self.velocities_[self.accepted_iters_[:idx]]
-            self.offset_history_ = self.offset_history_[self.accepted_iters_[:idx]]
+            idx = self._n_accepted + 1
+            self.positions = self.positions[self._accepted_iters[:idx]]
+            self.times = self.times[self._accepted_iters[:idx]]
+            self.velocities = self.velocities[self._accepted_iters[:idx]]
+            self._offset_history = self._offset_history[self._accepted_iters[:idx]]
 
         logger.info("Run successfully completed.")
 
-    def run_budget(self):
+    def _run_budget(self):
         """
         Run the ZigZag sampler.
         """
-        logger.warning(f"Running ZigZag sampler with budget n_max={self.n_max_}")
+        logger.warning(f"Running ZigZag sampler with budget n_max={self._n_max}")
 
         # disable tqdm if running on a cluster
         disable_tqdm = 'PBS_ENVIRONMENT' in os.environ or 'SLURM_JOB_ID' in os.environ
 
-        with tqdm(total=self.n_max_, file=sys.stdout, dynamic_ncols=True, disable=disable_tqdm) as pbar:
-            for i in range(1, self.n_max_):
-                if i % self.print_every_ == 0:
+        with tqdm(total=self._n_max, file=sys.stdout, dynamic_ncols=True, disable=disable_tqdm) as pbar:
+            for i in range(1, self._n_max):
+                if i % self._print_every == 0:
                     pbar.clear()
                     logger.debug(f"Sampling event {i}")
                     pbar.refresh()
-                self.step()
-                if self.thinning_:
-                    if self.n_accepted_ == self.n_accepted_0_ - 1:
+                self._step()
+                if self._thinning:
+                    if self._n_accepted == self._n_accepted_0 - 1:
                         break
 
-        self.shutdown()
+        self._shutdown()
 
-    def run_time(self):
+    def _run_time(self):
         """
         Run the ZigZag sampler.
         """
 
-        logger.warning(f"Running ZigZag sampler with time limit T={self.t_max_}")
+        logger.warning(f"Running ZigZag sampler with time limit T={self._t_max}")
         time = 0.
 
         # disable tqdm if running on a cluster
         disable_tqdm = 'PBS_ENVIRONMENT' in os.environ or 'SLURM_JOB_ID' in os.environ
 
         with tqdm(
-            total=self.t_max_,
+            total=self._t_max,
             leave=True,
             file=sys.stdout,
             dynamic_ncols=True,
@@ -490,23 +485,23 @@ class ZigZagSampler(Sampler):
             disable=disable_tqdm
         ) as pbar:
 
-            while self.times_[self.iter_] < self.t_max_:
-                if self.iter_ % self.print_every_ == 0:
+            while self.times[self._iter] < self._t_max:
+                if self._iter % self._print_every == 0:
                     pbar.clear()
-                    logger.debug(f"Sampling event {self.iter_}")
+                    logger.debug(f"Sampling event {self._iter}")
                     pbar.refresh()
-                self.step()
-                if self.iter_ % self.update_bar_every == 0:
-                    incr = np.min((self.t_max_, self.times_[max(0, self.iter_)])) - time
-                    time = self.times_[max(0, self.iter_)]
+                self._step()
+                if self._iter % self._update_bar_every == 0:
+                    incr = np.min((self._t_max, self.times[max(0, self._iter)])) - time
+                    time = self.times[max(0, self._iter)]
                     pbar.update(incr)
 
         # remove empty skeleton
-        self.times_ = self.times_[:self.iter_ + 1]
-        self.positions_ = self.positions_[:self.iter_ + 1]
-        self.velocities_ = self.velocities_[:self.iter_ + 1]
+        self.times = self.times[:self._iter + 1]
+        self.positions = self.positions[:self._iter + 1]
+        self.velocities = self.velocities[:self._iter + 1]
 
-        self.shutdown()
+        self._shutdown()
 
     def write_data(self, folder: str, precision: int = 6):
         """
@@ -521,24 +516,23 @@ class ZigZagSampler(Sampler):
             os.makedirs(folder)
 
         data = {}
-        if self.thinning_:
+        if self._thinning:
             data['acceptance_rate'] = self.acceptance_rate
-            data['offset'] = self.offset_
-            data['offset_history'] = self.offset_history_
+            data['offset'] = self._offset
 
         with open(os.path.join(folder, 'other.pkl'), 'wb') as f:
             pickle.dump(data, f)
 
-        np.savetxt(os.path.join(folder, 'positions.dat'), self.positions_, fmt=f'%.{precision}e')
-        np.savetxt(os.path.join(folder, 'times.dat'), self.times_, fmt=f'%.{precision}e')
-        np.savetxt(os.path.join(folder, 'velocities.dat'), self.velocities_, fmt='%d')
-        np.savetxt(os.path.join(folder, 'times_all.dat'), self.times_all_, fmt=f'%.{precision}e')
-        np.savetxt(os.path.join(folder, 'offset_history.dat'), self.offset_history_, fmt=f'%.{precision}e')
+        np.savetxt(os.path.join(folder, 'positions.dat'), self.positions, fmt=f'%.{precision}e')
+        np.savetxt(os.path.join(folder, 'times.dat'), self.times, fmt=f'%.{precision}e')
+        np.savetxt(os.path.join(folder, 'velocities.dat'), self.velocities, fmt='%d')
+        np.savetxt(os.path.join(folder, 'times_all.dat'), self._times_all, fmt=f'%.{precision}e')
+        np.savetxt(os.path.join(folder, 'offset_history.dat'), self._offset_history, fmt=f'%.{precision}e')
 
-        self.eval_times_.sort()
+        self._eval_times.sort()
         np.savetxt(
             os.path.join(folder, 'eval_times.dat'),
-            np.array(self.eval_times_),
+            np.array(self._eval_times),
             fmt=f'%.{precision}e'
         )
 
@@ -550,7 +544,7 @@ class ZigZagSampler(Sampler):
         Returns:
         float: The acceptance rate.
         """
-        return self.n_accepted_ / len(self.eval_times_)
+        return self._n_accepted / len(self._eval_times)
 
     @property
     def offset(self):
@@ -560,7 +554,7 @@ class ZigZagSampler(Sampler):
         Returns:
         float: The offset.
         """
-        return self.offset_
+        return self._offset
 
 if __name__ == '__main__':
 
@@ -575,7 +569,7 @@ if __name__ == '__main__':
     zig_zag = ZigZagSampler(posterior, t_max=500)
     zig_zag.run()
 
-    positions = zig_zag.positions_
+    positions = zig_zag.positions
 
     fig, ax = get_2d_despined_figure(plot_limits=plot_limits, figsize=(4, 4), keep_ticks=True)
     plot_pdf_contours(posterior, ax, plot_limits=plot_limits)

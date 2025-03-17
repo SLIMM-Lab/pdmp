@@ -79,9 +79,9 @@ if __name__ == '__main__':
     sampler.run()
 
     # extract events and path and plot
-    time = sampler.times_
-    positions = sampler.positions_
-    velocities = sampler.velocities_
+    time = sampler.times
+    positions = sampler.positions
+    velocities = sampler.velocities
     path = ax.plot(positions[:, 0], positions[:, 1], c='C1', alpha=0.75, linewidth=1.)[0]
 
     # save figure and remove path

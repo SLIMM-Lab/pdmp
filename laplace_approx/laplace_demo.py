@@ -211,12 +211,12 @@ if __name__ == '__main__':
     # sampler = ZigZagSampler(target, n_events=n_events, rng=rng)
     sampler.run()
 
-    # print(f"Times:\n{sampler.times_}\n\n")
-    # print(f"Positions:\n{sampler.positions_}\n\n")
-    # print(f"Velocities:\n{sampler.velocities_}\n\n")
+    # print(f"Times:\n{sampler.times}\n\n")
+    # print(f"Positions:\n{sampler.positions}\n\n")
+    # print(f"Velocities:\n{sampler.velocities}\n\n")
 
     plot_pdf_contours(target, ax, plot_limits)
-    positions = sampler.positions_
+    positions = sampler.positions
     ax.plot(positions[:, 0], positions[:, 1], c='C0', alpha=0.75, linewidth=1.)
     ax.set_xlabel(r'$\theta_1$')
     ax.set_ylabel(r'$\theta_2$')
