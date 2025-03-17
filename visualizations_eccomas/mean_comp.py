@@ -84,9 +84,9 @@ if __name__ == '__main__':
         sampler = ZigZagSampler(target, n_events=n_events, rng=rng, sub_sampling=False)
         sampler.run()
         #
-        time = sampler.times_
-        positions = sampler.positions_
-        velocities = sampler.velocities_
+        time = sampler.times
+        positions = sampler.positions
+        velocities = sampler.velocities
 
         means_zig_zag[i] = central_moment_from_skeleton(time, positions, velocities, 1)
         # variances[i] = central_moment_from_skeleton(time, positions, velocities, 2)

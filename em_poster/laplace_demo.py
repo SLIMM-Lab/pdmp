@@ -115,7 +115,7 @@ if __name__ == '__main__':
                             n_events_accepted=n_accepted, gamma=0.02)
     sampler.run()
 
-    positions = sampler.positions_
+    positions = sampler.positions
     ax.plot(positions[:, 0], positions[:, 1], c='C0', alpha=0.75, linewidth=1.)
 
     # if save_fig:
@@ -133,7 +133,7 @@ if __name__ == '__main__':
     sampler = ZigZagSampler(target, n_max=n_events, rng=rng, x_0=x_0)
     sampler.run()
 
-    positions = sampler.positions_
+    positions = sampler.positions
     ax.plot(positions[:, 0], positions[:, 1], c='C0', alpha=0.75, linewidth=1.)
     if save_fig:
         fig.savefig(os.path.join(fig_path, f'zig_zag_dt-{0.01}.pdf'))

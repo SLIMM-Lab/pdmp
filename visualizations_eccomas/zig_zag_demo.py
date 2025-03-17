@@ -51,9 +51,9 @@ if __name__ == '__main__':
     sampler = ZigZagSampler(target, n_events=n_events, rng=rng, sub_sampling=False)
     sampler.run()
 
-    time = sampler.times_
-    positions = sampler.positions_
-    velocities = sampler.velocities_
+    time = sampler.times
+    positions = sampler.positions
+    velocities = sampler.velocities
 
     steps = [2,3,4,20,200]
 
