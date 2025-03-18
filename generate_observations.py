@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import yaml
 import argparse
 import os
@@ -6,12 +9,9 @@ import numpy as np
 
 from typing import Any
 
-from pdmp import logger
-from pdmp.logger_setup import setup_file_handler
-from pdmp.loader import get_target, get_sampler, yaml_to_numpy, save_config
-
-from pdmp.distributions import get_prior, get_likelihood, AffineTransformtion, ExponentialTransformation
-from pdmp.forward_model import get_model, Model
+from pdmp.loader import yaml_to_numpy
+from pdmp.distributions import get_prior, AffineTransformtion, ExponentialTransformation
+from pdmp.forward_model import get_model
 
 def parse_args():
     """
