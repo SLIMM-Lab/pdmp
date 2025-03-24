@@ -337,6 +337,85 @@ def running_sample_mean(samples: np.ndarray) -> np.ndarray:
     return running_means
 
 
+def compute_ess_zigzag(
+        t: np.ndarray,
+        x: np.ndarray,
+        v: np.ndarray,
+        num_batches: int=1000,
+        avg: bool=False
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Compute the effective sample size (ESS) of a zigzag process.
+    The ESS is computed using the batch means method, which estimates the variance
+
+    of the sample mean by dividing the total time by the number of batches.
+
+    Parameters:
+        t (np.ndarray): 1D array of time points.
+        x (np.ndarray): 2D array of positions.
+        v (np.ndarray): 2D array of velocities.
+        num_batches (int): Number of batches to use for the batch means method.
+        avg (bool): If True, return the average ESS across all coordinates.
+
+    Returns:
+        np.ndarray: The ESS for each coordinate or the average ESS if avg is True.
+        np.ndarray: The mean of the process.
+        np.ndarray: The variance of the process.
+    """
+    total_time = t[-1] - t[0]
+    batch_edges = np.linspace(t[0], t[-1], num_batches + 1)
+    num_coords = x.shape[1]
+
+    batch_means = np.zeros((num_batches, num_coords))
+
+    # Compute batch means for each coordinate
+    for b in range(num_batches):
+        batch_start, batch_end = batch_edges[b], batch_edges[b + 1]
+        batch_length = batch_end - batch_start
+
+        integral = np.zeros(num_coords)
+
+        for i in range(len(t) - 1):
+            seg_start, seg_end = t[i], t[i + 1]
+            seg_x, seg_v = x[i], v[i]
+
+            # Check for overlap
+            if seg_end <= batch_start or seg_start >= batch_end:
+                continue
+
+            # Overlap interval
+            interval_start = max(seg_start, batch_start)
+            interval_end = min(seg_end, batch_end)
+            dt = interval_end - interval_start
+            offset = interval_start - seg_start
+
+            integral += seg_x * dt + 0.5 * seg_v * (2 * offset * dt + dt**2)
+
+        batch_means[b] = integral / batch_length
+
+    # Integrate entire trajectory to estimate mean and variance under target distribution
+    dt = np.diff(t)[:, np.newaxis]  # shape: (N, 1)
+    xi, vi = x[:-1], v[:-1]  # shape: (N, d)
+
+    total_integral_h = np.sum(xi * dt + 0.5 * vi * dt**2, axis=0)
+    total_integral_h2 = np.sum(xi**2 * dt + xi * vi * dt**2 + (vi**2 / 3) * dt**3, axis=0)
+
+    mean_pi = total_integral_h / total_time
+    mean_h2_pi = total_integral_h2 / total_time
+
+    var_pi_estimate = mean_h2_pi - mean_pi**2
+
+    # Asymptotic variance from batch means (for each coordinate)
+    asymp_variance = (total_time / num_batches) * np.var(batch_means, axis=0, ddof=1)
+
+    ess = total_time * var_pi_estimate / asymp_variance
+
+    if avg:
+        return np.mean(ess), mean_pi, var_pi_estimate
+    else:
+        return ess, mean_pi, var_pi_estimate
+
+
 def grad_fd(f: callable, x: np.ndarray, h: float = 1e-5, n: int = None) -> np.ndarray:
     """
     Compute the gradient of a function using finite differences.
