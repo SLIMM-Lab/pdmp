@@ -384,8 +384,8 @@ def compute_ess_zigzag(
                 continue
 
             # Overlap interval
-            interval_start = max(seg_start, batch_start)
-            interval_end = min(seg_end, batch_end)
+            interval_start = np.max((seg_start, batch_start))
+            interval_end = np.min((seg_end, batch_end))
             dt = interval_end - interval_start
             offset = interval_start - seg_start
 
@@ -411,7 +411,7 @@ def compute_ess_zigzag(
     ess = total_time * var_pi_estimate / asymp_variance
 
     if avg:
-        return np.mean(ess), mean_pi, var_pi_estimate
+        return np.array(np.mean(ess)), mean_pi, var_pi_estimate
     else:
         return ess, mean_pi, var_pi_estimate
 
