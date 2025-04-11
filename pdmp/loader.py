@@ -9,7 +9,7 @@ from pdmp.distributions import get_prior, get_likelihood
 from pdmp.forward_model import get_model
 from pdmp.sampler import Sampler
 from pdmp.zigzag import ZigZagSampler
-from pdmp.mcmc import RandomWalkMetropolisSampler
+from pdmp.mcmc import RandomWalkMetropolisSampler, NaiveNUTS, EfficientNUTS, DualAveragingNUTS
 from pdmp.surrogates import (
     SurrogateModel, LaplaceSurrogate, NeuralNetwork, GaussianProcess, DerivativeGaussianProcess, ConstantSurrogate
 )
@@ -75,6 +75,12 @@ def get_sampler(
         return ZigZagSampler.from_dict(sampler_config, target=target, rng=rng, surrogate=surrogate)
     elif sampler_config['name'] == 'RandomWalkMetropolis':
         return RandomWalkMetropolisSampler.from_dict(sampler_config, target=target, rng=rng, surrogate=surrogate)
+    elif sampler_config['name'] == 'NaiveNUTS':
+        return NaiveNUTS.from_dict(sampler_config, target=target, rng=rng, surrogate=surrogate)
+    elif sampler_config['name'] == 'EfficientNUTS':
+        return EfficientNUTS.from_dict(sampler_config, target=target, rng=rng, surrogate=surrogate)
+    elif sampler_config['name'] == 'DualAveragingNUTS':
+        return DualAveragingNUTS.from_dict(sampler_config, target=target, rng=rng, surrogate=surrogate)
     else:
         raise ValueError(f"Sampler {sampler_config['name']} not recognized.")
 

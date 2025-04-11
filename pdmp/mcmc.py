@@ -6,13 +6,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 
-from typing import Tuple
+from typing import Tuple, override
 from tqdm import tqdm
 
 from pdmp.sampler import Sampler
 from pdmp.distributions import Distribution, MultivariateNormal
 from pdmp import logger
-
 
 
 class StepSampler(Sampler):
@@ -77,7 +76,7 @@ class StepSampler(Sampler):
     @classmethod
     def from_dict(cls, config: dict, target: Distribution, rng: np.random.Generator = None, **kwargs):
         """
-        Initialize the StepSampler class from a dictionary.
+        Initialize the StepSampler-derived class from a dictionary.
 
         Parameters:
         config (dict): The configuration dictionary.
@@ -87,7 +86,7 @@ class StepSampler(Sampler):
         Returns:
         StepSampler: The StepSampler instance.
         """
-        raise NotImplementedError("The from_dict method must be implemented in a subclass.")
+        return cls(target=target, rng=rng, **config)
 
     def _reset(self, x_0: np.ndarray = None):
         """
@@ -580,6 +579,689 @@ class HamiltonianMonteCarlo(StepSampler):
             self._ax.set_ylabel(r"$p(\theta_2)$")
         self._fig.fig.tight_layout()
         self._fig.fig.show()
+
+
+class NaiveNUTS(StepSampler):
+    """
+    Naive version of the No-U-Turn sampler (NUTS)
+    """
+    def __init__(
+            self,
+            target: Distribution,
+            epsilon: float = 0.1,
+            n_samples: int = 10000,
+            prec: np.ndarray = None,
+            rng: np.random.Generator = None,
+            seed: int = None,
+            x_0: np.ndarray = None,
+            plot: bool = False,
+            plot_limits: Tuple[float, float] = None,
+            delta_max: float = 1000.,
+            **kwargs
+    ):
+        """Naive version of the No-U-Turn sampler (NUTS).
+
+        Args:
+            target (Distribution): The target distribution to sample from.
+            epsilon (float, optional): The step size for the leapfrog integrator. Defaults to 0.1.
+            n_samples (int, optional): The number of samples to generate. Defaults to 10000.
+            prec (np.ndarray, optional): Preconditioner matrix for the momentum distribution. Defaults to None.
+            rng (np.random.Generator, optional): Random number generator. Defaults to None.
+            seed (int, optional): Seed for the random number generator. Defaults to None.
+            x_0 (np.ndarray, optional): Initial position. Defaults to None.
+            plot (bool, optional): Whether to plot the sampling process. Defaults to False.
+            plot_limits (Tuple[float, float], optional): Limits for the plot. Defaults to None.
+            delta_max (float, optional): Maximum energy difference threshold. Defaults to 1000.
+        """
+        super().__init__(target=target, n_samples=n_samples, rng=rng, seed=seed, prec=prec)
+
+        self._n_evals = np.zeros(n_samples, dtype=int)
+
+        self._step_scale = epsilon
+        self._delta_max = delta_max
+        self._n_accepted = 1
+        self._p_old = 0.0
+
+        self._prec_inv = np.linalg.inv(self._prec)
+        self._prec_det = np.linalg.det(self._prec)
+
+        super()._reset(x_0)
+
+        if plot and (self._dim == 1 or self._dim == 2):
+            self._plot = True
+            self._init_plot(plot_limits)
+        else:
+            self._plot = False
+
+    def _init_plot(self, plot_limits: Tuple[float, float] = None):
+        """Initialize the plot for the Hamiltonian Monte Carlo sampler.
+
+        Args:
+            plot_limits (Tuple[float, float], optional): Limits for the plot. Defaults to None.
+
+        This method sets up the plotting environment, including the figure and axes,
+        and configures the plot limits and labels based on the dimensionality of the
+        target distribution.
+
+        Note:
+            This method is only applicable if the dimensionality of the target distribution
+            is 1 or 2 and the `plot` parameter is set to True during initialization.
+        """
+        sns.set_theme(style="ticks", rc={"axes.spines.right": False,"axes.spines.top": False})
+
+        if plot_limits is None:
+            x_lim = [-2, 2]
+            y_lim = [-2, 2]
+        else:
+            x_lim = plot_limits[0]
+            y_lim = plot_limits[1]
+
+        ratio = abs((x_lim[1] - x_lim[0]) / (y_lim[1] - y_lim[0]))
+        size = 5.
+
+        self._fig, self._ax = plt.subplots(figsize=(size + 1, size/ratio + 1))
+
+        x = np.linspace(x_lim[0], x_lim[1], 100)
+        y = np.linspace(y_lim[0], y_lim[1], 100)
+        self._gx, self._gy = np.meshgrid(x, y)
+        self._gz = np.zeros_like(self._gx)
+
+        for i in range(self._gx.shape[0]):
+            for j in range(self._gx.shape[1]):
+                if self._dim == 2:
+                    self._gz[i, j] = np.exp(self.target.log_density(np.array(
+                        [self._gx[i, j],
+                         self._gy[i, j]]
+                    )))
+                else:
+                    self._gz[i, j] = np.exp(self.target.log_density(np.array([self._gx[i, j]])) +
+                                            self._proposal_dist.log_density(np.array([self._gy[i, j]])))
+
+        self._ax.contour(self._gx, self._gy, self._gz, levels=20, zorder=1, alpha=0.3, linewidths=1.5)
+
+        if self._dim == 1:
+            self._ax.set_xlabel(r"$p(\theta)$")
+            self._ax.set_ylabel(r"$p(\mathrm{p})$")
+        else:
+            self._ax.set_xlabel(r"$p(\theta_1)$")
+            self._ax.set_ylabel(r"$p(\theta_2)$")
+        self._fig.tight_layout()
+        self._fig.show()
+
+    def _leap_frog_step(
+            self,
+            p0: np.ndarray,
+            q0: np.ndarray,
+            v: int,
+            epsilon: float
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Perform a single leapfrog step.
+
+        Args:
+            p0 (np.ndarray): Initial momentum.
+            q0 (np.ndarray): Initial position.
+            v (int): Direction of the leapfrog step.
+            epsilon (float): Step size.
+
+        Returns:
+            Tuple[np.ndarray, np.ndarray]: A tuple containing:
+                - p (np.ndarray): Updated momentum.
+                - q (np.ndarray): Updated position.
+        """
+        p = p0 + v * epsilon * 0.5 * self.target.grad_log_density(q0)
+        q = q0 + v * epsilon * self._prec_inv @ p
+        p = p +  v * epsilon * 0.5 * self.target.grad_log_density(q)
+        return p, q
+
+    def _get_hamiltonian(self, p: np.ndarray, q: np.ndarray) -> float:
+        """Calculate the Hamiltonian.
+
+        Args:
+            p (np.ndarray): Momentum.
+            q (np.ndarray): Position.
+
+        Returns:
+            float: The Hamiltonian value.
+        """
+        potential = - self.target.log_density(q)
+        kinetic = 0.5 * p @ self._prec_inv @ p
+        kinetic = kinetic + 0.5 * np.log((2. * np.pi) ** self._dim * self._prec_det)
+
+        return potential + kinetic
+
+    def _plot_trajectory(self, trajectory: list[dict]):
+        """Plot the trajectory of an individual NUTS step.
+
+        Args:
+            trajectory (list[dict]): List of dictionaries containing trajectory information.
+                every point has a type (left, right, accept, reject), and the latter two from/to coordinates.
+        """
+        color = 'C0'
+        for i, segment in enumerate(trajectory):
+            if segment['type'] == "left":
+                color = 'C0'
+                continue
+            if segment['type'] == "right":
+                color = 'C1'
+                continue
+            if segment['type'] == "reject":
+                color = 'C3'
+            self._ax.plot(*np.array([segment["from"], segment["to"]]).T, color=color, alpha=0.8)
+            self._ax.scatter(*segment["to"], color=color, marker='.', alpha=0.8)
+
+        self._ax.scatter(*self._state, color='C5', marker='.', s=100, alpha=1., zorder=10)
+
+    def _step(self):
+        """Perform a single NUTS step.
+        """
+        trajectory = []
+
+        def build_tree(p, q, u, v, j):
+            """Build a tree of leap frog steps.
+
+            Args:
+                p (np.ndarray): Momentum.
+                q (np.ndarray): Position.
+                u (np.ndarray): Random variable for slice sampling.
+                v (int): Direction of the leapfrog step.
+                j (int): Current depth of the tree.
+
+            Returns:
+                p_minus (np.ndarray): Momentum of leftmost leaf.
+                q_minus (np.ndarray): Position of leftmost leaf.
+                p_plus (np.ndarray): Momentum of rightmost leaf.
+                q_plus (np.ndarray): Position of rightmost leaf.
+                C_prime (list[np.ndarray]): Set of candidate points C'.
+                s_prime (int): Whether conditions for continuation are satisfied (0 or 1).
+            """
+            # base case: take a single leap-frog step
+            if j == 0:
+                C_prime = []
+                p_prime, q_prime = self._leap_frog_step(p, q, v, self._step_scale)
+                ham = self._get_hamiltonian(p, q)
+
+                if u < np.exp(- ham):
+                    C_prime.append((p_prime, q_prime))
+                    trajectory.append({"type": "accept", "from": q, "to": q_prime})
+                else:
+                    trajectory.append({"type": "reject", "from": q, "to": q_prime})
+
+                s_prime = int(np.log(u) < self._delta_max - ham)
+
+                return p_prime, q_prime, p_prime, q_prime, C_prime, s_prime
+
+
+            # build left and right subtrees recursively
+            # (each subtree has a left and right subtree, if not a node)
+            else:
+                p_minus, q_minus, p_plus, q_plus, C_prime, s_prime = build_tree(p, q, u, v, j - 1)
+
+                if v == -1:
+                    p_minus, q_minus, _, _, C_prime_prime, s_prime_prime = build_tree(p_minus, q_minus, u, v, j - 1)
+                else:
+                    _, _, p_plus, q_plus, C_prime_prime, s_prime_prime = build_tree(p_plus, q_plus, u, v, j - 1)
+
+                # update stopping condition
+                s_prime = (
+                        s_prime
+                        * s_prime_prime
+                        * int(np.dot((q_plus - q_minus), p_minus) > 0.0)
+                        * int(np.dot((q_plus - q_minus), p_plus) > 0.0)
+                )
+
+                # update candidate set C'
+                C_prime.extend(C_prime_prime)
+
+            return p_minus, q_minus, p_plus, q_plus, C_prime, s_prime
+
+        # sample momentum and compute hamiltonian
+        p_0 = self._prec_L @ self._proposal_dist.get_sample()
+        hamiltonian_0 = self._get_hamiltonian(p_0, self._state)
+
+        # sample u for slice sampling
+        u = self._rng.random() * np.exp(- hamiltonian_0)
+
+        # init the position and momemtum variables for this iteration
+        q_plus = q_minus = self._state
+        p_minus = p_plus = p_0
+
+        # init the stopping criterion, the tree depth, and the number of nodes in C (q_0 is in C)
+        C = [(p_minus, q_minus)]
+        s = 1
+        j = 0
+
+        # build the tree by doubling its size until stopping criterion is met
+        while s == 1:
+            v = self._rng.choice([-1, 1])
+            if v == -1:
+                trajectory.append({"type": "left"})
+                p_minus, q_minus, _, _, C_prime, s_prime = build_tree(p_minus, q_minus, u, v, j)
+            else:
+                trajectory.append({"type": "right"})
+                _, _, p_plus, q_plus, C_prime, s_prime = build_tree(p_plus, q_plus, u, v, j)
+
+            if s_prime == 1:
+                C.extend(C_prime)
+
+            s = (
+                    s_prime *
+                    int(np.dot((q_plus - q_minus), p_minus) > 0.0) *
+                    int(np.dot((q_plus - q_minus), p_plus) > 0.0)
+            )
+            j += 1
+
+        # select a random point from C and update chain and state
+        index = self._rng.integers(0, len(C))
+        p, q = C[index][0], C[index][1]
+        self._state = q
+        self.chain[self._iter, :] = q
+        self._iter += 1
+
+        # plot the latest trajectory
+        if self._plot:
+            self._plot_trajectory(trajectory)
+
+    def run(self):
+        """Run the NaiveNUTS sampler.
+        """
+        # disable tqdm if running on a cluster or in pycharm
+        disable_tqdm = (
+                'PBS_ENVIRONMENT' in os.environ
+                or 'SLURM_JOB_ID' in os.environ
+                or 'GIO_LAUNCHED_DESKTOP_FILE' in os.environ
+        )
+
+        with tqdm(total=self._n_samples, file=sys.stdout, dynamic_ncols=False, disable=disable_tqdm) as pbar:
+            for i in range(1, self._n_samples):
+                self._step()
+                pbar.update()
+                if self._plot:
+                    self._fig.show()
+                elif i % 1000 == 0:
+                    logger.info(f"Iteration: {i}")
+        # logger.info(f"Acceptance rate: {}")
+
+    @override
+    def write_data(self, folder: str, precision: int = 6):
+        super().write_data(folder, precision)
+        np.savetxt(
+            os.path.join(folder, 'n_evals.dat'),
+            np.cumsum(self._n_evals),
+            fmt=f'%d'
+        )
+
+
+class EfficientNUTS(NaiveNUTS):
+    """
+    Efficient NUTS sampler class for sampling from a target distribution using the base version of the algorithm.
+    """
+    def __init__(
+            self,
+            target: Distribution,
+            **kwargs
+    ):
+        """ Initialize the HamiltonianMonteCarlo class.
+
+        Args:
+            target (Distribution): The target distribution to sample from.
+            step_scale (float, optional): The step size for the leapfrog integrator. Defaults to 0.1.
+            n_samples (int, optional): The number of samples to generate. Defaults to 10000.
+            prec (np.ndarray, optional): Preconditioner matrix for the momentum distribution. Defaults to None.
+            rng (np.random.Generator, optional): Random number generator. Defaults to None.
+            seed (int, optional): Seed for the random number generator. Defaults to None.
+            plot (bool, optional): Whether to plot the sampling process. Defaults to False.
+            plot_limits (Tuple[float, float], optional): Limits for the plot. Defaults to None.
+        """
+        super().__init__(target=target, **kwargs)
+
+    @override
+    def _step(self):
+        trajectory = []
+
+        def build_tree(
+                p: np.ndarray,
+                q: np.ndarray,
+                u: np.ndarray,
+                v: int,
+                j: int
+        ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, int]:
+            """Build a tree of leap frog steps.
+
+            Args:
+                p (np.ndarray): Momentum.
+                q (np.ndarray): Position.
+                u (np.ndarray): Random variable for slice sampling.
+                v (int): Direction of the leapfrog step.
+                j (int): Current depth of the tree.
+
+            Returns:
+                p_minus (np.ndarray): Momentum of leftmost leaf.
+                q_minus (np.ndarray): Position of leftmost leaf.
+                p_plus (np.ndarray): Momentum of rightmost leaf.
+                q_plus (np.ndarray): Position of rightmost leaf.
+                q_prime (np.ndarray): Position of the candidate leaf.
+                n_prime (int): Number of candidate leaves in C'.
+                s_prime (int): Whether conditions for continuation are satisfied (0 or 1).
+            """
+            # base case: take a single leap-frog step
+            if j == 0:
+                p_prime, q_prime = self._leap_frog_step(p, q, v, self._step_scale)
+                ham = self._get_hamiltonian(p_prime, q_prime)
+                n_prime = int(u < np.exp(- ham))
+                s_prime = int(np.log(u) < self._delta_max - ham)
+
+                if self._plot:
+                    if n_prime:
+                        trajectory.append({"type": "accept", "from": q, "to": q_prime})
+                    else:
+                        trajectory.append({"type": "reject", "from": q, "to": q_prime})
+
+
+                return p_prime, q_prime, p_prime, q_prime, q_prime, n_prime, s_prime
+
+            # build left and right subtrees recursively
+            # (each subtree has a left and right subtree, if not a node)
+            else:
+                p_minus, q_minus, p_plus, q_plus, q_prime, n_prime, s_prime = build_tree(p, q, u, v, j - 1)
+
+                if v == -1:
+                    p_minus, q_minus, _, _, q_prime_prime, n_prime_prime, s_prime_prime = build_tree(
+                        p_minus, q_minus, u, v, j - 1
+                    )
+                else:
+                    _, _, p_plus, q_plus, q_prime_prime, n_prime_prime, s_prime_prime = build_tree(
+                        p_plus, q_plus, u, v, j - 1
+                    )
+
+                # draw move from q' to q'' and update number leaves in candidate set C'
+                n_sum = n_prime + n_prime_prime
+                if n_sum > 0:
+                    if self._rng.binomial(1, n_prime_prime / (n_sum)):
+                        q_prime = q_prime_prime
+                n_prime = n_sum
+
+                # update stopping condition
+                s_prime = (
+                        s_prime
+                        * s_prime_prime
+                        * int(np.dot((q_plus - q_minus), p_minus) > 0.0)
+                        * int(np.dot((q_plus - q_minus), p_plus) > 0.0)
+                )
+
+            return p_minus, q_minus, p_plus, q_plus, q_prime, n_prime, s_prime
+
+        # sample momentum and compute hamiltonian
+        p_0 = self._prec_L @ self._proposal_dist.get_sample()
+        hamiltonian_0 = self._get_hamiltonian(p_0, self._state)
+
+        # sample u for slice sampling
+        u = self._rng.random() * np.exp(- hamiltonian_0)
+
+        # init the position and momemtum variables for this iteration
+        q_minus = self._state
+        q_plus = self._state
+        p_minus = p_plus = p_0
+
+        # init the stopping criterion, the tree depth, and the number of nodes in C (q_0 is in C)
+        s = 1
+        j = 0
+        n = 1
+
+        # build the tree by doubling its size until stopping criterion is met
+        while s == 1:
+            v = self._rng.choice([-1, 1])
+            if v == -1:
+                trajectory.append({"type": "left"})
+                p_minus, q_minus, _, _, q_prime, n_prime, s_prime = build_tree(p_minus, q_minus, u, v, j)
+            else:
+                trajectory.append({"type": "right"})
+                _, _, p_plus, q_plus, q_prime, n_prime, s_prime = build_tree(p_plus, q_plus, u, v, j)
+
+            if s_prime == 1:
+                if self._rng.binomial(1, min(1., n_prime / n)):
+                    self._state = q_prime
+
+            n = n + n_prime
+            s = (
+                    s_prime *
+                    int(np.dot((q_plus - q_minus), p_minus) > 0.0) *
+                    int(np.dot((q_plus - q_minus), p_plus) > 0.0)
+            )
+            j += 1
+
+        # update chain
+        self.chain[self._iter, :] = self._state
+        self._iter += 1
+
+        if self._plot:
+            self._plot_trajectory(trajectory)
+
+class DualAveragingNUTS(NaiveNUTS):
+    """
+    Dual averaging NUTS sampler class for sampling from a target distribution using the efficient version of the
+    algorithm with dual averaging of the step size epsilon.
+    """
+    def __init__(
+            self,
+            target: Distribution,
+            epsilon_bar_0: float = 1.,
+            gamma: float = 0.05,
+            t_0: int = 10,
+            kappa: float = 0.75,
+            M_adapt: int = 1000,
+            target_acceptance_rate: float = 0.65,
+            **kwargs
+    ):
+        """
+        Initialize the HamiltonianMonteCarlo class.
+
+        Parameters:
+        target (Distribution): The target distribution to sample from.
+        n_samples (int, optional): The number of samples to generate. Default is 10000.
+        prec (np.ndarray, optional): Preconditioner matrix for the momentum distribution. Default is None.
+        rng (np.random.Generator, optional): Random number generator. Default is None.
+        seed (int, optional): Seed for the random number generator. Default is None.
+        plot (bool, optional): Whether to plot the sampling process. Default is False.
+        plot_limits (Tuple[float, float], optional): Limits for the plot. Default is None.
+        """
+        super().__init__(target=target, **kwargs)
+
+        self._gamma = gamma
+        self._t_0 = t_0
+        self._kappa = kappa
+        self._epsilon_bar = epsilon_bar_0
+        self._H_bar = 0.
+        self._M_adapt = M_adapt
+        self._delta = target_acceptance_rate
+
+        epsilon_0 = self._find_reasonable_epsilon()
+        self._mu = np.log(10 * epsilon_0)
+        self._epsilon = epsilon_0
+        print(f"epsilon 0: {self._epsilon}")
+
+        self._acceptance_rate = 0.0
+
+    def _find_reasonable_epsilon(self) -> float:
+        """
+        Find a reasonable epsilon for the leapfrog step size.
+
+        Returns:
+        float: A reasonable epsilon value.
+        """
+        epsilon = 1.
+        p = self._prec_L @ self._proposal_dist.get_sample()
+        p_prime, q_prime = self._leap_frog_step(p, self._state, 1, epsilon)
+        a = 2 * (np.exp( - self._get_hamiltonian(p_prime, q_prime) + self._get_hamiltonian(p, self._state)) > 0.5) - 1.
+
+        while np.exp(- self._get_hamiltonian(p_prime, q_prime) + self._get_hamiltonian(p, self._state))**a > 2**(-a):
+            epsilon = epsilon * 2.**a
+            p_prime, q_prime = self._leap_frog_step(p, self._state, 1, epsilon)
+        return epsilon
+
+    @override
+    def _step(self):
+        trajectory = []
+
+        def build_tree(
+                p: np.ndarray,
+                q: np.ndarray,
+                u: np.ndarray,
+                v: int,
+                j: int,
+                epsilon: float,
+                p_0: np.ndarray,
+                q_0: np.ndarray
+        ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, int, float, int]:
+            """Build a tree of leap frog steps.
+
+            Args:
+                p (np.ndarray): Momentum.
+                q (np.ndarray): Position.
+                u (np.ndarray): Random variable for slice sampling.
+                v (int): Direction of the leapfrog step.
+                j (int): Current depth of the tree.
+                epsilon (float): Step size.
+                p_0 (np.ndarray): Initial momentum.
+                q_0 (np.ndarray): Initial position.
+
+            Returns:
+                p_minus (np.ndarray): Momentum of leftmost leaf.
+                q_minus (np.ndarray): Position of leftmost leaf.
+                p_plus (np.ndarray): Momentum of rightmost leaf.
+                q_plus (np.ndarray): Position of rightmost leaf.
+                q_prime (np.ndarray): Position of the candidate leaf.
+                n_prime (int): Number of candidate leaves in C'.
+                s_prime (int): Whether conditions for continuation are satisfied (0 or 1).
+                alpha (float): Acceptance probability.
+                n_alpha (int): Number of accepted samples.
+            """
+
+            # base case: take a single leap-frog step
+            if j == 0:
+                self._n_evals[self._iter] += 1
+                p_p, q_p = self._leap_frog_step(p, q, v, epsilon)
+                ham_1 = self._get_hamiltonian(p_p, q_p)
+                ham_0 = self._get_hamiltonian(p_0, q_0)
+                n_p = int(u < np.exp(- ham_1))
+                s_p = int(np.log(u) < self._delta_max - ham_1)
+                alpha = min(1., np.exp(- ham_1 + ham_0))
+
+                if self._plot:
+                    if n_p:
+                        trajectory.append({"type": "accept", "from": q, "to": q_p})
+                    else:
+                        trajectory.append({"type": "reject", "from": q, "to": q_p})
+
+
+                return p_p, q_p, p_p, q_p, q_p, n_p, s_p, alpha, 1
+
+            # build left and right subtrees recursively
+            # (each subtree has a left and right subtree, if not a node)
+            else:
+                p_minus, q_minus, p_plus, q_plus, q_p, n_p, s_p, a_p, n_a_p = build_tree(
+                    p, q, u, v, j - 1, epsilon, p_0, q_0
+                )
+
+                if v == -1:
+                    p_minus, q_minus, _, _, q_p_p, n_p_p, s_p_p, a_p_p, n_a_p_p = build_tree(
+                        p_minus, q_minus, u, v, j - 1, epsilon, p_0, q_0
+                    )
+                else:
+                    _, _, p_plus, q_plus, q_p_p, n_p_p, s_p_p, a_p_p, n_a_p_p = build_tree(
+                        p_plus, q_plus, u, v, j - 1, epsilon, p_0, q_0
+                    )
+
+                # update all quantities
+                n_sum = n_p + n_p_p
+                if n_sum > 0:
+                    if self._rng.binomial(1, n_p_p / (n_sum)):
+                        q_prime = q_p_p
+
+                n_prime = n_sum
+                a_p = a_p + a_p_p
+                n_a_p = n_a_p + n_a_p_p
+
+                s_prime = (
+                        s_p
+                        * s_p_p
+                        * int(np.dot((q_plus - q_minus), p_minus) > 0.0)
+                        * int(np.dot((q_plus - q_minus), p_plus) > 0.0)
+                )
+
+            return p_minus, q_minus, p_plus, q_plus, q_p, n_p, s_p, a_p, n_a_p
+
+        # sample momentum and compute hamiltonian
+        p_0 = self._prec_L @ self._proposal_dist.get_sample()
+        hamiltonian_0 = self._get_hamiltonian(p_0, self._state)
+
+        # sample u for slice sampling
+        u = self._rng.random() * np.exp(- hamiltonian_0)
+
+        # init the position and momemtum variables for this iteration
+        q_minus = self._state
+        q_plus = self._state
+        p_minus = p_plus = p_0
+
+        # init the stopping criterion, the tree depth, and the number of nodes in C (q_0 is in C)
+        s = 1
+        j = 0
+        n = 1
+
+        # build the tree by doubling its size until stopping criterion is met
+        while s == 1:
+            v = self._rng.choice([-1, 1])
+            if v == -1:
+                trajectory.append({"type": "left"})
+                p_minus, q_minus, _, _, q_prime, n_prime, s_prime, a, n_a = build_tree(
+                    p_minus, q_minus, u, v, j, self._epsilon, p_0, self._state
+                )
+            else:
+                trajectory.append({"type": "right"})
+                _, _, p_plus, q_plus, q_prime, n_prime, s_prime, a, n_a = build_tree(
+                    p_plus, q_plus, u, v, j, self._epsilon, p_0, self._state
+                )
+
+            if s_prime == 1:
+                if self._rng.binomial(1, min(1., n_prime / n)):
+                    self._state = q_prime
+
+            n = n + n_prime
+            s = (
+                    s_prime *
+                    int(np.dot((q_plus - q_minus), p_minus) > 0.0) *
+                    int(np.dot((q_plus - q_minus), p_plus) > 0.0)
+            )
+            j += 1
+
+        self._acceptance_rate += a / n_a / self._n_samples
+
+        # update H_bar, epsilon, and epsilon_bar
+        if self._iter <= self._M_adapt:
+            self._H_bar = (
+                    (1 - 1 / (self._iter + self._t_0)) * self._H_bar
+                    + 1 / (self._iter + self._t_0) * (self._delta - a / n_a)
+            )
+
+            log_eps = self._mu - np.sqrt(self._iter) / self._gamma * self._H_bar
+            term_1 = self._iter ** (-self._kappa) * log_eps
+            term_2 = (1 - self._iter**(-self._kappa)) * np.log(self._epsilon_bar)
+
+            self._epsilon = np.exp(log_eps)
+            self._epsilon_bar = np.exp(term_1 + term_2)
+        else:
+            self._epsilon = self._epsilon_bar
+
+        # save latest state
+        self.chain[self._iter, :] = self._state
+        self._iter += 1
+
+        if self._plot:
+            self._plot_trajectory(trajectory)
+
+    @override
+    def run(self):
+        super().run()
+        logger.info(f"Acceptance rate: {self._acceptance_rate}")
 
 
 if __name__ == '__main__':
