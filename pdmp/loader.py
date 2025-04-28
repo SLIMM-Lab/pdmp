@@ -11,7 +11,8 @@ from pdmp.sampler import Sampler
 from pdmp.zigzag import ZigZagSampler
 from pdmp.mcmc import RandomWalkMetropolisSampler, NaiveNUTS, EfficientNUTS, DualAveragingNUTS
 from pdmp.surrogates import (
-    SurrogateModel, LaplaceSurrogate, NeuralNetwork, GaussianProcess, DerivativeGaussianProcess, ConstantSurrogate
+    SurrogateModel, LaplaceSurrogate, NeuralNetwork, GaussianProcess, DerivativeGaussianProcess, ConstantSurrogate,
+    RandomConstantSurrogate
 )
 
 def get_target(
@@ -115,6 +116,9 @@ def get_surrogate(
 
     if config['name'] == 'Constant':
         return ConstantSurrogate.from_dict(config, target=target, rng=rng)
+
+    if config['name'] == 'RandomConstant':
+        return RandomConstantSurrogate.from_dict(config, target=target, rng=rng)
 
 
 def yaml_to_numpy(data: Any, exclude_keys: set = None):

@@ -36,7 +36,7 @@ class SurrogateModel(object):
     """
     Base class for surrogate models.
     """
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         """
         Initialize the surrogate model.
         """
@@ -92,17 +92,59 @@ class ConstantSurrogate(SurrogateModel):
     def __init__(self, *args, **kwargs):
         """
         Initialize the constant surrogate model.
-
-        Parameters:
-        target (Distribution): The target distribution.
-        rng (np.random.Generator): The random number generator.
         """
         super().__init__()
 
     @classmethod
     def from_dict(
             cls,
-            target: Distribution,
+            *args,
+            **kwargs
+    ):
+        """
+        Create a constant surrogate model from a dictionary.
+
+        Parameters:
+        config (dict): The configuration dictionary.
+        target (Distribution): The target distribution.
+        rng (np.random.Generator): The random number generator.
+
+        Returns:
+        ConstantSurrogate: The constant surrogate model.
+        """
+        return cls()
+
+    @override
+    def eval(self, x: np.ndarray, **kwargs) -> np.ndarray:
+        return np.array(0.0)
+
+    @override
+    def grad(self, x: np.ndarray, idx: int = None) -> np.ndarray:
+        if idx is None:
+            return np.zeros_like(x)
+        else:
+            return np.array(0.0)
+
+
+class RandomConstantSurrogate(SurrogateModel):
+    """
+    Random constant surrogate model.
+    """
+    def __init__(self, *args, config: dict, rng: np.random.Generator, **kwargs):
+        """
+        Initialize the random constant surrogate model.
+
+        Parameters:
+        rng (np.random.Generator): The random number generator.
+        """
+        super().__init__()
+        self._var = config['var']
+        self._rng = rng
+
+    @classmethod
+    def from_dict(
+            cls,
+            config,
             rng: np.random.Generator,
             **kwargs
     ):
@@ -117,7 +159,7 @@ class ConstantSurrogate(SurrogateModel):
         Returns:
         ConstantSurrogate: The constant surrogate model.
         """
-        return cls(target=target, rng=rng)
+        return cls(config=config, rng=rng)
 
     @override
     def eval(self, x: np.ndarray, **kwargs) -> np.ndarray:
@@ -125,10 +167,11 @@ class ConstantSurrogate(SurrogateModel):
 
     @override
     def grad(self, x: np.ndarray, idx: int = None) -> np.ndarray:
+
         if idx is None:
-            return np.zeros_like(x)
+            return self._rng.uniform(- 0.5 * self._var, 0.5 * self._var , size=len(x))
         else:
-            return np.array(0.0)
+            return np.array(self._rng.uniform(- 0.5 * self._var, 0.5 * self._var))
 
 
 class LaplaceSurrogate(SurrogateModel):

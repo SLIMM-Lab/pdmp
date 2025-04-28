@@ -14,7 +14,8 @@ from pdmp import logger
 from pdmp.sampler import Sampler
 from pdmp.distributions import Distribution, MultivariateNormal
 from pdmp.surrogates import (
-    SurrogateModel, LaplaceSurrogate, NeuralNetwork, GaussianProcess, DerivativeGaussianProcess, ConstantSurrogate
+    SurrogateModel, LaplaceSurrogate, NeuralNetwork, GaussianProcess, DerivativeGaussianProcess, ConstantSurrogate,
+    RandomConstantSurrogate
 )
 from pdmp.plotting import plot_pdf_contours
 from pdmp.plotting_utils import get_2d_despined_figure
@@ -142,6 +143,11 @@ class ZigZagSampler(Sampler):
 
             if isinstance(surrogate, ConstantSurrogate):
                 self.surrogate = cast(ConstantSurrogate, surrogate)
+                self._generate_event_times = self._inverse_cdf
+                self._offset = np.ones_like(self._offset)
+
+            if isinstance(surrogate, RandomConstantSurrogate):
+                self.surrogate = cast(RandomConstantSurrogate, surrogate)
                 self._generate_event_times = self._inverse_cdf
                 self._offset = np.ones_like(self._offset)
 
