@@ -4,6 +4,7 @@ from typing import Any, Union
 import numpy as np
 import yaml
 
+from pdmp import logger
 from pdmp.distributions import Distribution, CubicDistribution, MultivariateNormal, Posterior, TransformedDistribution
 from pdmp.distributions import get_prior, get_likelihood
 from pdmp.forward_model import get_model
@@ -28,6 +29,8 @@ def get_target(
     Returns:
     Distribution: The target distribution.
     """
+
+    logger.warning(f' ---- Loading {config["name"]} problem ---- ')
 
     if config['name'] == 'Cubic':
         return CubicDistribution.from_dict(config, rng=rng)
@@ -101,6 +104,8 @@ def get_surrogate(
     Returns:
     LaplaceSurrogate: A surrogate model for the target distribution.
     """
+
+    logger.warning(f' ---- Setting up {config["name"]} surrogate model ---- ')
 
     if config['name'] == 'Laplace':
         return LaplaceSurrogate.from_dict(config, target=target, rng=rng)
