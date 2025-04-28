@@ -20,14 +20,14 @@ def get_target(
         config: dict[str, Any],
         rng: np.random.Generator
 ) -> Union[Distribution, Posterior]:
-    """
-    Load the problem configuration.
+    """Load the problem configuration.
 
-    Parameters:
-    problem_config (dict): The problem configuration.
+    Args:
+        config: The problem configuration.
+        rng: The random number generator.
 
     Returns:
-    Distribution: The target distribution.
+        Distribution: The target distribution.
     """
 
     logger.warning(f' ---- Loading {config["name"]} problem ---- ')
@@ -63,16 +63,19 @@ def get_sampler(
         rng: np.random.Generator = None
 
 ) -> Sampler:
-    """
-    Load the sampler configuration.
+    """Load the sampler configuration.
 
-    Parameters:
-    sampler_config (dict): The sampler configuration.
-    target (MultivariateNormal): The target distribution.
-    rng (np.random.Generator): The random number generator. Default is None.
+    Args:
+        sampler_config: The sampler configuration.
+        target: The target distribution.
+        surrogate: The surrogate model. Defaults to None.
+        rng: The random number generator. Defaults to None.
 
     Returns:
-    ZigZagSampler: The sampler.
+        Sampler: The configured sampler instance.
+
+    Raises:
+        ValueError: If the sampler name is not recognized.
     """
 
     if sampler_config['name'] == 'ZigZag':
@@ -93,16 +96,15 @@ def get_surrogate(
         target: Distribution,
         rng: np.random.Generator = None
 ) -> SurrogateModel:
-    """
-    Get a surrogate model from a dictionary.
+    """Get a surrogate model from a dictionary.
 
-    Parameters:
-    config (dict): The configuration dictionary.
-    target (Distribution): The target distribution.
-    rng (np.random.Generator): The random number generator. Default is None.
+    Args:
+        config: The configuration dictionary.
+        target: The target distribution.
+        rng: The random number generator. Default is None.
 
     Returns:
-    LaplaceSurrogate: A surrogate model for the target distribution.
+        Surrogate: A surrogate model for the target distribution.
     """
 
     logger.warning(f' ---- Setting up {config["name"]} surrogate model ---- ')
@@ -126,15 +128,15 @@ def get_surrogate(
         return RandomConstantSurrogate.from_dict(config, target=target, rng=rng)
 
 
-def yaml_to_numpy(data: Any, exclude_keys: set = None):
-    """
-    Convert the configuration dictionary to numpy arrays.
+def yaml_to_numpy(data: Any, exclude_keys: set = None) -> Any:
+    """Convert the configuration dictionary to numpy arrays.
 
-    Parameters:
-    dictionary (dict): The dictionary.
+    Args:
+        data: The dictionary.
+        exclude_keys: A set of keys to exclude from conversion.
 
     Returns:
-    dict: The configuration dictionary with numpy arrays.
+        Any: The configuration dictionary with numpy arrays.
     """
 
     # necessary to keep list of NN hidden layers as lists
@@ -159,15 +161,14 @@ def yaml_to_numpy(data: Any, exclude_keys: set = None):
         # Return the data as is for non-list, non-dict types
         return data
 
-def numpy_to_yaml(data: Any):
-    """
-    Convert numpy arrays in the configuration dictionary back to lists.
+def numpy_to_yaml(data: Any) -> Any:
+    """Convert numpy arrays in the configuration dictionary back to lists.
 
-    Parameters:
-    data (Any): The data to convert.
+    Args:
+        data (Any): The data to convert.
 
     Returns:
-    Any: The data with numpy arrays converted to lists.
+        Any: The data with numpy arrays converted to lists.
     """
 
     if isinstance(data, dict):
@@ -195,30 +196,27 @@ class CustomDumper(yaml.SafeDumper):
 # Attach the new list representation to our dumper
 CustomDumper.add_representer(list, CustomDumper.represent_list)
 
-def dump_yaml_custom_format(data, file_path):
-    """
-    Dumps YAML data where lists are in bracket format but dictionaries use standard indentation.
+def dump_yaml_custom_format(data: Any, file_path: str):
+    """Dumps YAML data where lists are in bracket format but dictionaries use standard indentation.
 
     Args:
-        data (dict): The data to be serialized.
-        file_path (str): Path to the output YAML file.
+        data: The data to be serialized.
+        file_path: Path to the output YAML file.
     """
     with open(file_path, "w") as f:
         yaml.dump(data, f, Dumper=CustomDumper, sort_keys=False, default_flow_style=False)
-
 
 def save_config(
         config: dict,
         save_dir: str,
         file_name: str = 'config_used.pickle'
 ):
-    """
-    Save the config to a file.
+    """Save the config to a file.
 
-    Parameters:
-    config (dict): The configuration dictionary.
-    save_dir (str): The directory to the file.
-    file_name (str): The name of the file.
+    Args:
+        config: The configuration dictionary.
+        save_dir: The directory to the file.
+        file_name: The name of the file.
     """
 
     save_path = os.path.join(save_dir, file_name)
