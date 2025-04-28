@@ -343,12 +343,27 @@ def compute_ess_zigzag(
         v: np.ndarray,
         num_batches: int=1000,
         avg: bool=False
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Compute the effective sample size (ESS) of a zigzag process.
     The ESS is computed using the batch means method, which estimates the variance
+    of the sample mean by dividing the total time by the number of batches. The ESS
+    is then the total time divided by the autocorrelation of the process, which in
+    turn is given by the ratio of the asymptotic variance to the variance of the process.
 
-    of the sample mean by dividing the total time by the number of batches.
+    Mathematically, the ESS for coordinate h (observable) is computed as follows:
+
+    1. Estimate the mean under the target distribution π:
+        π̂(h) = (1/τ) ∫₀^τ h(Ξ(s)) ds
+
+    2. Estimate the variance under the target distribution π:
+        Var_π(h) = (1/τ) ∫₀^τ h(Ξ(s))² ds - [π̂(h)]²
+
+    3. Estimate the asymptotic variance (σ²_h) via batch means:
+        σ²_h ≈ (τ/B-1) ∑_{i=1}^B [ (1/(τ/B)) ∫_{(i-1)τ/B}^{iτ/B} h(Ξ(s)) ds - π̂(h) ]²
+
+    4. Compute ESS using:
+        ESS = τ * Var_π(h) / σ²_h
 
     Parameters:
         t (np.ndarray): 1D array of time points.
@@ -359,6 +374,7 @@ def compute_ess_zigzag(
 
     Returns:
         np.ndarray: The ESS for each coordinate or the average ESS if avg is True.
+        np.ndarray: The autocorrelation of the processes or their avg if avg is True.
         np.ndarray: The mean of the process.
         np.ndarray: The variance of the process.
     """
@@ -403,17 +419,18 @@ def compute_ess_zigzag(
     mean_pi = total_integral_h / total_time
     mean_h2_pi = total_integral_h2 / total_time
 
-    var_pi_estimate = mean_h2_pi - mean_pi**2
+    var_pi = mean_h2_pi - mean_pi ** 2
 
     # Asymptotic variance from batch means (for each coordinate)
     asymp_variance = (total_time / num_batches) * np.var(batch_means, axis=0, ddof=1)
 
-    ess = total_time * var_pi_estimate / asymp_variance
+    autocorrelation = asymp_variance / var_pi
+    ess = total_time / autocorrelation
 
     if avg:
-        return np.array(np.mean(ess)), mean_pi, var_pi_estimate
+        return np.array(np.mean(ess)), np.array(np.mean(autocorrelation)), mean_pi, var_pi
     else:
-        return ess, mean_pi, var_pi_estimate
+        return ess, autocorrelation, mean_pi, var_pi
 
 
 def grad_fd(f: callable, x: np.ndarray, h: float = 1e-5, n: int = None) -> np.ndarray:
