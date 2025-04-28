@@ -42,6 +42,26 @@ class SurrogateModel(object):
         """
         self.gaussian = None
 
+    @classmethod
+    def from_dict(
+            cls,
+            config: dict,
+            target: Distribution,
+            rng: np.random.Generator
+    ):
+        """
+        Create a surrogate model derived class from a dictionary.
+
+        Parameters:
+        config (dict): The configuration dictionary.
+        target (Distribution): The target distribution.
+        rng (np.random.Generator): The random number generator.
+
+        Returns:
+        ConstantSurrogate: The constant surrogate model.
+        """
+        return cls(target=target, rng=rng, **config)
+
     def eval(self, x: np.ndarray, **kwargs) -> np.ndarray:
         """
         Evaluate the surrogate model at a point.
@@ -89,30 +109,11 @@ class ConstantSurrogate(SurrogateModel):
     """
     Constant surrogate model.
     """
-    def __init__(self, *args, **kwargs):
+    def __init__(self, **kwargs):
         """
         Initialize the constant surrogate model.
         """
-        super().__init__()
-
-    @classmethod
-    def from_dict(
-            cls,
-            *args,
-            **kwargs
-    ):
-        """
-        Create a constant surrogate model from a dictionary.
-
-        Parameters:
-        config (dict): The configuration dictionary.
-        target (Distribution): The target distribution.
-        rng (np.random.Generator): The random number generator.
-
-        Returns:
-        ConstantSurrogate: The constant surrogate model.
-        """
-        return cls()
+        super().__init__(**kwargs)
 
     @override
     def eval(self, x: np.ndarray, **kwargs) -> np.ndarray:
@@ -130,36 +131,23 @@ class RandomConstantSurrogate(SurrogateModel):
     """
     Random constant surrogate model.
     """
-    def __init__(self, *args, config: dict, rng: np.random.Generator, **kwargs):
+    def __init__(
+            self,
+            rng: np.random.Generator,
+            *,
+            var: float = 1.0,
+            **kwargs
+    ):
         """
         Initialize the random constant surrogate model.
 
         Parameters:
         rng (np.random.Generator): The random number generator.
+        var (float): The variance of the random constant surrogate model.
         """
-        super().__init__()
-        self._var = config['var']
+        super().__init__(**kwargs)
+        self._var = var
         self._rng = rng
-
-    @classmethod
-    def from_dict(
-            cls,
-            config,
-            rng: np.random.Generator,
-            **kwargs
-    ):
-        """
-        Create a constant surrogate model from a dictionary.
-
-        Parameters:
-        config (dict): The configuration dictionary.
-        target (Distribution): The target distribution.
-        rng (np.random.Generator): The random number generator.
-
-        Returns:
-        ConstantSurrogate: The constant surrogate model.
-        """
-        return cls(config=config, rng=rng)
 
     @override
     def eval(self, x: np.ndarray, **kwargs) -> np.ndarray:
@@ -182,6 +170,7 @@ class LaplaceSurrogate(SurrogateModel):
             self,
             target: Distribution,
             rng: np.random.Generator,
+            *,
             mean: np.ndarray = None,
             cov: np.ndarray = None,
             x_0: np.ndarray = None,
@@ -196,7 +185,7 @@ class LaplaceSurrogate(SurrogateModel):
         cov (np.ndarray): The covariance matrix of the Laplace approximation.
         x_0 (np.ndarray): The initial point for the Laplace approximation.
         """
-        super().__init__()
+        super().__init__(**kwargs)
 
         if isinstance(target, Posterior):
             target = cast(Posterior, target)
@@ -206,6 +195,7 @@ class LaplaceSurrogate(SurrogateModel):
 
             if mean is None:
                 self._mean = find_mean(target, x_0)
+                mean = self._mean
             else:
                 self._mean = mean
             if cov is None:
@@ -218,33 +208,6 @@ class LaplaceSurrogate(SurrogateModel):
 
         self.gaussian = MultivariateNormal(self._mean, self._cov, rng=rng)
         self._delta = self.gaussian.log_density(self._mean) - target.log_density(self._mean)
-
-    @classmethod
-    def from_dict(
-            cls,
-            config: dict,
-            target: Distribution,
-            rng: np.random.Generator
-    ):
-        """
-        Create a Laplace approximation from a dictionary.
-
-        Parameters:
-        config (dict): The configuration dictionary.
-        target (Distribution): The target distribution.
-        rng (np.random.Generator): The random number generator.
-
-        Returns:
-        LaplaceSurrogate: The Laplace approximation.
-        """
-        mean = np.array(config['mean']) if 'mean' in config else None
-        cov = np.array(config['cov']) if 'cov' in config else None
-        return cls(
-            mean=mean,
-            cov=cov,
-            target=target,
-            rng=rng
-        )
 
     def eval(self, x: np.ndarray, delta: bool=False, **kwargs) -> np.ndarray:
         """
@@ -320,6 +283,7 @@ class NeuralNetwork(SurrogateModel):
             target: Distribution,
             hidden_layers: list,
             rng: np.random.Generator,
+            *,
             n_samples: int = 100,
             epochs:  int = 5000,
             batch_size: int = 20,
@@ -354,7 +318,7 @@ class NeuralNetwork(SurrogateModel):
         train_on_init (bool): Whether to train the model on initialization.
         update_model (list): List of number of samples after which to update the model.
         """
-        super().__init__()
+        super().__init__(**kwargs)
         if update_model is None:
             update_model = []
         hidden_layers = [target.get_dim()] + hidden_layers + [1]
@@ -406,32 +370,6 @@ class NeuralNetwork(SurrogateModel):
                 )
 
             self.train(**self._training_params)
-
-    @classmethod
-    def from_dict(
-            cls,
-            config: dict,
-            target: Distribution,
-            rng: np.random.Generator,
-            train_on_init: bool = True
-    ):
-        """
-        Create a neural network surrogate model from a dictionary.
-
-        Parameters:
-        config (dict): The configuration dictionary.
-        rng (np.random.Generator, optional): The random number generator. Default is None.
-
-        Returns:
-        NeuralNetwork: The neural network surrogate model.
-        """
-
-        return cls(
-            target=target,
-            rng=rng,
-            train_on_init=train_on_init,
-            **config
-        )
 
     @override
     def eval(self, x: np.ndarray, **kwargs) -> np.ndarray:
@@ -741,30 +679,6 @@ class GaussianProcessBase(SurrogateModel):
         else:
             raise ValueError(f"Evaluation strategy {eval_strategy} not implemented.\n" +
                              "Choose from: 'mean', 'mean_plus_std'")
-
-    @classmethod
-    def from_dict(
-            cls,
-            config: dict,
-            target: Distribution,
-            rng: np.random.Generator = None
-    ):
-        """
-        Create a Gaussian process surrogate model from a dictionary.
-
-        Parameters:
-        config (dict): The configuration dictionary.
-        target (Distribution): The target distribution.
-        rng (np.random.Generator, optional): The random number generator. Default is None.
-
-        Returns:
-        GaussianProcess: The Gaussian process surrogate model.
-        """
-        return cls(
-            target=target,
-            rng=rng,
-            **config
-        )
 
     @override
     def add_data(self, x: np.ndarray, y: np.ndarray, dy_dx: np.ndarray = None) -> None:
