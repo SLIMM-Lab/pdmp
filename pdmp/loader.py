@@ -9,6 +9,8 @@ from pdmp.distributions import Distribution, CubicDistribution, MultivariateNorm
 from pdmp.distributions import get_prior, get_likelihood
 from pdmp.forward_model import get_model
 from pdmp.sampler import Sampler, SAMPLER_REGISTRY
+from pdmp.mcmc import StepSampler
+from pdmp.zigzag import ZigZagSampler
 from pdmp.surrogates import SurrogateModel, SURROGATE_REGISTRY
 
 def get_target(
