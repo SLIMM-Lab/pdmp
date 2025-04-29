@@ -1,5 +1,10 @@
-# Define the stages of the pipeline
+# Define image
+image: continuumio/miniconda3:25.1.1-2 # fixed tag, might need to be update at a later stage
 
+before_script:
+  - conda install -n base -c conda-forge mamba conda-libmamba-solver -y
+
+# Define the stages of the pipeline
 stages:
   - setup
   - test
@@ -11,11 +16,11 @@ setup_env:
     - conda env list
     - |
       if [ -d "./conda_env" ]; then
-        echo "Environment already exists."
-        conda env update --prefix ./conda_env -f environment.yml --prune
+        echo "Environment already exists - updating ...";
+        mamba env update --prefix ./conda_env -f environment.yml --prune;
       else
-        echo "Cearing new environment."
-        conda env create --prefix ./conda_env -f environment.yml
+        echo "Creating new environment ...";
+        mamba env create --prefix ./conda_env -f environment.yml;
       fi
     - conda env list
   cache:
