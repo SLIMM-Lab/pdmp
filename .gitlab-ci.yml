@@ -1,49 +1,43 @@
-# Define image
-image: continuumio/miniconda3:25.1.1-2 # fixed tag, might need to be update at a later stage
+image: continuumio/miniconda3:25.1.1-2          # pin!
 
-before_script:
-  - conda install -n base -c conda-forge mamba conda-libmamba-solver -y
-
-# Define the stages of the pipeline
 stages:
   - setup
   - test
 
+variables:
+  # tell conda not to ask any questions
+  MAMBA_NO_PROMPT: "1"
+
 setup_env:
   stage: setup
   script:
-    - conda --version
-    - conda env list
-    - |
-      if [ -d "./conda_env" ]; then
-        echo "Environment already exists - updating ...";
-        mamba env update --prefix ./conda_env -f environment.yml --prune;
-      else
-        echo "Creating new environment ...";
-        mamba env create --prefix ./conda_env -f environment.yml;
-      fi
-    - conda env list
-  cache:
-    key: conda
+    - mamba env create --prefix ./conda_env --file environment.yml
+    - mamba clean --all -y            # shrink the artifact a bit
+  artifacts:
     paths:
-      - conda_env
+      - conda_env/                    # <-- passed to later stages
+    expire_in: 1 week
+  cache:                               # speed up *future* pipelines
+    key: conda-pkgs
+    paths:
+      - ~/.conda/pkgs
     policy: pull-push
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
-# Define a job for running tests
 pytest:
   stage: test
+  dependencies: [setup_env]            # download the artifact
   cache:
-    key: conda
+    key: conda-pkgs
     paths:
-      - conda_env
+      - ~/.conda/pkgs
     policy: pull
   script:
-    - source activate ./conda_env
-    - conda list
-    - pytest --cov=pdmp  # Run tests with coverage reporting
+    # initialise conda for this non-interactive shell
+    - eval "$(conda shell.bash hook)"
+    - conda activate ./conda_env
+    - conda list | head -5            # sanity-check
+    - conda run -p ./conda_env pytest --cov=pdmp
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-  dependencies:
-    - setup_env
