@@ -1,43 +1,12 @@
-image: continuumio/miniconda3:25.1.1-2          # pin!
-
-stages:
-  - setup
-  - test
+image: condaforge/mambaforge:24.9.0-0   # mamba included
 
 variables:
-  # tell conda not to ask any questions
-  MAMBA_NO_PROMPT: "1"
+  MAMBA_NO_PROMPT: "1"                  # non-interactive solves
 
-setup_env:
-  stage: setup
-  script:
-    - mamba env create --prefix ./conda_env --file environment.yml
-    - mamba clean --all -y            # shrink the artifact a bit
-  artifacts:
-    paths:
-      - conda_env/                    # <-- passed to later stages
-    expire_in: 1 week
-  cache:                               # speed up *future* pipelines
-    key: conda-pkgs
-    paths:
-      - ~/.conda/pkgs
-    policy: pull-push
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+stages: [test]
 
-pytest:
+test:
   stage: test
-  dependencies: [setup_env]            # download the artifact
-  cache:
-    key: conda-pkgs
-    paths:
-      - ~/.conda/pkgs
-    policy: pull
   script:
-    # initialise conda for this non-interactive shell
-    - eval "$(conda shell.bash hook)"
-    - conda activate ./conda_env
-    - conda list | head -5            # sanity-check
-    - conda run -p ./conda_env pytest --cov=pdmp
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - mamba env create -p /tmp/env -f environment.yml
+    - mamba run -p /tmp/env pytest --cov=pdmp
