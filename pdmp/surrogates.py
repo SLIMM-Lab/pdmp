@@ -44,9 +44,9 @@ class SurrogateModel(object):
     @classmethod
     def from_dict(
             cls,
-            config: dict,
             target: Distribution,
-            rng: np.random.Generator
+            rng: np.random.Generator,
+            **kwargs
     ):
         """
         Create a surrogate model derived class from a dictionary.
@@ -59,7 +59,7 @@ class SurrogateModel(object):
         Returns:
         ConstantSurrogate: The constant surrogate model.
         """
-        return cls(target=target, rng=rng, **config)
+        return cls(target=target, rng=rng, **kwargs)
 
     def eval(self, x: np.ndarray, **kwargs) -> np.ndarray:
         """
