@@ -10,3 +10,5 @@ test:
   script:
     - mamba env create -p /tmp/env -f environment.yml
     - mamba run -p /tmp/env pytest --cov=pdmp
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
