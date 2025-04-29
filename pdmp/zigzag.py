@@ -11,7 +11,7 @@ from typing import cast, Any
 from tqdm import tqdm
 
 from pdmp import logger
-from pdmp.sampler import Sampler
+from pdmp.sampler import Sampler, SAMPLER_REGISTRY, register_sampler
 from pdmp.distributions import Distribution, MultivariateNormal
 from pdmp.surrogates import (
     SurrogateModel, LaplaceSurrogate, NeuralNetwork, GaussianProcess, DerivativeGaussianProcess, ConstantSurrogate,
@@ -21,6 +21,7 @@ from pdmp.plotting import plot_pdf_contours
 from pdmp.plotting_utils import get_2d_despined_figure
 
 
+@register_sampler('ZigZag')
 class ZigZagSampler(Sampler):
     """
     ZigZagSampler class for sampling from a target distribution using the ZigZag process.
@@ -167,29 +168,6 @@ class ZigZagSampler(Sampler):
             self._dt = 0.001
 
         logger.info("ZigZagSampler initialized.")
-
-    @classmethod
-    def from_dict(
-            cls,
-            config: dict[str, Any],
-            target: Distribution,
-            surrogate: SurrogateModel = None,
-            rng: np.random.Generator = None
-    ):
-        """
-        Initialize the ZigZagSampler class from a dictionary.
-
-        Parameters:
-        config (dict): The configuration dictionary.
-        target (Distribution): The target distribution to sample from.
-        rng (np.random.Generator, optional): Random number generator.
-        surrogate (SurrogateModel, optional): The surrogate model. Default is None.
-
-        Returns:
-        ZigZagSampler: The initialized ZigZagSampler class.
-        """
-
-        return cls(target, surrogate=surrogate, rng=rng, **config)
 
     def _target_rates(self, x: np.ndarray, idx_d: int = None, idx_n: int = None) -> np.ndarray:
         """
