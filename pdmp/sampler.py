@@ -1,3 +1,8 @@
+import numpy as np
+
+from pdmp.distributions import Distribution
+from pdmp.surrogates import SurrogateModel
+
 SAMPLER_REGISTRY = {}
 
 def register_sampler(name):
@@ -14,26 +19,39 @@ def register_sampler(name):
     return decorator
 
 class Sampler:
+    """Base class for samplers."""
 
     def __init__(self, *args, **kawrgs):
         pass
 
     @classmethod
-    def from_dict(cls, target, rng, **kwargs):
+    def from_dict(
+            cls,
+            target: Distribution,
+            rng: np.random.Generator,
+            surrogate: SurrogateModel = None,
+            **kwargs):
         """Create a sampler from a configuration dictionary.
 
         Args:
-            target (Distribution): The target distribution.
-            rng (np.random.Generator): The random number generator. Defaults to None.
+            target: The target distribution.
+            rng: The random number generator. Defaults to None.
             surrogate (SurrogateModel): The surrogate model. Defaults to None.
 
         Returns:
             Sampler: The configured sampler instance.
         """
-        return cls(target=target, rng=rng, **kwargs)
+        return cls(target=target, rng=rng, surrogate=surrogate, **kwargs)
 
     def run(self):
+        """Run the sampler."""
         raise NotImplementedError
 
     def write_data(self, folder: str, precision: int = 6):
+        """Write the sampler data to a file.
+
+        Args:
+            folder: The folder to write the data to.
+            precision: The precision of the data. Defaults to 6.
+        """
         raise NotImplementedError

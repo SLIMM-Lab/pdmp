@@ -9,7 +9,7 @@ import seaborn as sns
 from typing import Tuple, override
 from tqdm import tqdm
 
-from pdmp.sampler import Sampler, SAMPLER_REGISTRY, register_sampler
+from pdmp.sampler import Sampler, register_sampler
 from pdmp.distributions import Distribution, MultivariateNormal
 from pdmp import logger
 
@@ -72,21 +72,6 @@ class StepSampler(Sampler):
 
         self._prec_L = np.linalg.cholesky(self._prec)
 
-    # @classmethod
-    # def from_dict(cls, config: dict, target: Distribution, rng: np.random.Generator = None, **kwargs):
-    #     """
-    #     Initialize the StepSampler-derived class from a dictionary.
-    #
-    #     Parameters:
-    #     config (dict): The configuration dictionary.
-    #     target (Distribution): The target distribution to sample from.
-    #     rng (np.random.Generator, optional): Random number generator. Default is None.
-    #
-    #     Returns:
-    #     StepSampler: The StepSampler instance.
-    #     """
-    #     return cls(target=target, rng=rng, **config)
-
     def _reset(self, x_0: np.ndarray = None):
         """
         Reset the sampler state.
@@ -132,20 +117,8 @@ class StepSampler(Sampler):
         """
         raise NotImplementedError("The step method must be implemented in a subclass.")
 
-    def run(self):
-        """
-        Run the StepSampler.
-        """
-        raise NotImplementedError("The step method must be implemented in a subclass.")
-
+    @override
     def write_data(self, folder: str, precision: int = 6):
-        """
-        Write the chain data to a file.
-
-        Parameters:
-        filename (str): The name of the folder to write the data to.
-        precision (int, optional): The precision of the output. Default is 6.
-        """
 
         if not os.path.exists(folder):
             os.makedirs(folder)
@@ -199,21 +172,6 @@ class RandomWalkMetropolisSampler(StepSampler):
         self._accepted = np.zeros(self._n_samples, dtype=bool)
         self._accepted[0] = True
 
-    @classmethod
-    def from_dict(cls, config: dict, target: Distribution, rng: np.random.Generator = None, **kwargs):
-        """
-        Initialize the RandomWalkMetropolisSampler class from a dictionary.
-
-        Parameters:
-        config (dict): The configuration dictionary.
-        target (Distribution): The target distribution to sample from.
-        rng (np.random.Generator, optional): Random number generator. Default is None.
-
-        Returns:
-        RandomWalkMetropolisSampler: The RandomWalkMetropolisSampler instance.
-        """
-        return cls(target=target, rng=rng, **config)
-
     def _reset(self, x_0: np.ndarray = None):
         """
         Reset the sampler state.
@@ -239,10 +197,8 @@ class RandomWalkMetropolisSampler(StepSampler):
         self.chain[self._iter, :] = self._state
         self._iter += 1
 
+    @override
     def run(self):
-        """
-        Run the RWM sampler.
-        """
         # disable tqdm if running on a cluster
         disable_tqdm = 'PBS_ENVIRONMENT' in os.environ or 'SLURM_JOB_ID' in os.environ
 
@@ -351,10 +307,8 @@ class LangevinDynamicsSampler(StepSampler):
 
         self._iter += 1
 
+    @override
     def run(self):
-        """
-        Run the Langevin dynamics sampler.
-        """
         # disable tqdm if running on a cluster
         disable_tqdm = 'PBS_ENVIRONMENT' in os.environ or 'SLURM_JOB_ID' in os.environ
 
@@ -508,6 +462,7 @@ class HamiltonianMonteCarlo(StepSampler):
         self.chain[self._iter, :] = self._state
         self._iter += 1
 
+    @override
     def run(self):
         """
         Run the HMC sampler.
@@ -864,9 +819,8 @@ class NaiveNUTS(StepSampler):
         if self._plot:
             self._plot_trajectory(trajectory)
 
+    @override
     def run(self):
-        """Run the NaiveNUTS sampler.
-        """
         # disable tqdm if running on a cluster or in pycharm
         disable_tqdm = (
                 'PBS_ENVIRONMENT' in os.environ
