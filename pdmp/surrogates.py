@@ -31,7 +31,6 @@ from pdmp import logger
 
 dtype = torch.float64
 
-
 class SurrogateModel(object):
     """
     Base class for surrogate models.
@@ -1345,3 +1344,12 @@ class DerivativeGaussianProcess(GaussianProcessBase):
             return gradient + self._laplace.grad(x)
         else:
             return gradient[idx] + self._laplace.grad(x, idx=idx)
+
+SURROGATE_REGISTRY = {
+    'Laplace': LaplaceSurrogate,
+    'Constant': ConstantSurrogate,
+    'RandomConstant': RandomConstantSurrogate,
+    'NeuralNetwork': NeuralNetwork,
+    'GaussianProcess': GaussianProcess,
+    'DerivativeGaussianProcess': DerivativeGaussianProcess
+}

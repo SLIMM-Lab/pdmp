@@ -11,10 +11,7 @@ from pdmp.forward_model import get_model
 from pdmp.sampler import Sampler
 from pdmp.zigzag import ZigZagSampler
 from pdmp.mcmc import RandomWalkMetropolisSampler, NaiveNUTS, EfficientNUTS, DualAveragingNUTS
-from pdmp.surrogates import (
-    SurrogateModel, LaplaceSurrogate, NeuralNetwork, GaussianProcess, DerivativeGaussianProcess, ConstantSurrogate,
-    RandomConstantSurrogate
-)
+from pdmp.surrogates import SurrogateModel, SURROGATE_REGISTRY
 
 def get_target(
         config: dict[str, Any],
@@ -109,23 +106,14 @@ def get_surrogate(
 
     logger.warning(f' ---- Setting up {config["name"]} surrogate model ---- ')
 
-    if config['name'] == 'Laplace':
-        return LaplaceSurrogate.from_dict(config, target=target, rng=rng)
+    surrogate_class = SURROGATE_REGISTRY.get(config['name'])
+    if surrogate_class is None:
+        raise ValueError(
+            f"Surrogate {config['name']} not recognized.\n"
+            f"available models: \n  {list(SURROGATE_REGISTRY.keys())}"
+        )
 
-    if config['name'] == 'NeuralNetwork':
-        return NeuralNetwork.from_dict(config, target=target, rng=rng)
-
-    if config['name'] == 'GaussianProcess':
-        return GaussianProcess.from_dict(config, target=target, rng=rng)
-
-    if config['name'] == 'DerivativeGaussianProcess':
-        return DerivativeGaussianProcess.from_dict(config, target=target, rng=rng)
-
-    if config['name'] == 'Constant':
-        return ConstantSurrogate.from_dict(config, target=target, rng=rng)
-
-    if config['name'] == 'RandomConstant':
-        return RandomConstantSurrogate.from_dict(config, target=target, rng=rng)
+    return surrogate_class.from_dict(config, target=target, rng=rng)
 
 
 def yaml_to_numpy(data: Any, exclude_keys: set = None) -> Any:
