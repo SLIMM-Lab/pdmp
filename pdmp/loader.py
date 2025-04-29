@@ -8,7 +8,7 @@ from pdmp import logger
 from pdmp.distributions import Distribution, CubicDistribution, MultivariateNormal, Posterior, TransformedDistribution
 from pdmp.distributions import get_prior, get_likelihood
 from pdmp.forward_model import get_model
-from pdmp.sampler import Sampler
+from pdmp.sampler import Sampler, SAMPLER_REGISTRY
 from pdmp.zigzag import ZigZagSampler
 from pdmp.mcmc import RandomWalkMetropolisSampler, NaiveNUTS, EfficientNUTS, DualAveragingNUTS
 from pdmp.surrogates import SurrogateModel, SURROGATE_REGISTRY
@@ -54,7 +54,7 @@ def get_target(
         raise ValueError(f"Problem {config['name']} not recognized.")
 
 def get_sampler(
-        sampler_config: dict[str, Any],
+        config: dict[str, Any],
         target: Distribution,
         surrogate: SurrogateModel = None,
         rng: np.random.Generator = None
@@ -63,7 +63,7 @@ def get_sampler(
     """Load the sampler configuration.
 
     Args:
-        sampler_config: The sampler configuration.
+        config: The sampler configuration.
         target: The target distribution.
         surrogate: The surrogate model. Defaults to None.
         rng: The random number generator. Defaults to None.
@@ -75,18 +75,17 @@ def get_sampler(
         ValueError: If the sampler name is not recognized.
     """
 
-    if sampler_config['name'] == 'ZigZag':
-        return ZigZagSampler.from_dict(sampler_config, target=target, rng=rng, surrogate=surrogate)
-    elif sampler_config['name'] == 'RandomWalkMetropolis':
-        return RandomWalkMetropolisSampler.from_dict(sampler_config, target=target, rng=rng, surrogate=surrogate)
-    elif sampler_config['name'] == 'NaiveNUTS':
-        return NaiveNUTS.from_dict(sampler_config, target=target, rng=rng, surrogate=surrogate)
-    elif sampler_config['name'] == 'EfficientNUTS':
-        return EfficientNUTS.from_dict(sampler_config, target=target, rng=rng, surrogate=surrogate)
-    elif sampler_config['name'] == 'DualAveragingNUTS':
-        return DualAveragingNUTS.from_dict(sampler_config, target=target, rng=rng, surrogate=surrogate)
-    else:
-        raise ValueError(f"Sampler {sampler_config['name']} not recognized.")
+    logger.warning(f' ---- Setting up {config["name"]} sampler ---- ')
+
+    sampler_class = SAMPLER_REGISTRY.get(config['name'])
+    if sampler_class is None:
+        raise ValueError(
+            f"Sampler {config['name']} not recognized.\n"
+            f"available models: \n  {list(SAMPLER_REGISTRY.keys())}"
+        )
+
+    return sampler_class.from_dict(target, rng, surrogate=surrogate, **config)
+
 
 def get_surrogate(
         config: dict[str, Any],

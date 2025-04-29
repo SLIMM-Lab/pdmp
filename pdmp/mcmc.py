@@ -9,10 +9,9 @@ import seaborn as sns
 from typing import Tuple, override
 from tqdm import tqdm
 
-from pdmp.sampler import Sampler
+from pdmp.sampler import Sampler, SAMPLER_REGISTRY, register_sampler
 from pdmp.distributions import Distribution, MultivariateNormal
 from pdmp import logger
-
 
 class StepSampler(Sampler):
 
@@ -73,20 +72,20 @@ class StepSampler(Sampler):
 
         self._prec_L = np.linalg.cholesky(self._prec)
 
-    @classmethod
-    def from_dict(cls, config: dict, target: Distribution, rng: np.random.Generator = None, **kwargs):
-        """
-        Initialize the StepSampler-derived class from a dictionary.
-
-        Parameters:
-        config (dict): The configuration dictionary.
-        target (Distribution): The target distribution to sample from.
-        rng (np.random.Generator, optional): Random number generator. Default is None.
-
-        Returns:
-        StepSampler: The StepSampler instance.
-        """
-        return cls(target=target, rng=rng, **config)
+    # @classmethod
+    # def from_dict(cls, config: dict, target: Distribution, rng: np.random.Generator = None, **kwargs):
+    #     """
+    #     Initialize the StepSampler-derived class from a dictionary.
+    #
+    #     Parameters:
+    #     config (dict): The configuration dictionary.
+    #     target (Distribution): The target distribution to sample from.
+    #     rng (np.random.Generator, optional): Random number generator. Default is None.
+    #
+    #     Returns:
+    #     StepSampler: The StepSampler instance.
+    #     """
+    #     return cls(target=target, rng=rng, **config)
 
     def _reset(self, x_0: np.ndarray = None):
         """
@@ -162,6 +161,7 @@ class StepSampler(Sampler):
         np.savetxt(os.path.join(folder, 'samples.dat'), self.chain, fmt=f'%.{precision}e')
 
 
+@register_sampler('RandomWalkMetropolis')
 class RandomWalkMetropolisSampler(StepSampler):
     """
     A class to perform sampling with the Random-Walk Metropolis algorithm.
@@ -267,6 +267,7 @@ class RandomWalkMetropolisSampler(StepSampler):
         logger.info(f"Total acceptance rate: {self._n_accept / self._n_samples}")
 
 
+@register_sampler('LangevinDynamics')
 class LangevinDynamicsSampler(StepSampler):
     """
     Langevin Dynamics Sampler class for sampling from a target distribution using Langevin dynamics.
@@ -378,6 +379,7 @@ class LangevinDynamicsSampler(StepSampler):
         logger.info(f"Acceptance rate: {self._n_accept / self._n_samples}")
 
 
+@register_sampler('HamiltonianMonteCarlo')
 class HamiltonianMonteCarlo(StepSampler):
     """
     Hamiltonian Monte Carlo (HMC) sampler class for sampling from a target distribution using HMC.
@@ -581,6 +583,7 @@ class HamiltonianMonteCarlo(StepSampler):
         self._fig.fig.show()
 
 
+@register_sampler('NaiveNUTS')
 class NaiveNUTS(StepSampler):
     """
     Naive version of the No-U-Turn sampler (NUTS)
@@ -891,6 +894,7 @@ class NaiveNUTS(StepSampler):
         )
 
 
+@register_sampler('EfficientNUTS')
 class EfficientNUTS(NaiveNUTS):
     """
     Efficient NUTS sampler class for sampling from a target distribution using the base version of the algorithm.
@@ -1036,6 +1040,7 @@ class EfficientNUTS(NaiveNUTS):
         if self._plot:
             self._plot_trajectory(trajectory)
 
+@register_sampler('DualAveragingNUTS')
 class DualAveragingNUTS(NaiveNUTS):
     """
     Dual averaging NUTS sampler class for sampling from a target distribution using the efficient version of the
