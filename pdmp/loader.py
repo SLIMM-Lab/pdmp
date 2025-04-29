@@ -110,7 +110,7 @@ def get_surrogate(
             f"available models: \n  {list(SURROGATE_REGISTRY.keys())}"
         )
 
-    return surrogate_class.from_dict(config, target=target, rng=rng)
+    return surrogate_class.from_dict(target, rng, **config)
 
 
 def yaml_to_numpy(data: Any, exclude_keys: set = None) -> Any:
