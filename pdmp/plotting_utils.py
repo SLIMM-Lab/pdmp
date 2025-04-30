@@ -3,16 +3,15 @@ import seaborn as sns
 
 from typing import Union
 
-def get_2d_despined_figure(
-        plot_limits: tuple[list[float], list[float]] = None,
-        nrows: int = 1,
-        ncols: int = 1,
-        figsize: tuple[float, float] = (3., 4.),
-        constrained_layout: bool = True,
-        keep_ticks: bool = False,
-        axes_label: Union[tuple[str, ...], str] = '\\theta',
-        equal_axes = True
-) -> tuple[plt.Figure, plt.Axes]:
+
+def get_2d_despined_figure(plot_limits: tuple[list[float], list[float]] = None,
+                           nrows: int = 1,
+                           ncols: int = 1,
+                           figsize: tuple[float, float] = (3., 4.),
+                           constrained_layout: bool = True,
+                           keep_ticks: bool = False,
+                           axes_label: Union[tuple[str, ...], str] = '\\theta',
+                           equal_axes=True) -> tuple[plt.Figure, plt.Axes]:
     """
     Create a 2D despined figure with specified plot limits and formatting.
 
@@ -29,7 +28,10 @@ def get_2d_despined_figure(
     """
 
     # create figure
-    fig, ax = plt.subplots(nrows, ncols, figsize=figsize, constrained_layout=constrained_layout)
+    fig, ax = plt.subplots(nrows,
+                           ncols,
+                           figsize=figsize,
+                           constrained_layout=constrained_layout)
 
     # format the plot
     if plot_limits is not None:

@@ -13,18 +13,17 @@ from pdmp.sampler import Sampler, register_sampler
 from pdmp.distributions import Distribution, MultivariateNormal
 from pdmp import logger
 
+
 class StepSampler(Sampler):
 
-    def __init__(
-            self,
-            target: Distribution,
-            n_samples: int = 10000,
-            rng: np.random.Generator = None,
-            seed: int = None,
-            prec: np.ndarray = None,
-            cov_factor: float = 1.,
-            **kwargs
-    ):
+    def __init__(self,
+                 target: Distribution,
+                 n_samples: int = 10000,
+                 rng: np.random.Generator = None,
+                 seed: int = None,
+                 prec: np.ndarray = None,
+                 cov_factor: float = 1.,
+                 **kwargs):
         """
         Initialize the StepSampler class.
 
@@ -55,15 +54,14 @@ class StepSampler(Sampler):
         else:
             self._rng = rng
 
-        self._proposal_dist = MultivariateNormal(
-            np.zeros(self._dim),
-            np.eye(self._dim),
-            rng=self._rng
-        )
+        self._proposal_dist = MultivariateNormal(np.zeros(self._dim),
+                                                 np.eye(self._dim),
+                                                 rng=self._rng)
 
         if prec is None:
             self._prec = np.eye(self._dim, dtype=np.float64)
-        elif (prec.shape[0] == prec.shape[1] == self._dim) and (len(prec.shape) == 2):
+        elif (prec.shape[0] == prec.shape[1] == self._dim) and (len(prec.shape)
+                                                                == 2):
             self._prec = prec
         elif len(prec.shape) == 1 and len(prec) == self._dim:
             self._prec = np.diagonal(prec)
@@ -115,7 +113,8 @@ class StepSampler(Sampler):
         """
         Perform a single step.
         """
-        raise NotImplementedError("The step method must be implemented in a subclass.")
+        raise NotImplementedError(
+            "The step method must be implemented in a subclass.")
 
     @override
     def write_data(self, folder: str, precision: int = 6):
@@ -131,7 +130,9 @@ class StepSampler(Sampler):
         with open(os.path.join(folder, 'other.pkl'), 'wb') as f:
             pickle.dump(data, f)
 
-        np.savetxt(os.path.join(folder, 'samples.dat'), self.chain, fmt=f'%.{precision}e')
+        np.savetxt(os.path.join(folder, 'samples.dat'),
+                   self.chain,
+                   fmt=f'%.{precision}e')
 
 
 @register_sampler('RandomWalkMetropolis')
@@ -140,18 +141,16 @@ class RandomWalkMetropolisSampler(StepSampler):
     A class to perform sampling with the Random-Walk Metropolis algorithm.
     """
 
-    def __init__(
-            self,
-            target: Distribution,
-            sigma: float = 0.5,
-            n_samples: int = 10000,
-            rng: np.random.Generator = None,
-            seed: int = None,
-            prec: np.ndarray = None,
-            cov_factor: float = 1.,
-            x_0: np.ndarray = None,
-            **kwargs
-    ):
+    def __init__(self,
+                 target: Distribution,
+                 sigma: float = 0.5,
+                 n_samples: int = 10000,
+                 rng: np.random.Generator = None,
+                 seed: int = None,
+                 prec: np.ndarray = None,
+                 cov_factor: float = 1.,
+                 x_0: np.ndarray = None,
+                 **kwargs):
         """
         Initialize the RandomWalkMetropolisSampler class.
 
@@ -163,7 +162,12 @@ class RandomWalkMetropolisSampler(StepSampler):
         seed (int, optional): Seed for the random number generator. Default is None.
         prec (np.ndarray, optional): Preconditioner matrix. Default is None.
         """
-        super().__init__(target=target, n_samples=n_samples, rng=rng, seed=seed, prec=prec, cov_factor=cov_factor)
+        super().__init__(target=target,
+                         n_samples=n_samples,
+                         rng=rng,
+                         seed=seed,
+                         prec=prec,
+                         cov_factor=cov_factor)
         self._sigma = sigma
         self._log_density_old = 0.
         self._reset(x_0)
@@ -183,11 +187,13 @@ class RandomWalkMetropolisSampler(StepSampler):
         """
         Perform a single RWM step.
         """
-        proposal = self._state + self._sigma * self._prec_L @ self._proposal_dist.get_sample()
+        proposal = self._state + self._sigma * self._prec_L @ self._proposal_dist.get_sample(
+        )
         self._proposals[self._iter, :] = proposal
         log_density_new = self.target.log_density(proposal)
 
-        if (log_density_new - self._log_density_old) > np.log(self._rng.uniform()):
+        if (log_density_new - self._log_density_old) > np.log(
+                self._rng.uniform()):
             self._state = proposal
             self._log_density_old = log_density_new
             self._n_accept += 1
@@ -202,15 +208,22 @@ class RandomWalkMetropolisSampler(StepSampler):
         # disable tqdm if running on a cluster
         disable_tqdm = 'PBS_ENVIRONMENT' in os.environ or 'SLURM_JOB_ID' in os.environ
 
-        with tqdm(total=self._n_samples, file=sys.stdout, dynamic_ncols=False, disable=disable_tqdm) as pbar:
+        with tqdm(total=self._n_samples,
+                  file=sys.stdout,
+                  dynamic_ncols=False,
+                  disable=disable_tqdm) as pbar:
             for i in range(1, self._n_samples):
 
                 if i == 1000:
-                    self._set_preconditioner(self._cov_factor * 2.38 ** 2 / self._dim * self._get_sample_covariance())
+                    self._set_preconditioner(self._cov_factor * 2.38**2 /
+                                             self._dim *
+                                             self._get_sample_covariance())
 
                 if i % self._rescale_interval == 0:
                     logger.info(f"Iteration: {i}")
-                    logger.info(f"Acceptance rate: {self._n_accept_last / self._rescale_interval}")
+                    logger.info(
+                        f"Acceptance rate: {self._n_accept_last / self._rescale_interval}"
+                    )
                     if self._n_accept_last / self._rescale_interval < 0.2:
                         self._set_preconditioner(0.9 * self._prec)
                         logger.info("Decrease")
@@ -220,7 +233,8 @@ class RandomWalkMetropolisSampler(StepSampler):
                     self._n_accept_last = 0
                 self._step()
                 pbar.update()
-        logger.info(f"Total acceptance rate: {self._n_accept / self._n_samples}")
+        logger.info(
+            f"Total acceptance rate: {self._n_accept / self._n_samples}")
 
 
 @register_sampler('LangevinDynamics')
@@ -252,7 +266,12 @@ class LangevinDynamicsSampler(StepSampler):
         rng (np.random.Generator, optional): Random number generator. Default is None.
         seed (int, optional): Seed for the random number generator. Default is None.
         """
-        super().__init__(target=target, n_samples=n_samples, rng=rng, seed=seed, prec=prec, cov_factor=cov_factor)
+        super().__init__(target=target,
+                         n_samples=n_samples,
+                         rng=rng,
+                         seed=seed,
+                         prec=prec,
+                         cov_factor=cov_factor)
         self.sigma_ = sigma
         self.log_density_ = 0.
         self.grad_log_density_ = np.zeros(self._dim, dtype=np.float64)
@@ -267,7 +286,8 @@ class LangevinDynamicsSampler(StepSampler):
         self.log_density_ = self.target.log_density(self._state)
         self.grad_log_density_ = self.target.grad_log_density(self._state)
 
-    def _log_proposal_density(self, y: np.ndarray, x: np.ndarray, grad_x: np.ndarray) -> float:
+    def _log_proposal_density(self, y: np.ndarray, x: np.ndarray,
+                              grad_x: np.ndarray) -> float:
         """
         Calculate the log proposal density.
 
@@ -279,8 +299,9 @@ class LangevinDynamicsSampler(StepSampler):
         Returns:
         float: The log proposal density.
         """
-        diff = y - x - 0.5 * self.sigma_ ** 2 * self._prec @ grad_x
-        return - 0.5 * np.linalg.norm(np.linalg.solve(self.sigma_ * self._prec_L, diff))**2
+        diff = y - x - 0.5 * self.sigma_**2 * self._prec @ grad_x
+        return -0.5 * np.linalg.norm(
+            np.linalg.solve(self.sigma_ * self._prec_L, diff))**2
 
     def _step(self):
         """
@@ -288,14 +309,17 @@ class LangevinDynamicsSampler(StepSampler):
         """
         self.randn_ = self._proposal_dist.get_sample()
         # self.randn_ = np.array([0.8037, -1.715])
-        prop = (self._state + self.sigma_ * self._prec_L @ self.randn_
-                + 0.5 * self.sigma_ ** 2 * self._prec @ self.grad_log_density_)
+        prop = (self._state + self.sigma_ * self._prec_L @ self.randn_ +
+                0.5 * self.sigma_**2 * self._prec @ self.grad_log_density_)
         log_density_prop = self.target.log_density(prop)
         grad_log_density_prop = self.target.grad_log_density(prop)
-        log_numerator = log_density_prop + self._log_proposal_density(self._state, prop, grad_log_density_prop)
-        log_denominator = self.log_density_ + self._log_proposal_density(prop, self._state, self.grad_log_density_)
+        log_numerator = log_density_prop + self._log_proposal_density(
+            self._state, prop, grad_log_density_prop)
+        log_denominator = self.log_density_ + self._log_proposal_density(
+            prop, self._state, self.grad_log_density_)
 
-        if not self.adjusted_ or ((log_numerator - log_denominator) > np.log(self._rng.uniform())):
+        if not self.adjusted_ or ((log_numerator - log_denominator) > np.log(
+                self._rng.uniform())):
             self._state = prop
             self.chain[self._iter, :] = prop
             self.log_density_ = log_density_prop
@@ -312,15 +336,21 @@ class LangevinDynamicsSampler(StepSampler):
         # disable tqdm if running on a cluster
         disable_tqdm = 'PBS_ENVIRONMENT' in os.environ or 'SLURM_JOB_ID' in os.environ
 
-        with tqdm(total=self._n_samples, file=sys.stdout, dynamic_ncols=False, disable=disable_tqdm) as pbar:
+        with tqdm(total=self._n_samples,
+                  file=sys.stdout,
+                  dynamic_ncols=False,
+                  disable=disable_tqdm) as pbar:
             for i in range(1, self._n_samples):
                 if i == 1000:
-                    self._set_preconditioner(
-                        self._cov_factor * np.power(self._dim, -1. / 3.) * self._get_sample_covariance())
+                    self._set_preconditioner(self._cov_factor *
+                                             np.power(self._dim, -1. / 3.) *
+                                             self._get_sample_covariance())
 
                 if i % self._rescale_interval == 0:
                     logger.info(f"Iteration: {i}")
-                    logger.info(f"Acceptance rate: {self._n_accept_last / self._rescale_interval}")
+                    logger.info(
+                        f"Acceptance rate: {self._n_accept_last / self._rescale_interval}"
+                    )
                     if self._n_accept_last / self._rescale_interval < 0.5:
                         self._set_preconditioner(0.9 * self._prec)
                         logger.info("Decrease")
@@ -339,20 +369,18 @@ class HamiltonianMonteCarlo(StepSampler):
     Hamiltonian Monte Carlo (HMC) sampler class for sampling from a target distribution using HMC.
     """
 
-    def __init__(
-            self,
-            target: Distribution,
-            step_scale: float = 0.1,
-            leap_frog_steps: int = 20,
-            n_samples: int = 10000,
-            prec: np.ndarray = None,
-            rng: np.random.Generator = None,
-            seed: int = None,
-            plot: bool = False,
-            x_0: np.ndarray = None,
-            plot_limits: Tuple[float, float] = None,
-            **kwargs
-    ):
+    def __init__(self,
+                 target: Distribution,
+                 step_scale: float = 0.1,
+                 leap_frog_steps: int = 20,
+                 n_samples: int = 10000,
+                 prec: np.ndarray = None,
+                 rng: np.random.Generator = None,
+                 seed: int = None,
+                 plot: bool = False,
+                 x_0: np.ndarray = None,
+                 plot_limits: Tuple[float, float] = None,
+                 **kwargs):
         """
         Initialize the HamiltonianMonteCarlo class.
 
@@ -368,7 +396,11 @@ class HamiltonianMonteCarlo(StepSampler):
         plot_limits (Tuple[float, float], optional): Limits for the plot. Default is None.
         plot_joint (bool, optional): Whether to plot the joint distribution. Default is False.
         """
-        super().__init__(target=target, n_samples=n_samples, rng=rng, seed=seed, prec=prec)
+        super().__init__(target=target,
+                         n_samples=n_samples,
+                         rng=rng,
+                         seed=seed,
+                         prec=prec)
 
         self._step_scale = step_scale
         self._leap_frog_steps = leap_frog_steps
@@ -386,7 +418,8 @@ class HamiltonianMonteCarlo(StepSampler):
         else:
             self._plot = False
 
-    def _leap_frog_step(self, p0: np.ndarray, q0: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def _leap_frog_step(self, p0: np.ndarray,
+                        q0: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
         Perform a single leapfrog step.
 
@@ -413,9 +446,10 @@ class HamiltonianMonteCarlo(StepSampler):
         Returns:
         float: The Hamiltonian value.
         """
-        potential = - self.target.log_density(q)
+        potential = -self.target.log_density(q)
         kinetic = 0.5 * p @ self._prec_inv @ p
-        kinetic = kinetic + 0.5 * np.log((2. * np.pi) ** self._dim * self._prec_det)
+        kinetic = kinetic + 0.5 * np.log(
+            (2. * np.pi)**self._dim * self._prec_det)
 
         return potential + kinetic
 
@@ -432,11 +466,12 @@ class HamiltonianMonteCarlo(StepSampler):
         hamiltonian_0 = self._get_hamiltonian(p_0, q_0)
 
         for i in range(1, self._leap_frog_steps + 1):
-            p_hist[i, :], q_hist[i, :] = self._leap_frog_step(p_hist[i - 1, :], q_hist[i - 1, :])
+            p_hist[i, :], q_hist[i, :] = self._leap_frog_step(
+                p_hist[i - 1, :], q_hist[i - 1, :])
 
         hamiltonian = self._get_hamiltonian(p_hist[-1, :], q_hist[-1, :])
 
-        accept = (- hamiltonian + hamiltonian_0) > np.log(self._rng.uniform())
+        accept = (-hamiltonian + hamiltonian_0) > np.log(self._rng.uniform())
         if accept:
             self._state = q_hist[-1, :]
             self._n_accepted += 1
@@ -454,7 +489,11 @@ class HamiltonianMonteCarlo(StepSampler):
                 # self._ax.arrow(q_0[0], self._p_old, 0, p_0[0] - self._p_old, alpha=0.5,
                 #                color='k', width=aw, length_includes_head=True, head_width=7*aw)
                 # self._ax.plot(*q_hist.transpose(), *p_hist.transpose(), marker=".", markersize=4.)
-                self._ax.plot(*q_hist.transpose(), *p_hist.transpose(), marker=".", markersize=4., color=color)
+                self._ax.plot(*q_hist.transpose(),
+                              *p_hist.transpose(),
+                              marker=".",
+                              markersize=4.,
+                              color=color)
 
                 if accept:
                     self._p_old = p_hist[-1, 0]
@@ -470,7 +509,10 @@ class HamiltonianMonteCarlo(StepSampler):
         # disable tqdm if running on a cluster
         disable_tqdm = 'PBS_ENVIRONMENT' in os.environ or 'SLURM_JOB_ID' in os.environ
 
-        with tqdm(total=self._n_samples, file=sys.stdout, dynamic_ncols=False, disable=disable_tqdm) as pbar:
+        with tqdm(total=self._n_samples,
+                  file=sys.stdout,
+                  dynamic_ncols=False,
+                  disable=disable_tqdm) as pbar:
             for i in range(1, self._n_samples):
                 self._step()
                 pbar.update()
@@ -516,15 +558,22 @@ class HamiltonianMonteCarlo(StepSampler):
         for i in range(self._gx.shape[0]):
             for j in range(self._gx.shape[1]):
                 if self._dim == 2:
-                    self._gz[i, j] = np.exp(self.target.log_density(np.array(
-                        [self._gx[i, j],
-                         self._gy[i, j]]
-                    )))
+                    self._gz[i, j] = np.exp(
+                        self.target.log_density(
+                            np.array([self._gx[i, j], self._gy[i, j]])))
                 else:
-                    self._gz[i, j] = np.exp(self.target.log_density(np.array([self._gx[i, j]])) +
-                                            self._proposal_dist.log_density(np.array([self._gy[i, j]])))
+                    self._gz[i, j] = np.exp(
+                        self.target.log_density(np.array([self._gx[i, j]])) +
+                        self._proposal_dist.log_density(
+                            np.array([self._gy[i, j]])))
 
-        self._ax.contour(self._gx, self._gy, self._gz, levels=20, zorder=1, alpha=0.3, linewidths=1.5)
+        self._ax.contour(self._gx,
+                         self._gy,
+                         self._gz,
+                         levels=20,
+                         zorder=1,
+                         alpha=0.3,
+                         linewidths=1.5)
         self._fig.ax_marg_x.plot(self._gx[0], self._gz[0])
         self._fig.ax_marg_y.plot(self._gz[:, 0], self._gy[:, 0])
 
@@ -543,20 +592,19 @@ class NaiveNUTS(StepSampler):
     """
     Naive version of the No-U-Turn sampler (NUTS)
     """
-    def __init__(
-            self,
-            target: Distribution,
-            epsilon: float = 0.1,
-            n_samples: int = 10000,
-            prec: np.ndarray = None,
-            rng: np.random.Generator = None,
-            seed: int = None,
-            x_0: np.ndarray = None,
-            plot: bool = False,
-            plot_limits: Tuple[float, float] = None,
-            delta_max: float = 1000.,
-            **kwargs
-    ):
+
+    def __init__(self,
+                 target: Distribution,
+                 epsilon: float = 0.1,
+                 n_samples: int = 10000,
+                 prec: np.ndarray = None,
+                 rng: np.random.Generator = None,
+                 seed: int = None,
+                 x_0: np.ndarray = None,
+                 plot: bool = False,
+                 plot_limits: Tuple[float, float] = None,
+                 delta_max: float = 1000.,
+                 **kwargs):
         """Naive version of the No-U-Turn sampler (NUTS).
 
         Args:
@@ -571,7 +619,11 @@ class NaiveNUTS(StepSampler):
             plot_limits (Tuple[float, float], optional): Limits for the plot. Defaults to None.
             delta_max (float, optional): Maximum energy difference threshold. Defaults to 1000.
         """
-        super().__init__(target=target, n_samples=n_samples, rng=rng, seed=seed, prec=prec)
+        super().__init__(target=target,
+                         n_samples=n_samples,
+                         rng=rng,
+                         seed=seed,
+                         prec=prec)
 
         self._n_evals = np.zeros(n_samples, dtype=int)
 
@@ -605,7 +657,11 @@ class NaiveNUTS(StepSampler):
             This method is only applicable if the dimensionality of the target distribution
             is 1 or 2 and the `plot` parameter is set to True during initialization.
         """
-        sns.set_theme(style="ticks", rc={"axes.spines.right": False,"axes.spines.top": False})
+        sns.set_theme(style="ticks",
+                      rc={
+                          "axes.spines.right": False,
+                          "axes.spines.top": False
+                      })
 
         if plot_limits is None:
             x_lim = [-2, 2]
@@ -617,7 +673,7 @@ class NaiveNUTS(StepSampler):
         ratio = abs((x_lim[1] - x_lim[0]) / (y_lim[1] - y_lim[0]))
         size = 5.
 
-        self._fig, self._ax = plt.subplots(figsize=(size + 1, size/ratio + 1))
+        self._fig, self._ax = plt.subplots(figsize=(size + 1, size / ratio + 1))
 
         x = np.linspace(x_lim[0], x_lim[1], 100)
         y = np.linspace(y_lim[0], y_lim[1], 100)
@@ -627,15 +683,22 @@ class NaiveNUTS(StepSampler):
         for i in range(self._gx.shape[0]):
             for j in range(self._gx.shape[1]):
                 if self._dim == 2:
-                    self._gz[i, j] = np.exp(self.target.log_density(np.array(
-                        [self._gx[i, j],
-                         self._gy[i, j]]
-                    )))
+                    self._gz[i, j] = np.exp(
+                        self.target.log_density(
+                            np.array([self._gx[i, j], self._gy[i, j]])))
                 else:
-                    self._gz[i, j] = np.exp(self.target.log_density(np.array([self._gx[i, j]])) +
-                                            self._proposal_dist.log_density(np.array([self._gy[i, j]])))
+                    self._gz[i, j] = np.exp(
+                        self.target.log_density(np.array([self._gx[i, j]])) +
+                        self._proposal_dist.log_density(
+                            np.array([self._gy[i, j]])))
 
-        self._ax.contour(self._gx, self._gy, self._gz, levels=20, zorder=1, alpha=0.3, linewidths=1.5)
+        self._ax.contour(self._gx,
+                         self._gy,
+                         self._gz,
+                         levels=20,
+                         zorder=1,
+                         alpha=0.3,
+                         linewidths=1.5)
 
         if self._dim == 1:
             self._ax.set_xlabel(r"$p(\theta)$")
@@ -646,13 +709,8 @@ class NaiveNUTS(StepSampler):
         self._fig.tight_layout()
         self._fig.show()
 
-    def _leap_frog_step(
-            self,
-            p0: np.ndarray,
-            q0: np.ndarray,
-            v: int,
-            epsilon: float
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    def _leap_frog_step(self, p0: np.ndarray, q0: np.ndarray, v: int,
+                        epsilon: float) -> Tuple[np.ndarray, np.ndarray]:
         """Perform a single leapfrog step.
 
         Args:
@@ -668,7 +726,7 @@ class NaiveNUTS(StepSampler):
         """
         p = p0 + v * epsilon * 0.5 * self.target.grad_log_density(q0)
         q = q0 + v * epsilon * self._prec_inv @ p
-        p = p +  v * epsilon * 0.5 * self.target.grad_log_density(q)
+        p = p + v * epsilon * 0.5 * self.target.grad_log_density(q)
         return p, q
 
     def _get_hamiltonian(self, p: np.ndarray, q: np.ndarray) -> float:
@@ -681,9 +739,10 @@ class NaiveNUTS(StepSampler):
         Returns:
             float: The Hamiltonian value.
         """
-        potential = - self.target.log_density(q)
+        potential = -self.target.log_density(q)
         kinetic = 0.5 * p @ self._prec_inv @ p
-        kinetic = kinetic + 0.5 * np.log((2. * np.pi) ** self._dim * self._prec_det)
+        kinetic = kinetic + 0.5 * np.log(
+            (2. * np.pi)**self._dim * self._prec_det)
 
         return potential + kinetic
 
@@ -704,10 +763,17 @@ class NaiveNUTS(StepSampler):
                 continue
             if segment['type'] == "reject":
                 color = 'C3'
-            self._ax.plot(*np.array([segment["from"], segment["to"]]).T, color=color, alpha=0.8)
+            self._ax.plot(*np.array([segment["from"], segment["to"]]).T,
+                          color=color,
+                          alpha=0.8)
             self._ax.scatter(*segment["to"], color=color, marker='.', alpha=0.8)
 
-        self._ax.scatter(*self._state, color='C5', marker='.', s=100, alpha=1., zorder=10)
+        self._ax.scatter(*self._state,
+                         color='C5',
+                         marker='.',
+                         s=100,
+                         alpha=1.,
+                         zorder=10)
 
     def _step(self):
         """Perform a single NUTS step.
@@ -735,37 +801,45 @@ class NaiveNUTS(StepSampler):
             # base case: take a single leap-frog step
             if j == 0:
                 C_prime = []
-                p_prime, q_prime = self._leap_frog_step(p, q, v, self._step_scale)
+                p_prime, q_prime = self._leap_frog_step(p, q, v,
+                                                        self._step_scale)
                 ham = self._get_hamiltonian(p, q)
 
-                if u < np.exp(- ham):
+                if u < np.exp(-ham):
                     C_prime.append((p_prime, q_prime))
-                    trajectory.append({"type": "accept", "from": q, "to": q_prime})
+                    trajectory.append({
+                        "type": "accept",
+                        "from": q,
+                        "to": q_prime
+                    })
                 else:
-                    trajectory.append({"type": "reject", "from": q, "to": q_prime})
+                    trajectory.append({
+                        "type": "reject",
+                        "from": q,
+                        "to": q_prime
+                    })
 
                 s_prime = int(np.log(u) < self._delta_max - ham)
 
                 return p_prime, q_prime, p_prime, q_prime, C_prime, s_prime
 
-
             # build left and right subtrees recursively
             # (each subtree has a left and right subtree, if not a node)
             else:
-                p_minus, q_minus, p_plus, q_plus, C_prime, s_prime = build_tree(p, q, u, v, j - 1)
+                p_minus, q_minus, p_plus, q_plus, C_prime, s_prime = build_tree(
+                    p, q, u, v, j - 1)
 
                 if v == -1:
-                    p_minus, q_minus, _, _, C_prime_prime, s_prime_prime = build_tree(p_minus, q_minus, u, v, j - 1)
+                    p_minus, q_minus, _, _, C_prime_prime, s_prime_prime = build_tree(
+                        p_minus, q_minus, u, v, j - 1)
                 else:
-                    _, _, p_plus, q_plus, C_prime_prime, s_prime_prime = build_tree(p_plus, q_plus, u, v, j - 1)
+                    _, _, p_plus, q_plus, C_prime_prime, s_prime_prime = build_tree(
+                        p_plus, q_plus, u, v, j - 1)
 
                 # update stopping condition
-                s_prime = (
-                        s_prime
-                        * s_prime_prime
-                        * int(np.dot((q_plus - q_minus), p_minus) > 0.0)
-                        * int(np.dot((q_plus - q_minus), p_plus) > 0.0)
-                )
+                s_prime = (s_prime * s_prime_prime *
+                           int(np.dot((q_plus - q_minus), p_minus) > 0.0) *
+                           int(np.dot((q_plus - q_minus), p_plus) > 0.0))
 
                 # update candidate set C'
                 C_prime.extend(C_prime_prime)
@@ -777,7 +851,7 @@ class NaiveNUTS(StepSampler):
         hamiltonian_0 = self._get_hamiltonian(p_0, self._state)
 
         # sample u for slice sampling
-        u = self._rng.random() * np.exp(- hamiltonian_0)
+        u = self._rng.random() * np.exp(-hamiltonian_0)
 
         # init the position and momemtum variables for this iteration
         q_plus = q_minus = self._state
@@ -793,19 +867,18 @@ class NaiveNUTS(StepSampler):
             v = self._rng.choice([-1, 1])
             if v == -1:
                 trajectory.append({"type": "left"})
-                p_minus, q_minus, _, _, C_prime, s_prime = build_tree(p_minus, q_minus, u, v, j)
+                p_minus, q_minus, _, _, C_prime, s_prime = build_tree(
+                    p_minus, q_minus, u, v, j)
             else:
                 trajectory.append({"type": "right"})
-                _, _, p_plus, q_plus, C_prime, s_prime = build_tree(p_plus, q_plus, u, v, j)
+                _, _, p_plus, q_plus, C_prime, s_prime = build_tree(
+                    p_plus, q_plus, u, v, j)
 
             if s_prime == 1:
                 C.extend(C_prime)
 
-            s = (
-                    s_prime *
-                    int(np.dot((q_plus - q_minus), p_minus) > 0.0) *
-                    int(np.dot((q_plus - q_minus), p_plus) > 0.0)
-            )
+            s = (s_prime * int(np.dot((q_plus - q_minus), p_minus) > 0.0) *
+                 int(np.dot((q_plus - q_minus), p_plus) > 0.0))
             j += 1
 
         # select a random point from C and update chain and state
@@ -822,13 +895,14 @@ class NaiveNUTS(StepSampler):
     @override
     def run(self):
         # disable tqdm if running on a cluster or in pycharm
-        disable_tqdm = (
-                'PBS_ENVIRONMENT' in os.environ
-                or 'SLURM_JOB_ID' in os.environ
-                or 'GIO_LAUNCHED_DESKTOP_FILE' in os.environ
-        )
+        disable_tqdm = ('PBS_ENVIRONMENT' in os.environ or
+                        'SLURM_JOB_ID' in os.environ or
+                        'GIO_LAUNCHED_DESKTOP_FILE' in os.environ)
 
-        with tqdm(total=self._n_samples, file=sys.stdout, dynamic_ncols=False, disable=disable_tqdm) as pbar:
+        with tqdm(total=self._n_samples,
+                  file=sys.stdout,
+                  dynamic_ncols=False,
+                  disable=disable_tqdm) as pbar:
             for i in range(1, self._n_samples):
                 self._step()
                 pbar.update()
@@ -841,11 +915,9 @@ class NaiveNUTS(StepSampler):
     @override
     def write_data(self, folder: str, precision: int = 6):
         super().write_data(folder, precision)
-        np.savetxt(
-            os.path.join(folder, 'n_evals.dat'),
-            np.cumsum(self._n_evals),
-            fmt=f'%d'
-        )
+        np.savetxt(os.path.join(folder, 'n_evals.dat'),
+                   np.cumsum(self._n_evals),
+                   fmt=f'%d')
 
 
 @register_sampler('EfficientNUTS')
@@ -853,11 +925,8 @@ class EfficientNUTS(NaiveNUTS):
     """
     Efficient NUTS sampler class for sampling from a target distribution using the base version of the algorithm.
     """
-    def __init__(
-            self,
-            target: Distribution,
-            **kwargs
-    ):
+
+    def __init__(self, target: Distribution, **kwargs):
         """ Initialize the HamiltonianMonteCarlo class.
 
         Args:
@@ -877,12 +946,9 @@ class EfficientNUTS(NaiveNUTS):
         trajectory = []
 
         def build_tree(
-                p: np.ndarray,
-                q: np.ndarray,
-                u: np.ndarray,
-                v: int,
-                j: int
-        ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, int]:
+            p: np.ndarray, q: np.ndarray, u: np.ndarray, v: int, j: int
+        ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray,
+                   int, int]:
             """Build a tree of leap frog steps.
 
             Args:
@@ -903,33 +969,40 @@ class EfficientNUTS(NaiveNUTS):
             """
             # base case: take a single leap-frog step
             if j == 0:
-                p_prime, q_prime = self._leap_frog_step(p, q, v, self._step_scale)
+                p_prime, q_prime = self._leap_frog_step(p, q, v,
+                                                        self._step_scale)
                 ham = self._get_hamiltonian(p_prime, q_prime)
-                n_prime = int(u < np.exp(- ham))
+                n_prime = int(u < np.exp(-ham))
                 s_prime = int(np.log(u) < self._delta_max - ham)
 
                 if self._plot:
                     if n_prime:
-                        trajectory.append({"type": "accept", "from": q, "to": q_prime})
+                        trajectory.append({
+                            "type": "accept",
+                            "from": q,
+                            "to": q_prime
+                        })
                     else:
-                        trajectory.append({"type": "reject", "from": q, "to": q_prime})
-
+                        trajectory.append({
+                            "type": "reject",
+                            "from": q,
+                            "to": q_prime
+                        })
 
                 return p_prime, q_prime, p_prime, q_prime, q_prime, n_prime, s_prime
 
             # build left and right subtrees recursively
             # (each subtree has a left and right subtree, if not a node)
             else:
-                p_minus, q_minus, p_plus, q_plus, q_prime, n_prime, s_prime = build_tree(p, q, u, v, j - 1)
+                p_minus, q_minus, p_plus, q_plus, q_prime, n_prime, s_prime = build_tree(
+                    p, q, u, v, j - 1)
 
                 if v == -1:
                     p_minus, q_minus, _, _, q_prime_prime, n_prime_prime, s_prime_prime = build_tree(
-                        p_minus, q_minus, u, v, j - 1
-                    )
+                        p_minus, q_minus, u, v, j - 1)
                 else:
                     _, _, p_plus, q_plus, q_prime_prime, n_prime_prime, s_prime_prime = build_tree(
-                        p_plus, q_plus, u, v, j - 1
-                    )
+                        p_plus, q_plus, u, v, j - 1)
 
                 # draw move from q' to q'' and update number leaves in candidate set C'
                 n_sum = n_prime + n_prime_prime
@@ -939,12 +1012,9 @@ class EfficientNUTS(NaiveNUTS):
                 n_prime = n_sum
 
                 # update stopping condition
-                s_prime = (
-                        s_prime
-                        * s_prime_prime
-                        * int(np.dot((q_plus - q_minus), p_minus) > 0.0)
-                        * int(np.dot((q_plus - q_minus), p_plus) > 0.0)
-                )
+                s_prime = (s_prime * s_prime_prime *
+                           int(np.dot((q_plus - q_minus), p_minus) > 0.0) *
+                           int(np.dot((q_plus - q_minus), p_plus) > 0.0))
 
             return p_minus, q_minus, p_plus, q_plus, q_prime, n_prime, s_prime
 
@@ -953,7 +1023,7 @@ class EfficientNUTS(NaiveNUTS):
         hamiltonian_0 = self._get_hamiltonian(p_0, self._state)
 
         # sample u for slice sampling
-        u = self._rng.random() * np.exp(- hamiltonian_0)
+        u = self._rng.random() * np.exp(-hamiltonian_0)
 
         # init the position and momemtum variables for this iteration
         q_minus = self._state
@@ -970,21 +1040,20 @@ class EfficientNUTS(NaiveNUTS):
             v = self._rng.choice([-1, 1])
             if v == -1:
                 trajectory.append({"type": "left"})
-                p_minus, q_minus, _, _, q_prime, n_prime, s_prime = build_tree(p_minus, q_minus, u, v, j)
+                p_minus, q_minus, _, _, q_prime, n_prime, s_prime = build_tree(
+                    p_minus, q_minus, u, v, j)
             else:
                 trajectory.append({"type": "right"})
-                _, _, p_plus, q_plus, q_prime, n_prime, s_prime = build_tree(p_plus, q_plus, u, v, j)
+                _, _, p_plus, q_plus, q_prime, n_prime, s_prime = build_tree(
+                    p_plus, q_plus, u, v, j)
 
             if s_prime == 1:
                 if self._rng.binomial(1, min(1., n_prime / n)):
                     self._state = q_prime
 
             n = n + n_prime
-            s = (
-                    s_prime *
-                    int(np.dot((q_plus - q_minus), p_minus) > 0.0) *
-                    int(np.dot((q_plus - q_minus), p_plus) > 0.0)
-            )
+            s = (s_prime * int(np.dot((q_plus - q_minus), p_minus) > 0.0) *
+                 int(np.dot((q_plus - q_minus), p_plus) > 0.0))
             j += 1
 
         # update chain
@@ -994,23 +1063,23 @@ class EfficientNUTS(NaiveNUTS):
         if self._plot:
             self._plot_trajectory(trajectory)
 
+
 @register_sampler('DualAveragingNUTS')
 class DualAveragingNUTS(NaiveNUTS):
     """
     Dual averaging NUTS sampler class for sampling from a target distribution using the efficient version of the
     algorithm with dual averaging of the step size epsilon.
     """
-    def __init__(
-            self,
-            target: Distribution,
-            epsilon_bar_0: float = 1.,
-            gamma: float = 0.05,
-            t_0: int = 10,
-            kappa: float = 0.75,
-            M_adapt: int = 1000,
-            target_acceptance_rate: float = 0.65,
-            **kwargs
-    ):
+
+    def __init__(self,
+                 target: Distribution,
+                 epsilon_bar_0: float = 1.,
+                 gamma: float = 0.05,
+                 t_0: int = 10,
+                 kappa: float = 0.75,
+                 M_adapt: int = 1000,
+                 target_acceptance_rate: float = 0.65,
+                 **kwargs):
         """
         Initialize the HamiltonianMonteCarlo class.
 
@@ -1050,9 +1119,11 @@ class DualAveragingNUTS(NaiveNUTS):
         epsilon = 1.
         p = self._prec_L @ self._proposal_dist.get_sample()
         p_prime, q_prime = self._leap_frog_step(p, self._state, 1, epsilon)
-        a = 2 * (np.exp( - self._get_hamiltonian(p_prime, q_prime) + self._get_hamiltonian(p, self._state)) > 0.5) - 1.
+        a = 2 * (np.exp(-self._get_hamiltonian(p_prime, q_prime) +
+                        self._get_hamiltonian(p, self._state)) > 0.5) - 1.
 
-        while np.exp(- self._get_hamiltonian(p_prime, q_prime) + self._get_hamiltonian(p, self._state))**a > 2**(-a):
+        while np.exp(-self._get_hamiltonian(p_prime, q_prime) +
+                     self._get_hamiltonian(p, self._state))**a > 2**(-a):
             epsilon = epsilon * 2.**a
             p_prime, q_prime = self._leap_frog_step(p, self._state, 1, epsilon)
         return epsilon
@@ -1062,15 +1133,10 @@ class DualAveragingNUTS(NaiveNUTS):
         trajectory = []
 
         def build_tree(
-                p: np.ndarray,
-                q: np.ndarray,
-                u: np.ndarray,
-                v: int,
-                j: int,
-                epsilon: float,
-                p_0: np.ndarray,
-                q_0: np.ndarray
-        ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, int, float, int]:
+            p: np.ndarray, q: np.ndarray, u: np.ndarray, v: int, j: int,
+            epsilon: float, p_0: np.ndarray, q_0: np.ndarray
+        ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray,
+                   int, int, float, int]:
             """Build a tree of leap frog steps.
 
             Args:
@@ -1101,16 +1167,23 @@ class DualAveragingNUTS(NaiveNUTS):
                 p_p, q_p = self._leap_frog_step(p, q, v, epsilon)
                 ham_1 = self._get_hamiltonian(p_p, q_p)
                 ham_0 = self._get_hamiltonian(p_0, q_0)
-                n_p = int(u < np.exp(- ham_1))
+                n_p = int(u < np.exp(-ham_1))
                 s_p = int(np.log(u) < self._delta_max - ham_1)
-                alpha = min(1., np.exp(- ham_1 + ham_0))
+                alpha = min(1., np.exp(-ham_1 + ham_0))
 
                 if self._plot:
                     if n_p:
-                        trajectory.append({"type": "accept", "from": q, "to": q_p})
+                        trajectory.append({
+                            "type": "accept",
+                            "from": q,
+                            "to": q_p
+                        })
                     else:
-                        trajectory.append({"type": "reject", "from": q, "to": q_p})
-
+                        trajectory.append({
+                            "type": "reject",
+                            "from": q,
+                            "to": q_p
+                        })
 
                 return p_p, q_p, p_p, q_p, q_p, n_p, s_p, alpha, 1
 
@@ -1118,17 +1191,14 @@ class DualAveragingNUTS(NaiveNUTS):
             # (each subtree has a left and right subtree, if not a node)
             else:
                 p_minus, q_minus, p_plus, q_plus, q_p, n_p, s_p, a_p, n_a_p = build_tree(
-                    p, q, u, v, j - 1, epsilon, p_0, q_0
-                )
+                    p, q, u, v, j - 1, epsilon, p_0, q_0)
 
                 if v == -1:
                     p_minus, q_minus, _, _, q_p_p, n_p_p, s_p_p, a_p_p, n_a_p_p = build_tree(
-                        p_minus, q_minus, u, v, j - 1, epsilon, p_0, q_0
-                    )
+                        p_minus, q_minus, u, v, j - 1, epsilon, p_0, q_0)
                 else:
                     _, _, p_plus, q_plus, q_p_p, n_p_p, s_p_p, a_p_p, n_a_p_p = build_tree(
-                        p_plus, q_plus, u, v, j - 1, epsilon, p_0, q_0
-                    )
+                        p_plus, q_plus, u, v, j - 1, epsilon, p_0, q_0)
 
                 # update all quantities
                 n_sum = n_p + n_p_p
@@ -1140,12 +1210,9 @@ class DualAveragingNUTS(NaiveNUTS):
                 a_p = a_p + a_p_p
                 n_a_p = n_a_p + n_a_p_p
 
-                s_prime = (
-                        s_p
-                        * s_p_p
-                        * int(np.dot((q_plus - q_minus), p_minus) > 0.0)
-                        * int(np.dot((q_plus - q_minus), p_plus) > 0.0)
-                )
+                s_prime = (s_p * s_p_p *
+                           int(np.dot((q_plus - q_minus), p_minus) > 0.0) *
+                           int(np.dot((q_plus - q_minus), p_plus) > 0.0))
 
             return p_minus, q_minus, p_plus, q_plus, q_p, n_p, s_p, a_p, n_a_p
 
@@ -1154,7 +1221,7 @@ class DualAveragingNUTS(NaiveNUTS):
         hamiltonian_0 = self._get_hamiltonian(p_0, self._state)
 
         # sample u for slice sampling
-        u = self._rng.random() * np.exp(- hamiltonian_0)
+        u = self._rng.random() * np.exp(-hamiltonian_0)
 
         # init the position and momemtum variables for this iteration
         q_minus = self._state
@@ -1172,38 +1239,33 @@ class DualAveragingNUTS(NaiveNUTS):
             if v == -1:
                 trajectory.append({"type": "left"})
                 p_minus, q_minus, _, _, q_prime, n_prime, s_prime, a, n_a = build_tree(
-                    p_minus, q_minus, u, v, j, self._epsilon, p_0, self._state
-                )
+                    p_minus, q_minus, u, v, j, self._epsilon, p_0, self._state)
             else:
                 trajectory.append({"type": "right"})
                 _, _, p_plus, q_plus, q_prime, n_prime, s_prime, a, n_a = build_tree(
-                    p_plus, q_plus, u, v, j, self._epsilon, p_0, self._state
-                )
+                    p_plus, q_plus, u, v, j, self._epsilon, p_0, self._state)
 
             if s_prime == 1:
                 if self._rng.binomial(1, min(1., n_prime / n)):
                     self._state = q_prime
 
             n = n + n_prime
-            s = (
-                    s_prime *
-                    int(np.dot((q_plus - q_minus), p_minus) > 0.0) *
-                    int(np.dot((q_plus - q_minus), p_plus) > 0.0)
-            )
+            s = (s_prime * int(np.dot((q_plus - q_minus), p_minus) > 0.0) *
+                 int(np.dot((q_plus - q_minus), p_plus) > 0.0))
             j += 1
 
         self._acceptance_rate += a / n_a / self._n_samples
 
         # update H_bar, epsilon, and epsilon_bar
         if self._iter <= self._M_adapt:
-            self._H_bar = (
-                    (1 - 1 / (self._iter + self._t_0)) * self._H_bar
-                    + 1 / (self._iter + self._t_0) * (self._delta - a / n_a)
-            )
+            self._H_bar = ((1 - 1 /
+                            (self._iter + self._t_0)) * self._H_bar + 1 /
+                           (self._iter + self._t_0) * (self._delta - a / n_a))
 
             log_eps = self._mu - np.sqrt(self._iter) / self._gamma * self._H_bar
-            term_1 = self._iter ** (-self._kappa) * log_eps
-            term_2 = (1 - self._iter**(-self._kappa)) * np.log(self._epsilon_bar)
+            term_1 = self._iter**(-self._kappa) * log_eps
+            term_2 = (1 - self._iter**(-self._kappa)) * np.log(
+                self._epsilon_bar)
 
             self._epsilon = np.exp(log_eps)
             self._epsilon_bar = np.exp(term_1 + term_2)
@@ -1241,7 +1303,10 @@ if __name__ == '__main__':
     n_samples = 20000
     # MALA = LangevinDynamicsSampler(posterior, n_samples=n_samples, sigma=np.sqrt(1.5), adjusted=True, rng=rng,
     #                                prec=cov)
-    Sampler = RandomWalkMetropolisSampler(posterior, n_samples=n_samples, sigma=np.sqrt(1.5), rng=rng,
+    Sampler = RandomWalkMetropolisSampler(posterior,
+                                          n_samples=n_samples,
+                                          sigma=np.sqrt(1.5),
+                                          rng=rng,
                                           prec=cov)
     Sampler.run()
     samples = Sampler.chain
@@ -1255,8 +1320,11 @@ if __name__ == '__main__':
 
     for i in range(gx.shape[0]):
         for j in range(gx.shape[1]):
-            gz[i, j] = np.exp(posterior.log_density(np.array([gx[i, j], gy[i, j]])))
-            grad_z[i, j, :] = posterior.grad_log_density(np.array([gx[i, j], gy[i, j]]))
+            gz[i,
+               j] = np.exp(posterior.log_density(np.array([gx[i, j], gy[i,
+                                                                        j]])))
+            grad_z[i, j, :] = posterior.grad_log_density(
+                np.array([gx[i, j], gy[i, j]]))
 
     fig, ax = plt.subplots()
     ax.axis('equal')
@@ -1269,7 +1337,10 @@ if __name__ == '__main__':
     # ax.contour(gx, gy, gz, levels=levels, zorder=1)
     samples_plot = samples[0::n_samples // n_vis]
     # ax.scatter(*samples[2000::n_samples//n_vis].transpose(), s=3, zorder=2, c=np.linspace(0, 1, n_vis))
-    ax.scatter(*samples_plot.transpose(), s=3, zorder=2, c=np.linspace(0, 1, samples_plot.shape[0]))
+    ax.scatter(*samples_plot.transpose(),
+               s=3,
+               zorder=2,
+               c=np.linspace(0, 1, samples_plot.shape[0]))
     # ax.scatter(*SPN.transpose(), s=5)
     fig.show()
 

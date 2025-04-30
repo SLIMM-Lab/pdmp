@@ -5,18 +5,22 @@ from pdmp.surrogates import SurrogateModel
 
 SAMPLER_REGISTRY = {}
 
+
 def register_sampler(name):
     """Register a sampler class.
 
     Args:
         name (str): The name of the sampler.
     """
+
     def decorator(cls):
         if name in SAMPLER_REGISTRY:
             raise ValueError(f"Sampler {name} is already registered.")
         SAMPLER_REGISTRY[name] = cls
         return cls
+
     return decorator
+
 
 class Sampler:
     """Base class for samplers."""
@@ -25,12 +29,11 @@ class Sampler:
         pass
 
     @classmethod
-    def from_dict(
-            cls,
-            target: Distribution,
-            rng: np.random.Generator,
-            surrogate: SurrogateModel = None,
-            **kwargs):
+    def from_dict(cls,
+                  target: Distribution,
+                  rng: np.random.Generator,
+                  surrogate: SurrogateModel = None,
+                  **kwargs):
         """Create a sampler from a configuration dictionary.
 
         Args:

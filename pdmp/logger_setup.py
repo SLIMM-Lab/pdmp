@@ -13,7 +13,9 @@ def setup_logger(name: str) -> logging.Logger:
     console_handler.setLevel("WARNING")
 
     # Create a formatter
-    formatter = logging.Formatter('[%(asctime)s][%(levelname)s] %(name)s: %(message)s', datefmt='%Y-%m-%d %H:%M')
+    formatter = logging.Formatter(
+        '[%(asctime)s][%(levelname)s] %(name)s: %(message)s',
+        datefmt='%Y-%m-%d %H:%M')
     console_handler.setFormatter(formatter)
 
     # Check if the logger already has handlers. If the logger doesn't have any
@@ -27,12 +29,11 @@ def setup_logger(name: str) -> logging.Logger:
 
     return logger
 
-def setup_file_handler(
-        logger: logging.Logger,
-        log_dir: str,
-        log_file: str = "mcmc_run.log",
-        level="INFO"
-):
+
+def setup_file_handler(logger: logging.Logger,
+                       log_dir: str,
+                       log_file: str = "mcmc_run.log",
+                       level="INFO"):
 
     # create log dir and set log path
     os.makedirs(log_dir, exist_ok=True)
@@ -48,7 +49,9 @@ def setup_file_handler(
     if logger.hasHandlers():
         formatter = logger.handlers[0].formatter
     else:
-        formatter = logging.Formatter('[%(asctime)s][%(levelname)s] %(name)s: %(message)s', datefmt='%Y-%m-%d %H:%M')
+        formatter = logging.Formatter(
+            '[%(asctime)s][%(levelname)s] %(name)s: %(message)s',
+            datefmt='%Y-%m-%d %H:%M')
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 
