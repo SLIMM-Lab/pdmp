@@ -21,3 +21,4 @@ dependencies:
   - pytorch
   - gpytorch
   - arviz
+  - yapf

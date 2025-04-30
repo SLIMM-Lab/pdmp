@@ -9,14 +9,12 @@ from pdmp.distributions import Distribution, Transformation, AffineTransformtion
 from pdmp.surrogates import SurrogateModel
 
 
-def plot_samples(
-        samples: np.ndarray,
-        ax: plt.Axes,
-        color_code: bool = True,
-        n_vis: int = 500,
-        size = 3,
-        **kwargs
-) -> plt.Axes:
+def plot_samples(samples: np.ndarray,
+                 ax: plt.Axes,
+                 color_code: bool = True,
+                 n_vis: int = 500,
+                 size=3,
+                 **kwargs) -> plt.Axes:
     """
     Plot samples on a given matplotlib axes object.
 
@@ -34,19 +32,20 @@ def plot_samples(
     samples_plot = samples[0::samples.shape[0] // n_vis]
 
     if color_code:
-        ax.scatter(*samples_plot.transpose(), s=size, zorder=2, c=np.linspace(0, 1, samples_plot.shape[0]))
+        ax.scatter(*samples_plot.transpose(),
+                   s=size,
+                   zorder=2,
+                   c=np.linspace(0, 1, samples_plot.shape[0]))
     else:
         ax.scatter(*samples_plot.transpose(), s=size, zorder=2, **kwargs)
 
     return ax
 
 
-def plot_trace(
-        samples: np.ndarray,
-        components: list[int] = None,
-        keep_ticks: bool = True,
-        axis_label = '\\theta'
-) -> tuple[plt.Figure, plt.Axes]:
+def plot_trace(samples: np.ndarray,
+               components: list[int] = None,
+               keep_ticks: bool = True,
+               axis_label='\\theta') -> tuple[plt.Figure, plt.Axes]:
     """
     Plot the trace of samples
 
@@ -55,12 +54,8 @@ def plot_trace(
     components (list[int], optional): The components to plot. Default is None.
     """
 
-    def plot_one_trace(
-            ax: plt.Axes,
-            samples: np.ndarray,
-            component: int,
-            axis_label: str
-    ):
+    def plot_one_trace(ax: plt.Axes, samples: np.ndarray, component: int,
+                       axis_label: str):
 
         ax.grid(False)
 
@@ -85,7 +80,10 @@ def plot_trace(
         components = list(range(n_params))
 
     # get figure
-    fig, ax = plt.subplots(len(components), 1, figsize=(4, n_params * 2.5), constrained_layout=True,
+    fig, ax = plt.subplots(len(components),
+                           1,
+                           figsize=(4, n_params * 2.5),
+                           constrained_layout=True,
                            sharex=True)
 
     # despine the plot
@@ -103,17 +101,17 @@ def plot_trace(
 
     return fig, ax
 
-def plot_pdf_grad_contours(
-        target: Union[Distribution, SurrogateModel],
-        ax: plt.Axes,
-        plot_limits: tuple[list[float], list[float]],
-        idx: int = 0,
-        n_grid: int = 100,
-        alpha: float = 0.6,
-        levels: Union[int, np.ndarray] = None,
-        cmap: matplotlib.colors.Colormap = sns.color_palette('rocket', as_cmap=True),
-        transformation: Transformation = None
-) -> plt.Axes:
+
+def plot_pdf_grad_contours(target: Union[Distribution, SurrogateModel],
+                           ax: plt.Axes,
+                           plot_limits: tuple[list[float], list[float]],
+                           idx: int = 0,
+                           n_grid: int = 100,
+                           alpha: float = 0.6,
+                           levels: Union[int, np.ndarray] = None,
+                           cmap: matplotlib.colors.Colormap = sns.color_palette(
+                               'rocket', as_cmap=True),
+                           transformation: Transformation = None) -> plt.Axes:
     """
     Plot the probability density function (PDF) contours of a distribution.
 
@@ -141,7 +139,7 @@ def plot_pdf_grad_contours(
         levels = 20
 
     if transformation is None:
-        transformation = AffineTransformtion(M = np.eye(2), b = np.zeros(2))
+        transformation = AffineTransformtion(M=np.eye(2), b=np.zeros(2))
 
     if isinstance(target, SurrogateModel):
         f_eval = lambda x: target.grad(x, idx=idx)
@@ -159,23 +157,24 @@ def plot_pdf_grad_contours(
             x_i = np.array([X[i, j], Y[i, j]])
             xi_i = transformation.inverse_transform(x_i)
 
-            Z[i, j] = np.exp(f_eval(xi_i) - transformation.log_det_jacobian(x_i))
+            Z[i,
+              j] = np.exp(f_eval(xi_i) - transformation.log_det_jacobian(x_i))
 
     ax.contour(X, Y, Z, levels=levels, zorder=1, alpha=alpha, cmap=cmap)
 
     return ax
 
-def plot_pdf_contours(
-        target: Union[Distribution, SurrogateModel],
-        ax: plt.Axes,
-        plot_limits: tuple[list[float], list[float]],
-        n_grid: int = 100,
-        alpha: float = 0.6,
-        levels: Union[int, np.ndarray] = None,
-        log = False,
-        cmap: matplotlib.colors.Colormap = sns.color_palette('rocket', as_cmap=True),
-        transformation: Transformation = None
-) -> plt.Axes:
+
+def plot_pdf_contours(target: Union[Distribution, SurrogateModel],
+                      ax: plt.Axes,
+                      plot_limits: tuple[list[float], list[float]],
+                      n_grid: int = 100,
+                      alpha: float = 0.6,
+                      levels: Union[int, np.ndarray] = None,
+                      log=False,
+                      cmap: matplotlib.colors.Colormap = sns.color_palette(
+                          'rocket', as_cmap=True),
+                      transformation: Transformation = None) -> plt.Axes:
     """
     Plot the probability density function (PDF) contours of a distribution.
 
@@ -204,7 +203,7 @@ def plot_pdf_contours(
 
     # set identity transformation if none is given
     if transformation is None:
-        transformation = AffineTransformtion(M = np.eye(2), b = np.zeros(2))
+        transformation = AffineTransformtion(M=np.eye(2), b=np.zeros(2))
 
     if isinstance(target, SurrogateModel):
         f_eval = lambda x: target.eval(x, delta=True)
@@ -225,7 +224,8 @@ def plot_pdf_contours(
             if log:
                 Z[i, j] = f_eval(xi_i) - transformation.log_det_jacobian(x_i)
             else:
-                Z[i, j] = np.exp(f_eval(xi_i) - transformation.log_det_jacobian(x_i))
+                Z[i, j] = np.exp(
+                    f_eval(xi_i) - transformation.log_det_jacobian(x_i))
 
     ax.contour(X, Y, Z, levels=levels, zorder=1, alpha=alpha, cmap=cmap)
 
@@ -233,15 +233,16 @@ def plot_pdf_contours(
 
 
 def plot_pfd_contour_conditional(
-        target: [Distribution, SurrogateModel],
-        ax: plt.Axes,
-        plot_limits: tuple[list[float], list[float]],
-        slice: np.ndarray,
-        idcs_plane: tuple[int, int] = (0, 1),
-        n_grid: int = 100,
-        alpha: float = 0.6,
-        n_levels: int = 20,
-        cmap: matplotlib.colors.ListedColormap = sns.color_palette('rocket', as_cmap=True)
+    target: [Distribution, SurrogateModel],
+    ax: plt.Axes,
+    plot_limits: tuple[list[float], list[float]],
+    slice: np.ndarray,
+    idcs_plane: tuple[int, int] = (0, 1),
+    n_grid: int = 100,
+    alpha: float = 0.6,
+    n_levels: int = 20,
+    cmap: matplotlib.colors.ListedColormap = sns.color_palette('rocket',
+                                                               as_cmap=True)
 ) -> plt.Axes:
     """
     Plot the conditional probability density function (PDF) contours of a distribution.
@@ -282,15 +283,14 @@ def plot_pfd_contour_conditional(
     return ax
 
 
-def plot_pfd_contour_marginal(
-        samples: np.ndarray,
-        ax: plt.Axes,
-        idcs: tuple[int, int] = (0, 1),
-        alpha: float = 0.6,
-        n_levels: int = 15,
-        cmap: matplotlib.colors.ListedColormap = sns.color_palette('rocket', as_cmap=True),
-        **kde_kwargs
-) -> plt.Axes:
+def plot_pfd_contour_marginal(samples: np.ndarray,
+                              ax: plt.Axes,
+                              idcs: tuple[int, int] = (0, 1),
+                              alpha: float = 0.6,
+                              n_levels: int = 15,
+                              cmap: matplotlib.colors.ListedColormap = sns.
+                              color_palette('rocket', as_cmap=True),
+                              **kde_kwargs) -> plt.Axes:
     """
     Plot the probability density function (PDF) contours of a multivariate normal distribution.
 
@@ -306,7 +306,13 @@ def plot_pfd_contour_marginal(
     plt.Axes: The matplotlib axes object with the PDF contours plotted.
     """
 
-    sns.kdeplot(x=samples[:, idcs[0]], y=samples[:, idcs[1]],
-                ax=ax, cmap=cmap, levels=n_levels, alpha=alpha, zorder=1, **kde_kwargs)
+    sns.kdeplot(x=samples[:, idcs[0]],
+                y=samples[:, idcs[1]],
+                ax=ax,
+                cmap=cmap,
+                levels=n_levels,
+                alpha=alpha,
+                zorder=1,
+                **kde_kwargs)
 
     return ax

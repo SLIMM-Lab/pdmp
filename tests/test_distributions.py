@@ -3,8 +3,10 @@ import numpy as np
 from scipy.stats import multivariate_normal, wishart, lognorm
 from scipy.optimize import minimize
 
-from pdmp.distributions import (MultivariateNormal, CubicDistribution, GaussianLikelihood, TemperedLikelihood,
-                                FlatLikelihood, Posterior, AffineTransformtion, ExponentialTransformation,
+from pdmp.distributions import (MultivariateNormal, CubicDistribution,
+                                GaussianLikelihood, TemperedLikelihood,
+                                FlatLikelihood, Posterior, AffineTransformtion,
+                                ExponentialTransformation,
                                 TransformedDistribution, TransformedLikelihood)
 from pdmp.utils import grad_fd, hessian_fd
 from pdmp.forward_model import LinearModel
@@ -26,13 +28,18 @@ def test_multivariate_normal():
     # test pdf
     sample = mvn.get_sample()
     assert len(sample) == d
-    assert np.isclose(mvn.log_density(sample), multivariate_normal.logpdf(sample, mean, cov))
+    assert np.isclose(mvn.log_density(sample),
+                      multivariate_normal.logpdf(sample, mean, cov))
 
     # test gradient
-    assert np.allclose(mvn.grad_log_density(sample), grad_fd(mvn.log_density, sample), atol=1e-5)
+    assert np.allclose(mvn.grad_log_density(sample),
+                       grad_fd(mvn.log_density, sample),
+                       atol=1e-5)
 
     # test hessian
-    assert np.allclose(mvn.hessian_log_density(sample), hessian_fd(mvn.log_density, sample), atol=1e-5)
+    assert np.allclose(mvn.hessian_log_density(sample),
+                       hessian_fd(mvn.log_density, sample),
+                       atol=1e-5)
 
     # test sampling
     n_samples = 100000
@@ -62,18 +69,23 @@ def test_cubic():
 
     # test gradient
     sample = mvn.get_sample()
-    assert np.allclose(cubic.grad_log_density(sample), grad_fd(cubic.log_density, sample), atol=1e-5)
+    assert np.allclose(cubic.grad_log_density(sample),
+                       grad_fd(cubic.log_density, sample),
+                       atol=1e-5)
 
     # test hessian
-    assert np.allclose(cubic.hessian_log_density(sample), hessian_fd(cubic.log_density, sample), atol=1e-5)
+    assert np.allclose(cubic.hessian_log_density(sample),
+                       hessian_fd(cubic.log_density, sample),
+                       atol=1e-5)
 
     # test limits
-    assert np.isclose(np.exp(cubic.log_density(np.ones(d)*(-LARGE))), 0.0)
-    assert np.isclose(np.exp(cubic.log_density(np.ones(d)*LARGE)), 0.0)
+    assert np.isclose(np.exp(cubic.log_density(np.ones(d) * (-LARGE))), 0.0)
+    assert np.isclose(np.exp(cubic.log_density(np.ones(d) * LARGE)), 0.0)
 
     # test symmetry around the mean
     delta = rng.random(d)
-    assert np.isclose(cubic.log_density(mean + delta), cubic.log_density(mean - delta))
+    assert np.isclose(cubic.log_density(mean + delta),
+                      cubic.log_density(mean - delta))
     assert np.allclose(cubic.grad_log_density(mean), np.zeros(d))
     hess = cubic.hessian_log_density(mean)
     assert np.allclose(hess, hess.T)
@@ -84,15 +96,15 @@ def test_likelihood():
 
     rng = np.random.default_rng(0)
 
-    n, m, n_obs = rng.integers(2,10, size=3)
-    A = np.array(rng.integers(2, 5, size=(n,m)), dtype=float)
-    b = np.array(rng.integers(0,5, size=n), dtype=float)
+    n, m, n_obs = rng.integers(2, 10, size=3)
+    A = np.array(rng.integers(2, 5, size=(n, m)), dtype=float)
+    b = np.array(rng.integers(0, 5, size=n), dtype=float)
     model = LinearModel(A, b)
     x_true = 2 * np.array(rng.random(size=m), dtype=float) + 1
     y_true = model.eval(x_true)
     sig_obs = 0.5
     noise = rng.normal(0, sig_obs, size=(n_obs, n))
-    y_obs = np.vstack(n_obs*(y_true,)) + noise
+    y_obs = np.vstack(n_obs * (y_true,)) + noise
 
     # prior
     prior_mean = rng.random(m)
@@ -106,10 +118,13 @@ def test_likelihood():
     posterior = Posterior(prior, gaussian_likelihood)
 
     # get MAP estimate
-    n_log_post = lambda x: - posterior.log_density(x)
-    grad_n_log_post = lambda x: - posterior.grad_log_density(x)
-    post_mean_num = minimize(n_log_post, prior_mean, jac=grad_n_log_post, method='BFGS').x
-    cov_num = np.linalg.inv(- posterior.hessian_log_density(post_mean_num))
+    n_log_post = lambda x: -posterior.log_density(x)
+    grad_n_log_post = lambda x: -posterior.grad_log_density(x)
+    post_mean_num = minimize(n_log_post,
+                             prior_mean,
+                             jac=grad_n_log_post,
+                             method='BFGS').x
+    cov_num = np.linalg.inv(-posterior.hessian_log_density(post_mean_num))
 
     # get analytical solution
     S_y = np.eye(n) * sig_obs**2
@@ -125,31 +140,49 @@ def test_likelihood():
 
     # --------------------------- Test TemperedLikelihood ---------------------------
     # test beta = 0
-    tempered_likelihood = TemperedLikelihood(likelihood=gaussian_likelihood, beta=0.0)
+    tempered_likelihood = TemperedLikelihood(likelihood=gaussian_likelihood,
+                                             beta=0.0)
     posterior = Posterior(prior, tempered_likelihood)
     sample = prior.get_sample()
-    assert np.isclose(posterior.log_density(sample), prior.log_density(sample), atol=1e-5)
-    assert np.allclose(posterior.grad_log_density(sample), prior.grad_log_density(sample), atol=1e-5)
-    assert np.allclose(posterior.hessian_log_density(sample), prior.hessian_log_density(sample), atol=1e-5)
+    assert np.isclose(posterior.log_density(sample),
+                      prior.log_density(sample),
+                      atol=1e-5)
+    assert np.allclose(posterior.grad_log_density(sample),
+                       prior.grad_log_density(sample),
+                       atol=1e-5)
+    assert np.allclose(posterior.hessian_log_density(sample),
+                       prior.hessian_log_density(sample),
+                       atol=1e-5)
 
     # test beta = 1
-    tempered_likelihood = TemperedLikelihood(likelihood=gaussian_likelihood, beta=1.0)
+    tempered_likelihood = TemperedLikelihood(likelihood=gaussian_likelihood,
+                                             beta=1.0)
     tempered_posterior = Posterior(prior, tempered_likelihood)
     posterior = Posterior(prior, gaussian_likelihood)
-    assert np.isclose(tempered_posterior.log_density(sample), posterior.log_density(sample), atol=1e-5)
-    assert np.allclose(tempered_posterior.grad_log_density(sample), posterior.grad_log_density(sample), atol=1e-5)
-    assert np.allclose(tempered_posterior.hessian_log_density(sample), posterior.hessian_log_density(sample), atol=1e-5)
+    assert np.isclose(tempered_posterior.log_density(sample),
+                      posterior.log_density(sample),
+                      atol=1e-5)
+    assert np.allclose(tempered_posterior.grad_log_density(sample),
+                       posterior.grad_log_density(sample),
+                       atol=1e-5)
+    assert np.allclose(tempered_posterior.hessian_log_density(sample),
+                       posterior.hessian_log_density(sample),
+                       atol=1e-5)
 
     # test beta = random
-    beta = 0.1 + 0.8*rng.random()
-    tempered_likelihood = TemperedLikelihood(likelihood=gaussian_likelihood, beta=beta)
+    beta = 0.1 + 0.8 * rng.random()
+    tempered_likelihood = TemperedLikelihood(likelihood=gaussian_likelihood,
+                                             beta=beta)
     posterior = Posterior(prior, tempered_likelihood)
 
     # get MAP estimate
-    n_log_post = lambda x: - posterior.log_density(x)
-    grad_n_log_post = lambda x: - posterior.grad_log_density(x)
-    post_mean_num = minimize(n_log_post, prior_mean, jac=grad_n_log_post, method='BFGS').x
-    cov_num = np.linalg.inv(- posterior.hessian_log_density(post_mean_num))
+    n_log_post = lambda x: -posterior.log_density(x)
+    grad_n_log_post = lambda x: -posterior.grad_log_density(x)
+    post_mean_num = minimize(n_log_post,
+                             prior_mean,
+                             jac=grad_n_log_post,
+                             method='BFGS').x
+    cov_num = np.linalg.inv(-posterior.hessian_log_density(post_mean_num))
 
     # get analytical solution
     S_y = np.eye(n) * sig_obs**2
@@ -164,12 +197,18 @@ def test_likelihood():
     assert np.allclose(cov_num, post_cov, atol=1e-5)
 
     # --------------------------- Test FlatLikelihood ---------------------------
-    flat_likelihood = FlatLikelihood(dim = m)
+    flat_likelihood = FlatLikelihood(dim=m)
     posterior = Posterior(prior, flat_likelihood)
     sample = prior.get_sample()
-    assert np.isclose(posterior.log_density(sample), prior.log_density(sample), atol=1e-5)
-    assert np.allclose(posterior.grad_log_density(sample), prior.grad_log_density(sample), atol=1e-5)
-    assert np.allclose(posterior.hessian_log_density(sample), prior.hessian_log_density(sample), atol=1e-5)
+    assert np.isclose(posterior.log_density(sample),
+                      prior.log_density(sample),
+                      atol=1e-5)
+    assert np.allclose(posterior.grad_log_density(sample),
+                       prior.grad_log_density(sample),
+                       atol=1e-5)
+    assert np.allclose(posterior.hessian_log_density(sample),
+                       prior.hessian_log_density(sample),
+                       atol=1e-5)
 
 
 def test_transformation():
@@ -185,15 +224,21 @@ def test_transformation():
     mvn_2 = MultivariateNormal(mean, cov)
 
     # get transformed distribution
-    mvn_tr = TransformedDistribution(
-        base_distribution=mvn_2,
-        params={'transformation': 'Affine', 'M': cov, 'b': mean}
-    )
+    mvn_tr = TransformedDistribution(base_distribution=mvn_2,
+                                     params={
+                                         'transformation': 'Affine',
+                                         'M': cov,
+                                         'b': mean
+                                     })
 
     x = rng.random(d)
     assert np.isclose(mvn_1.log_density(x), mvn_tr.log_density(x), atol=1e-5)
-    assert np.allclose(mvn_1.grad_log_density(x), mvn_tr.grad_log_density(x), atol=1e-5)
-    assert np.allclose(mvn_1.hessian_log_density(x), mvn_tr.hessian_log_density(x), atol=1e-5)
+    assert np.allclose(mvn_1.grad_log_density(x),
+                       mvn_tr.grad_log_density(x),
+                       atol=1e-5)
+    assert np.allclose(mvn_1.hessian_log_density(x),
+                       mvn_tr.hessian_log_density(x),
+                       atol=1e-5)
 
     # --------------------------- Test ExponentialTransformation ---------------------------
     cov = np.array([[1.]])
@@ -208,7 +253,9 @@ def test_transformation():
     for i in range(len(x)):
         xi = t.inverse_transform(x[i])
         y[i] = normal.log_density(xi)[0] - np.log(t.log_det_jacobian(x[i]))
-        y_sp[i] = lognorm.logpdf(x[i], s=np.sqrt(cov[0,0]), scale=np.exp(mean[0]))
+        y_sp[i] = lognorm.logpdf(x[i],
+                                 s=np.sqrt(cov[0, 0]),
+                                 scale=np.exp(mean[0]))
 
     assert np.allclose(y, y_sp, atol=1e-5)
 
@@ -224,6 +271,6 @@ def test_transformation():
     hess_fd = np.zeros((d, d, d))
 
     for i in range(d):
-        hess_fd[:,:,i] = grad_fd(lambda x: t.jacobian(x)[i], x)
+        hess_fd[:, :, i] = grad_fd(lambda x: t.jacobian(x)[i], x)
 
     assert np.allclose(hess, hess_fd, atol=1e-5)

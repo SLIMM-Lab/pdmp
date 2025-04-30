@@ -11,6 +11,7 @@ LARGE = 1e10
 
 
 class Basis:
+
     def __init__(self, n: int):
         """
         Initialize the Basis class.
@@ -57,7 +58,9 @@ class Basis:
         """
         pass
 
+
 class PiecewiseConstantBasis(Basis):
+
     def __init__(self, n: int, interval: Tuple[float, float]):
         """
         Initialize the PiecewiseConstantBasis class.
@@ -72,15 +75,11 @@ class PiecewiseConstantBasis(Basis):
 
         for i in range(self.n_):
             self.basis_.append(
-                lambda x, i=i: np.piecewise(
-                    x,
-                    [x < (i / self.n_),
-                    x == (i / self.n_),
-                    ((i / self.n_) < x) & (x < ((i + 1) / self.n_)),
-                    x == ((i + 1) / self.n_),
-                    x > ((i + 1) / self.n_)], [0, 0.5, 1, 0.5, 0]
-                )
-            )
+                lambda x, i=i: np.piecewise(x, [
+                    x < (i / self.n_), x == (i / self.n_), ((i / self.n_) < x) &
+                    (x < ((i + 1) / self.n_)), x == ((i + 1) / self.n_), x > (
+                        (i + 1) / self.n_)
+                ], [0, 0.5, 1, 0.5, 0]))
 
         self.support_[:, 0] = np.linspace(interval[0], interval[1], n + 1)[:-1]
         self.support_[:, 1] = np.linspace(interval[0], interval[1], n + 1)[1:]
@@ -118,7 +117,12 @@ class PiecewiseConstantBasis(Basis):
         else:
             return self.support_[i]
 
-def squared_exponential_kernel(x: np.ndarray, y: np.ndarray, sigma: float = 1.0, l: float = 1.0, **kwargs) -> float:
+
+def squared_exponential_kernel(x: np.ndarray,
+                               y: np.ndarray,
+                               sigma: float = 1.0,
+                               l: float = 1.0,
+                               **kwargs) -> float:
     """
     Compute the squared exponential kernel between two points.
 
@@ -132,9 +136,11 @@ def squared_exponential_kernel(x: np.ndarray, y: np.ndarray, sigma: float = 1.0,
     Returns:
     float: The computed kernel value.
     """
-    return sigma ** 2 * np.exp(-((x - y) ** 2) / (2 * l ** 2))
+    return sigma**2 * np.exp(-((x - y)**2) / (2 * l**2))
 
-def compute_coefficients(kernel: Callable[[np.ndarray, np.ndarray, float, float], float],
+
+def compute_coefficients(kernel: Callable[
+    [np.ndarray, np.ndarray, float, float], float],
                          basis: Basis,
                          interval: Tuple[float, float],
                          weights: Callable[[np.ndarray], float] = None,
@@ -159,7 +165,8 @@ def compute_coefficients(kernel: Callable[[np.ndarray, np.ndarray, float, float]
         weights = lambda x: 1.
 
     def integrand(x: np.ndarray, y: np.ndarray, p: int, q: int) -> np.ndarray:
-        return kernel(x, y, **kernel_params) * basis(x, p) * basis(y, q) * weights(x) * weights(y)
+        return kernel(x, y, **kernel_params) * basis(x, p) * basis(
+            y, q) * weights(x) * weights(y)
 
     coefficients = np.zeros((n, n))
     coefficients_norm = np.zeros((n, n))
@@ -172,14 +179,15 @@ def compute_coefficients(kernel: Callable[[np.ndarray, np.ndarray, float, float]
                      np.min([interval[1], basis.get_support(i)[1]]))
             int_y = (np.max([interval[0], basis.get_support(j)[0]]),
                      np.min([interval[1], basis.get_support(j)[1]]))
-            coefficients[i, j], tol = integrate.nquad(integrand, [int_x, int_y], args=(i, j))
+            coefficients[i, j], tol = integrate.nquad(integrand, [int_x, int_y],
+                                                      args=(i, j))
             logger.debug(f"     {coefficients[i, j]:.4}")
 
     # normalize the coefficients
     for i in range(n):
         for j in range(i, n):
-            coefficients_norm[i, j] = coefficients_norm[j, i] = coefficients[i, j] / np.sqrt(
-                coefficients[i, i] * coefficients[j, j])
+            coefficients_norm[i, j] = coefficients_norm[j, i] = coefficients[
+                i, j] / np.sqrt(coefficients[i, i] * coefficients[j, j])
 
     logger.debug(f"Normalized coefficientes:\n {coefficients_norm}")
 
@@ -210,9 +218,7 @@ def monte_carlo_2d(func: Callable[[np.ndarray, np.ndarray], np.ndarray],
 
 
 def get_gaussian_random_field_projection_from_dict(
-        config: Dict[str, Any],
-        **kwargs
-) -> tuple[np.ndarray, np.ndarray]:
+        config: Dict[str, Any], **kwargs) -> tuple[np.ndarray, np.ndarray]:
     """
     Load the projection configuration.
 
@@ -228,12 +234,10 @@ def get_gaussian_random_field_projection_from_dict(
     interval = config.get('interval', (0, 1))
     d = config['dim']
     mean = np.ones(d) * config['mean']
-    cov = compute_coefficients(
-        squared_exponential_kernel,
-        PiecewiseConstantBasis(d, interval),
-        interval,
-        kernel_params=kernel_params
-    )
+    cov = compute_coefficients(squared_exponential_kernel,
+                               PiecewiseConstantBasis(d, interval),
+                               interval,
+                               kernel_params=kernel_params)
 
     return mean, cov
 
@@ -245,7 +249,10 @@ if __name__ == '__main__':
     n_b = 5
     interval = (0, 1)
     basis = PiecewiseConstantBasis(n_b, interval)
-    coefficients = compute_coefficients(squared_exponential_kernel, basis, interval, kernel_params=kernel_params)
+    coefficients = compute_coefficients(squared_exponential_kernel,
+                                        basis,
+                                        interval,
+                                        kernel_params=kernel_params)
 
     # Test the basis functions
     fig, ax = plt.subplots(1, 1, figsize=(10, 5))

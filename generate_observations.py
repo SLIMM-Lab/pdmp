@@ -13,6 +13,7 @@ from pdmp.loader import yaml_to_numpy
 from pdmp.distributions import get_prior, AffineTransformtion, ExponentialTransformation
 from pdmp.forward_model import get_model
 
+
 def parse_args():
     """
     Parse the command line arguments.
@@ -31,10 +32,8 @@ def parse_args():
 
     return parser.parse_args()
 
-def generate_observations(
-        config: dict[str, Any],
-        rng: np.random.Generator
-):
+
+def generate_observations(config: dict[str, Any], rng: np.random.Generator):
     """
     Generate observations.
 
@@ -76,18 +75,18 @@ def generate_observations(
             ground_truth = ExponentialTransformation().transform(ground_truth)
         elif llh_config['transformation'] == 'AffineTransform':
             ground_truth = AffineTransformtion(
-                llh_config['b'],
-                llh_config['M']
-            ).transform(ground_truth)
+                llh_config['b'], llh_config['M']).transform(ground_truth)
 
     # init array
     obs = np.zeros((n_obs, model.get_dim_out()))
 
     for i in range(n_obs):
-        obs[i] = model.eval(ground_truth, idx=i) + rng.normal(0, sigma, model.get_dim_out())
+        obs[i] = model.eval(ground_truth, idx=i) + rng.normal(
+            0, sigma, model.get_dim_out())
 
     # write observations to file
     np.savetxt(os.path.join('observations.dat'), obs)
+
 
 def main():
 
@@ -106,6 +105,7 @@ def main():
     # init rng and generate observations
     rng = np.random.default_rng(config.get('seed', 0))
     generate_observations(config, rng)
+
 
 if __name__ == '__main__':
 

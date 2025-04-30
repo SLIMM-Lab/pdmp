@@ -10,6 +10,7 @@ class Model:
     """
     Base class for the forward model
     """
+
     def __init__(self):
         pass
 
@@ -82,10 +83,12 @@ class Model:
         """
         raise NotImplementedError
 
+
 class PiecewiseConstantModel(Model):
     """
     Forward model for deformation of a 1d bar with piecewise constant Young's modulus
     """
+
     def __init__(self, F: np.ndarray, n_params: int, x_obs: np.ndarray):
         """
         Initialize the model
@@ -102,7 +105,8 @@ class PiecewiseConstantModel(Model):
         self.x_obs_ = x_obs  # Observations
 
         self.n_params = n_params  # Number of parameters
-        self.params = sy.symbols([f'p_{str(i)}' for i in range(n_params)])  # Symbolic parameters
+        self.params = sy.symbols([f'p_{str(i)}' for i in range(n_params)
+                                 ])  # Symbolic parameters
         self.params_val = np.zeros(n_params)  # Initial parameter values
         self.x = sy.symbols('x')  # Symbolic variable x
         self.u = sy.symbols('u', cls=sy.Function)  # Symbolic function u
@@ -111,7 +115,9 @@ class PiecewiseConstantModel(Model):
         # Define Young's modulus as a piecewise function
         self.E = offset + (self.params[0] - offset) * sy.Heaviside(self.x)
         for i in range(n_params - 1):
-            self.E += (self.params[i + 1] - self.params[i]) * sy.Heaviside(self.x - (i + 1) / self.n_params)
+            self.E += (self.params[i + 1] -
+                       self.params[i]) * sy.Heaviside(self.x -
+                                                      (i + 1) / self.n_params)
         self.E = self.E.rewrite(sy.Piecewise)
         logger.debug("Young's modulus:")
         logger.debug(f"  {self.E}")
@@ -121,28 +127,41 @@ class PiecewiseConstantModel(Model):
 
         # Define piecewise functions for u
         for i in range(self.n_params):
-            u_i.append(sy.S((self.x - (i/self.n_params)) / self.params[i]))
+            u_i.append(sy.S((self.x - (i / self.n_params)) / self.params[i]))
             conditions.append(sy.S(self.x < (i + 1) / self.n_params))
             for j in range(i):
                 u_i[i] += (1 / self.n_params) / self.params[j]
 
         conditions[-1] = sy.S('1')  # Last condition is always true
-        self.u = self.F * sy.Piecewise(*zip(u_i, conditions))  # Define u as a piecewise function
-        self.u_np = sy.lambdify((self.x, self.F, *self.params), self.u, 'numpy')  # Convert u to a numpy function
+        self.u = self.F * sy.Piecewise(*zip(
+            u_i, conditions))  # Define u as a piecewise function
+        self.u_np = sy.lambdify((self.x, self.F, *self.params), self.u,
+                                'numpy')  # Convert u to a numpy function
 
         # Compute gradient of u with respect to parameters
         gradient = [sy.diff(self.u, param) for param in self.params]
         logger.debug("Gradient:")
         [logger.debug("  " + grad.__str__()) for grad in gradient]
-        self.gradient = [sy.lambdify((self.x, self.F, *self.params), grad, 'numpy') for grad in gradient]
+        self.gradient = [
+            sy.lambdify((self.x, self.F, *self.params), grad, 'numpy')
+            for grad in gradient
+        ]
 
         # Compute Hessian of u with respect to parameters
-        hessian = [[sy.diff(grad, param) for param in self.params] for grad in gradient]
+        hessian = [
+            [sy.diff(grad, param) for param in self.params] for grad in gradient
+        ]
         logger.debug("Hessian:")
-        [[logger.debug("  " + hess.__str__()) for hess in hessian_row] for hessian_row in hessian]
-        self.hessian = [[sy.lambdify((self.x, self.F, *self.params), hess, 'numpy') for hess in hessian_row] for hessian_row in hessian]
+        [[logger.debug("  " + hess.__str__())
+          for hess in hessian_row]
+         for hessian_row in hessian]
+        self.hessian = [[
+            sy.lambdify((self.x, self.F, *self.params), hess, 'numpy')
+            for hess in hessian_row
+        ]
+                        for hessian_row in hessian]
 
-    def eval_E(self, params: np.ndarray,x: np.ndarray) -> np.ndarray:
+    def eval_E(self, params: np.ndarray, x: np.ndarray) -> np.ndarray:
         """
         Evaluate Young's modulus at given x values
         Args:
@@ -151,10 +170,15 @@ class PiecewiseConstantModel(Model):
         Returns:
             np.ndarray: Young's modulus evaluated at x
         """
-        E = self.E.subs([*zip(self.params, params)])  # Substitute parameter values into E
-        return np.array([E.subs(self.x, x_i) for x_i in x])  # Evaluate E at each x value
+        E = self.E.subs([*zip(self.params, params)
+                        ])  # Substitute parameter values into E
+        return np.array([E.subs(self.x, x_i) for x_i in x
+                        ])  # Evaluate E at each x value
 
-    def eval(self, params: np.ndarray, x: np.ndarray=None, idx: int=None) -> np.ndarray:
+    def eval(self,
+             params: np.ndarray,
+             x: np.ndarray = None,
+             idx: int = None) -> np.ndarray:
         """
         Evaluate displacements u at given x locations for setting idx
         Args:
@@ -171,14 +195,17 @@ class PiecewiseConstantModel(Model):
             idx = 0  # Default index is 0
 
         if len(params) == self.n_params:
-            return self.u_np(x, self.F_vals[idx], *params)  # Evaluate u with given parameters
+            return self.u_np(x, self.F_vals[idx],
+                             *params)  # Evaluate u with given parameters
         else:
             if len(params.shape) == 1:
                 params = params[:, None]  # Reshape parameters if necessary
-            assert params.shape[1] == self.n_params, "Array dimensions do not match"
-            return self.u_np(x, self.F_vals[idx], *[param[:, None] for param in params.T])
+            assert params.shape[
+                1] == self.n_params, "Array dimensions do not match"
+            return self.u_np(x, self.F_vals[idx],
+                             *[param[:, None] for param in params.T])
 
-    def eval_grad(self, params: np.ndarray, x: np.ndarray=None, idx: int=0):
+    def eval_grad(self, params: np.ndarray, x: np.ndarray = None, idx: int = 0):
         """
         Evaluate gradient of u with respect to parameters
         Args:
@@ -193,9 +220,15 @@ class PiecewiseConstantModel(Model):
 
         if idx is None:
             idx = 0  # Default index is 0
-        return np.array([[grad(x_i, self.F_vals[idx], *params) for grad in self.gradient] for x_i in x])  # Evaluate gradient
+        return np.array(
+            [[grad(x_i, self.F_vals[idx], *params)
+              for grad in self.gradient]
+             for x_i in x])  # Evaluate gradient
 
-    def eval_hessian(self, params: np.ndarray, x: np.ndarray=None, idx: int=0) -> np.ndarray:
+    def eval_hessian(self,
+                     params: np.ndarray,
+                     x: np.ndarray = None,
+                     idx: int = 0) -> np.ndarray:
         """
         Evaluate Hessian of u with respect to parameters
         Args:
@@ -211,11 +244,13 @@ class PiecewiseConstantModel(Model):
         if idx is None:
             idx = 0  # Default index is 0
 
-        hessian = np.zeros((len(x), self.n_params, self.n_params))  # Initialize Hessian array
+        hessian = np.zeros(
+            (len(x), self.n_params, self.n_params))  # Initialize Hessian array
         for i, x_i in enumerate(x):
             for j, hessian_row in enumerate(self.hessian):
                 for k, hess in enumerate(hessian_row):
-                    hessian[i, j, k] = hess(x_i, self.F_vals[idx], *params)  # Evaluate Hessian
+                    hessian[i, j, k] = hess(x_i, self.F_vals[idx],
+                                            *params)  # Evaluate Hessian
         return hessian
 
     def get_dim_in(self) -> int:
@@ -265,13 +300,13 @@ class PiecewiseConstantModel(Model):
 
 
 def get_piececwise_constant_model(
-        n_params: int,
-        n_obs_loc: int,
-        n_obs: int = 1,
-        sigma_obs: float = 0.025,
-        mean: float = 4.,
-        rng: np.random.Generator = np.random.default_rng(0),
-        kernel_params: dict[str, float]=None
+    n_params: int,
+    n_obs_loc: int,
+    n_obs: int = 1,
+    sigma_obs: float = 0.025,
+    mean: float = 4.,
+    rng: np.random.Generator = np.random.default_rng(0),
+    kernel_params: dict[str, float] = None
 ) -> tuple[PiecewiseConstantModel, np.ndarray, np.ndarray, np.ndarray]:
     """
     Get a piecewise constant model with noisy observations
@@ -294,7 +329,10 @@ def get_piececwise_constant_model(
     # get the prior field
     interval = (0, 1)
     basis = PiecewiseConstantBasis(n_params, interval)
-    prior_cov = compute_coefficients(squared_exponential_kernel, basis, interval, kernel_params=kernel_params)
+    prior_cov = compute_coefficients(squared_exponential_kernel,
+                                     basis,
+                                     interval,
+                                     kernel_params=kernel_params)
 
     # define observation locations
     x_obs = np.linspace(0, 1, n_obs_loc + 1)[1:]
@@ -322,6 +360,7 @@ class LinearModel(Model):
     """
     Forward model for a linear system (mainly for testing purposes)
     """
+
     def __init__(self, A: np.ndarray, b: np.ndarray):
         """
         Initialize the model
@@ -399,6 +438,7 @@ class LinearModel(Model):
         """
         return self.dim_out_
 
+
 def get_model(config: dict):
     """
     Get a model from a configuration dictionary
@@ -414,6 +454,7 @@ def get_model(config: dict):
     else:
         raise ValueError(f"Model {config['name']} not recognized.")
 
+
 if __name__ == '__main__':
 
     # Example piecewise constant model
@@ -421,7 +462,8 @@ if __name__ == '__main__':
     x_obs = np.array([0.1, 0.2])
     n_params = 2
     model = PiecewiseConstantModel(F, n_params, x_obs)
-    print(model.eval_E(np.array([0.1, 0.2]), np.array([0.1, 0.2, 0.3, 0.6, 1.1])))
+    print(
+        model.eval_E(np.array([0.1, 0.2]), np.array([0.1, 0.2, 0.3, 0.6, 1.1])))
 
     # x = np.linspace(0, 1, 100)
     x = np.array([0.1, 0.2, 0.3, 0.6, 1.0])

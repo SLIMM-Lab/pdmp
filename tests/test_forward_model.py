@@ -27,6 +27,7 @@ def test_linear_model():
     hess_finite_diff = hessian_fd(model.eval, x, n=n)
     assert np.allclose(hess, hess_finite_diff, atol=1e-5)
 
+
 def test_piecewise_constant_model():
 
     rng = np.random.default_rng(0)

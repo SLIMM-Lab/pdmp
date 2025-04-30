@@ -13,10 +13,9 @@ from pdmp.mcmc import StepSampler
 from pdmp.zigzag import ZigZagSampler
 from pdmp.surrogates import SurrogateModel, SURROGATE_REGISTRY
 
-def get_target(
-        config: dict[str, Any],
-        rng: np.random.Generator
-) -> Union[Distribution, Posterior]:
+
+def get_target(config: dict[str, Any],
+               rng: np.random.Generator) -> Union[Distribution, Posterior]:
     """Load the problem configuration.
 
     Args:
@@ -38,7 +37,8 @@ def get_target(
     elif config['name'] == 'BayesianInverse':
         # check if config has the necessary keys
         if 'prior' not in config or 'likelihood' not in config:
-            raise ValueError("Parameters must include 'prior' and 'likelihood'.")
+            raise ValueError(
+                "Parameters must include 'prior' and 'likelihood'.")
 
         # get the prior distribution and the model
         prior = get_prior(config['prior'], rng=rng)
@@ -53,13 +53,11 @@ def get_target(
     else:
         raise ValueError(f"Problem {config['name']} not recognized.")
 
-def get_sampler(
-        config: dict[str, Any],
-        target: Distribution,
-        surrogate: SurrogateModel = None,
-        rng: np.random.Generator = None
 
-) -> Sampler:
+def get_sampler(config: dict[str, Any],
+                target: Distribution,
+                surrogate: SurrogateModel = None,
+                rng: np.random.Generator = None) -> Sampler:
     """Load the sampler configuration.
 
     Args:
@@ -81,17 +79,14 @@ def get_sampler(
     if sampler_class is None:
         raise ValueError(
             f"Sampler {config['name']} not recognized.\n"
-            f"available models: \n  {list(SAMPLER_REGISTRY.keys())}"
-        )
+            f"available models: \n  {list(SAMPLER_REGISTRY.keys())}")
 
     return sampler_class.from_dict(target, rng, surrogate=surrogate, **config)
 
 
-def get_surrogate(
-        config: dict[str, Any],
-        target: Distribution,
-        rng: np.random.Generator = None
-) -> SurrogateModel:
+def get_surrogate(config: dict[str, Any],
+                  target: Distribution,
+                  rng: np.random.Generator = None) -> SurrogateModel:
     """Get a surrogate model from a dictionary.
 
     Args:
@@ -109,8 +104,7 @@ def get_surrogate(
     if surrogate_class is None:
         raise ValueError(
             f"Surrogate {config['name']} not recognized.\n"
-            f"available models: \n  {list(SURROGATE_REGISTRY.keys())}"
-        )
+            f"available models: \n  {list(SURROGATE_REGISTRY.keys())}")
 
     return surrogate_class.from_dict(target, rng, **config)
 
@@ -132,13 +126,19 @@ def yaml_to_numpy(data: Any, exclude_keys: set = None) -> Any:
 
     if isinstance(data, dict):
         # Process dictionaries recursively
-        return {key: yaml_to_numpy(value, exclude_keys) if key not in exclude_keys else value
-                for key, value in data.items()}
+        return {
+            key:
+                yaml_to_numpy(value, exclude_keys)
+                if key not in exclude_keys else value
+            for key, value in data.items()
+        }
     elif isinstance(data, list):
         # Check if all elements are floats or integers
         if all(isinstance(x, (int, float)) for x in data):
             return np.array(data, dtype=type(data[0]))
-        elif all(isinstance(x, list) and all(isinstance(y, (int, float)) for y in x) for x in data):
+        elif all(
+                isinstance(x, list) and all(
+                    isinstance(y, (int, float)) for y in x) for x in data):
             # Handle 2D arrays
             return np.array(data, dtype=type(data[0][0]))
         else:
@@ -147,6 +147,7 @@ def yaml_to_numpy(data: Any, exclude_keys: set = None) -> Any:
     else:
         # Return the data as is for non-list, non-dict types
         return data
+
 
 def numpy_to_yaml(data: Any) -> Any:
     """Convert numpy arrays in the configuration dictionary back to lists.
@@ -171,6 +172,7 @@ def numpy_to_yaml(data: Any) -> Any:
         # Return the data as is for non-list, non-dict, non-numpy types
         return data
 
+
 class CustomDumper(yaml.SafeDumper):
     """
     Custom YAML Dumper that forces lists to be displayed in bracket format [x, y, z]
@@ -178,10 +180,14 @@ class CustomDumper(yaml.SafeDumper):
     """
 
     def represent_list(self, data):
-        return self.represent_sequence('tag:yaml.org,2002:seq', data, flow_style=True)
+        return self.represent_sequence('tag:yaml.org,2002:seq',
+                                       data,
+                                       flow_style=True)
+
 
 # Attach the new list representation to our dumper
 CustomDumper.add_representer(list, CustomDumper.represent_list)
+
 
 def dump_yaml_custom_format(data: Any, file_path: str):
     """Dumps YAML data where lists are in bracket format but dictionaries use standard indentation.
@@ -191,13 +197,16 @@ def dump_yaml_custom_format(data: Any, file_path: str):
         file_path: Path to the output YAML file.
     """
     with open(file_path, "w") as f:
-        yaml.dump(data, f, Dumper=CustomDumper, sort_keys=False, default_flow_style=False)
+        yaml.dump(data,
+                  f,
+                  Dumper=CustomDumper,
+                  sort_keys=False,
+                  default_flow_style=False)
 
-def save_config(
-        config: dict,
-        save_dir: str,
-        file_name: str = 'config_used.pickle'
-):
+
+def save_config(config: dict,
+                save_dir: str,
+                file_name: str = 'config_used.pickle'):
     """Save the config to a file.
 
     Args:

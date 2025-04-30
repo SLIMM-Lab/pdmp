@@ -2,13 +2,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.special import binom
 
-def central_moment_from_skeleton(
-        t: np.ndarray,
-        x: np.ndarray,
-        v: np.ndarray,
-        degree: int,
-        mean: np.ndarray = None
-) -> np.ndarray:
+
+def central_moment_from_skeleton(t: np.ndarray,
+                                 x: np.ndarray,
+                                 v: np.ndarray,
+                                 degree: int,
+                                 mean: np.ndarray = None) -> np.ndarray:
     """
     Compute the central moment of a piecewise linear curve defined by its skeleton.
 
@@ -47,7 +46,8 @@ def central_moment_from_skeleton(
         for k in range(degree + 1):
             # binomial_coeff = binom(degree, k)
             # integral = np.zeros_like(mean)
-            total_integral += binom(degree, k) * a ** (degree - k) * v0 ** k * integrand(k)
+            total_integral += binom(degree,
+                                    k) * a**(degree - k) * v0**k * integrand(k)
 
     if t[-1] < 1e-10:
         return x[0]
@@ -101,7 +101,8 @@ def running_mean(t: np.ndarray, x: np.ndarray, v: np.ndarray) -> np.ndarray:
     return running_means
 
 
-def running_mean_at_queries(t: np.ndarray, x: np.ndarray, v: np.ndarray, t_query: np.ndarray) -> np.ndarray:
+def running_mean_at_queries(t: np.ndarray, x: np.ndarray, v: np.ndarray,
+                            t_query: np.ndarray) -> np.ndarray:
     """
     Compute the running mean of the process at arbitrary query times using the skeleton (t, x, v).
 
@@ -122,7 +123,8 @@ def running_mean_at_queries(t: np.ndarray, x: np.ndarray, v: np.ndarray, t_query
         np.ndarray: Array of running means at each query time.
     """
     n_events, d = x.shape
-    cum_int = np.zeros((n_events, d))  # cumulative integral I(t) at skeleton times
+    cum_int = np.zeros(
+        (n_events, d))  # cumulative integral I(t) at skeleton times
 
     # At t[0], we define I(0)=0.
     for i in range(1, n_events):
@@ -167,7 +169,8 @@ def running_mean_at_queries(t: np.ndarray, x: np.ndarray, v: np.ndarray, t_query
                 # at time 0: x[j] and at time dt_partial: x[j] + v[j]*dt_partial.
                 x_seg_partial = np.array([x[j], x[j] + v[j] * dt_partial])
                 v_seg_partial = np.array([v[j]])
-                seg_mean_partial = central_moment_from_skeleton(t_seg_partial, x_seg_partial, v_seg_partial, 1)
+                seg_mean_partial = central_moment_from_skeleton(
+                    t_seg_partial, x_seg_partial, v_seg_partial, 1)
                 partial_int = seg_mean_partial * dt_partial
 
                 # Total integral up to T is the sum of the cumulative integral up to t[j] plus the partial contribution.
@@ -217,19 +220,22 @@ def running_variance(t: np.ndarray, x: np.ndarray, v: np.ndarray) -> np.ndarray:
 
         # Compute the raw (non-central) moment contributions.
         # For degree==1, the function automatically uses mean=0.
-        seg_I1 = central_moment_from_skeleton(t_seg, x_seg, v_seg, 1, mean=np.zeros_like(x_seg[0])) * dt
-        seg_I2 = central_moment_from_skeleton(t_seg, x_seg, v_seg, 2, mean=np.zeros_like(x_seg[0])) * dt
+        seg_I1 = central_moment_from_skeleton(
+            t_seg, x_seg, v_seg, 1, mean=np.zeros_like(x_seg[0])) * dt
+        seg_I2 = central_moment_from_skeleton(
+            t_seg, x_seg, v_seg, 2, mean=np.zeros_like(x_seg[0])) * dt
 
         I1_total += seg_I1
         I2_total += seg_I2
 
         running_mean = I1_total / t[i]
-        running_variances[i] = I2_total / t[i] - running_mean ** 2
+        running_variances[i] = I2_total / t[i] - running_mean**2
 
     return running_variances
 
 
-def running_variance_at_queries(t: np.ndarray, x: np.ndarray, v: np.ndarray, t_query: np.ndarray) -> np.ndarray:
+def running_variance_at_queries(t: np.ndarray, x: np.ndarray, v: np.ndarray,
+                                t_query: np.ndarray) -> np.ndarray:
     """
     Compute the running variance of the process at arbitrary query times using the skeleton (t, x, v).
 
@@ -268,8 +274,10 @@ def running_variance_at_queries(t: np.ndarray, x: np.ndarray, v: np.ndarray, t_q
         v_seg = np.array([v[i - 1]])
 
         # Force mean=0 to compute raw moments.
-        seg_I1 = central_moment_from_skeleton(t_seg, x_seg, v_seg, 1, mean=np.zeros_like(x_seg[0])) * dt
-        seg_I2 = central_moment_from_skeleton(t_seg, x_seg, v_seg, 2, mean=np.zeros_like(x_seg[0])) * dt
+        seg_I1 = central_moment_from_skeleton(
+            t_seg, x_seg, v_seg, 1, mean=np.zeros_like(x_seg[0])) * dt
+        seg_I2 = central_moment_from_skeleton(
+            t_seg, x_seg, v_seg, 2, mean=np.zeros_like(x_seg[0])) * dt
 
         cum_I1[i] = cum_I1[i - 1] + seg_I1
         cum_I2[i] = cum_I2[i - 1] + seg_I2
@@ -285,14 +293,14 @@ def running_variance_at_queries(t: np.ndarray, x: np.ndarray, v: np.ndarray, t_q
         # If T is beyond the last skeleton time, use the full cumulative integrals.
         elif T >= t[-1]:
             mean_T = cum_I1[-1] / t[-1]
-            results[idx] = cum_I2[-1] / t[-1] - mean_T ** 2
+            results[idx] = cum_I2[-1] / t[-1] - mean_T**2
         else:
             # Find the last skeleton time that is <= T.
             j = np.searchsorted(t, T, side='right') - 1
 
             if T == t[j]:
                 mean_T = cum_I1[j] / t[j]
-                results[idx] = cum_I2[j] / t[j] - mean_T ** 2
+                results[idx] = cum_I2[j] / t[j] - mean_T**2
             else:
                 dt_partial = T - t[j]
                 t_seg_partial = np.array([0, dt_partial])
@@ -301,16 +309,22 @@ def running_variance_at_queries(t: np.ndarray, x: np.ndarray, v: np.ndarray, t_q
                 x_seg_partial = np.array([x[j], x[j] + v[j] * dt_partial])
                 v_seg_partial = np.array([v[j]])
                 seg_I1_partial = central_moment_from_skeleton(
-                    t_seg_partial, x_seg_partial, v_seg_partial, 1, mean=np.zeros_like(x_seg_partial[0])
-                ) * dt_partial
+                    t_seg_partial,
+                    x_seg_partial,
+                    v_seg_partial,
+                    1,
+                    mean=np.zeros_like(x_seg_partial[0])) * dt_partial
                 seg_I2_partial = central_moment_from_skeleton(
-                    t_seg_partial, x_seg_partial, v_seg_partial, 2, mean=np.zeros_like(x_seg_partial[0])
-                ) * dt_partial
+                    t_seg_partial,
+                    x_seg_partial,
+                    v_seg_partial,
+                    2,
+                    mean=np.zeros_like(x_seg_partial[0])) * dt_partial
 
                 I1_total = cum_I1[j] + seg_I1_partial
                 I2_total = cum_I2[j] + seg_I2_partial
                 mean_T = I1_total / T
-                results[idx] = I2_total / T - mean_T ** 2
+                results[idx] = I2_total / T - mean_T**2
 
     return results
 
@@ -332,7 +346,8 @@ def running_sample_mean(samples: np.ndarray) -> np.ndarray:
     running_means[1] = (samples[0] + samples[1]) / 2
 
     for i in range(2, n_samples):
-        running_means[i] = (i - 1) / i * (running_means[i - 1] + samples[i] / (i - 1))
+        running_means[i] = (i - 1) / i * (running_means[i - 1] + samples[i] /
+                                          (i - 1))
 
     return running_means
 
@@ -341,8 +356,8 @@ def compute_ess_zigzag(
         t: np.ndarray,
         x: np.ndarray,
         v: np.ndarray,
-        num_batches: int=1000,
-        avg: bool=False
+        num_batches: int = 1000,
+        avg: bool = False
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Compute the effective sample size (ESS) of a zigzag process.
@@ -414,26 +429,33 @@ def compute_ess_zigzag(
     xi, vi = x[:-1], v[:-1]  # shape: (N, d)
 
     total_integral_h = np.sum(xi * dt + 0.5 * vi * dt**2, axis=0)
-    total_integral_h2 = np.sum(xi**2 * dt + xi * vi * dt**2 + (vi**2 / 3) * dt**3, axis=0)
+    total_integral_h2 = np.sum(xi**2 * dt + xi * vi * dt**2 +
+                               (vi**2 / 3) * dt**3,
+                               axis=0)
 
     mean_pi = total_integral_h / total_time
     mean_h2_pi = total_integral_h2 / total_time
 
-    var_pi = mean_h2_pi - mean_pi ** 2
+    var_pi = mean_h2_pi - mean_pi**2
 
     # Asymptotic variance from batch means (for each coordinate)
-    asymp_variance = (total_time / num_batches) * np.var(batch_means, axis=0, ddof=1)
+    asymp_variance = (total_time / num_batches) * np.var(
+        batch_means, axis=0, ddof=1)
 
     autocorrelation = asymp_variance / var_pi
     ess = total_time / autocorrelation
 
     if avg:
-        return np.array(np.mean(ess)), np.array(np.mean(autocorrelation)), mean_pi, var_pi
+        return np.array(np.mean(ess)), np.array(
+            np.mean(autocorrelation)), mean_pi, var_pi
     else:
         return ess, autocorrelation, mean_pi, var_pi
 
 
-def grad_fd(f: callable, x: np.ndarray, h: float = 1e-5, n: int = None) -> np.ndarray:
+def grad_fd(f: callable,
+            x: np.ndarray,
+            h: float = 1e-5,
+            n: int = None) -> np.ndarray:
     """
     Compute the gradient of a function using finite differences.
 
@@ -456,10 +478,15 @@ def grad_fd(f: callable, x: np.ndarray, h: float = 1e-5, n: int = None) -> np.nd
     m = len(x)
     grad = np.zeros((n, m))
     for i in range(m):
-        grad[:,i] = (f(x + h * np.eye(m)[i]) - f(x - h * np.eye(m)[i])) / (2 * h)
+        grad[:,
+             i] = (f(x + h * np.eye(m)[i]) - f(x - h * np.eye(m)[i])) / (2 * h)
     return grad
 
-def hessian_fd(f: callable, x: np.ndarray, h: float = 1e-5, n: int = None) -> np.ndarray:
+
+def hessian_fd(f: callable,
+               x: np.ndarray,
+               h: float = 1e-5,
+               n: int = None) -> np.ndarray:
     """
     Compute the Hessian matrix of a function using finite differences.
 
@@ -483,10 +510,11 @@ def hessian_fd(f: callable, x: np.ndarray, h: float = 1e-5, n: int = None) -> np
     hess = np.zeros((n, m, m))
     for i in range(m):
         for j in range(m):
-            hess[:, i, j] = (f(x + h * np.eye(m)[i] + h * np.eye(m)[j]) -
-                             f(x - h * np.eye(m)[i] + h * np.eye(m)[j]) -
-                             f(x + h * np.eye(m)[i] - h * np.eye(m)[j]) +
-                             f(x - h * np.eye(m)[i] - h * np.eye(m)[j])) / (4 * h**2)
+            hess[:, i,
+                 j] = (f(x + h * np.eye(m)[i] + h * np.eye(m)[j]) -
+                       f(x - h * np.eye(m)[i] + h * np.eye(m)[j]) -
+                       f(x + h * np.eye(m)[i] - h * np.eye(m)[j]) +
+                       f(x - h * np.eye(m)[i] - h * np.eye(m)[j])) / (4 * h**2)
     return hess
 
 

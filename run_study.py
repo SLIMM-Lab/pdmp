@@ -12,25 +12,33 @@ def get_n_cups():
     cmd_primary = (
         "qstat -f -u lriccius | awk '/Resource_List.nodes/ { "
         "if (match($0, /:ppn=([0-9]+)/, arr)) { sum += arr[1] } else { sum += 1 } "
-        "} END { print sum }'"
-    )
+        "} END { print sum }'")
     # "qstat -f -u lriccius | grep 'Resource_List.nodes' | sed -E 's/.*:ppn=([0-9]+).*/\1/' | awk '{sum += $1} END {print sum}'"
-    primary_process = sp.run(cmd_primary, shell=True, stderr=sp.DEVNULL,
-                             stdout=sp.PIPE, text=True)
+    primary_process = sp.run(cmd_primary,
+                             shell=True,
+                             stderr=sp.DEVNULL,
+                             stdout=sp.PIPE,
+                             text=True)
     primary_sum_str = primary_process.stdout.strip()
     primary_sum = int(primary_sum_str) if primary_sum_str else 0
 
     # Count how many jobs have Resource_List.nodes specified
     cmd_count_with_nodes = "qstat -f -u lriccius | grep -c 'Resource_List.nodes'"
-    with_nodes_process = sp.run(cmd_count_with_nodes, shell=True, stderr=sp.DEVNULL,
-                                stdout=sp.PIPE, text=True)
+    with_nodes_process = sp.run(cmd_count_with_nodes,
+                                shell=True,
+                                stderr=sp.DEVNULL,
+                                stdout=sp.PIPE,
+                                text=True)
     count_with_nodes_str = with_nodes_process.stdout.strip()
     count_with_nodes = int(count_with_nodes_str) if count_with_nodes_str else 0
 
     # Count total number of jobs (assuming each job prints a line starting with a digit)
     cmd_total_jobs = "qstat -u lriccius | grep -E '^[0-9]+' | wc -l"
-    total_jobs_process = sp.run(cmd_total_jobs, shell=True, stderr=sp.DEVNULL,
-                                stdout=sp.PIPE, text=True)
+    total_jobs_process = sp.run(cmd_total_jobs,
+                                shell=True,
+                                stderr=sp.DEVNULL,
+                                stdout=sp.PIPE,
+                                text=True)
     total_jobs_str = total_jobs_process.stdout.strip()
     total_jobs = int(total_jobs_str) if total_jobs_str else 0
 
@@ -43,7 +51,8 @@ def get_n_cups():
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description='Run all listed in the --job-file in the --study-dir.')
+    parser = argparse.ArgumentParser(
+        description='Run all listed in the --job-file in the --study-dir.')
     parser.add_argument(
         '--job-file',
         type=str,
@@ -87,7 +96,9 @@ if __name__ == '__main__':
 
         # wait until there are available CPUs
         if cpus_used >= cpu_limit:
-            print(f'Waiting for CPU vacancy... Currently using {cpus_used} CPUs out of {cpu_limit}')
+            print(
+                f'Waiting for CPU vacancy... Currently using {cpus_used} CPUs out of {cpu_limit}'
+            )
 
             while cpus_used >= cpu_limit:
                 time.sleep(sleep_time)
