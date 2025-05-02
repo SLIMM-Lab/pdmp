@@ -8,18 +8,17 @@ def central_moment_from_skeleton(t: np.ndarray,
                                  v: np.ndarray,
                                  degree: int,
                                  mean: np.ndarray = None) -> np.ndarray:
-    """
-    Compute the central moment of a piecewise linear curve defined by its skeleton.
+    """Compute the central moment of a piecewise linear curve defined by its skeleton.
 
-    Parameters:
-    t (np.ndarray): 1D array of time points.
-    x (np.ndarray): 2D array of positions corresponding to the time points.
-    v (np.ndarray): 2D array of velocities corresponding to the segments between time points.
-    degree (int): The degree of the moment to compute.
-    mean (np.ndarray, optional): The mean of the curve. If None, it will be computed from the skeleton.
+    Args:
+        t: 1D array of time points.
+        x: 2D array of positions corresponding to the time points.
+        v: 2D array of velocities corresponding to the segments between time points.
+        degree: The degree of the moment to compute.
+        mean: The mean of the curve. If None, it will be computed from the skeleton.
 
     Returns:
-    np.ndarray: The computed central moment of the specified degree.
+        np.ndarray: The computed central moment of the specified degree.
     """
 
     # Compute the mean of the curve
@@ -55,15 +54,15 @@ def central_moment_from_skeleton(t: np.ndarray,
 
 
 def running_mean(t: np.ndarray, x: np.ndarray, v: np.ndarray) -> np.ndarray:
-    """
-    Compute the running mean of the process at each recorded time.
+    """Compute the running mean of the process at each recorded time.
+
     The mean at time t[i] is computed by reusing the integral (or "mean contribution")
     up to time t[i-1] and adding the contribution of the new interval [t[i-1], t[i]].
 
-    Parameters:
-        t (np.ndarray): 1D array of time points.
-        x (np.ndarray): 2D array of positions.
-        v (np.ndarray): 2D array of velocities (one per segment).
+    Args:
+        t: 1D array of time points.
+        x: 2D array of positions.
+        v: 2D array of velocities (one per segment).
 
     Returns:
         np.ndarray: Array of running means, one for each time in t.
@@ -103,8 +102,7 @@ def running_mean(t: np.ndarray, x: np.ndarray, v: np.ndarray) -> np.ndarray:
 
 def running_mean_at_queries(t: np.ndarray, x: np.ndarray, v: np.ndarray,
                             t_query: np.ndarray) -> np.ndarray:
-    """
-    Compute the running mean of the process at arbitrary query times using the skeleton (t, x, v).
+    """Compute the running mean of the process at arbitrary query times using the skeleton (t, x, v).
 
     The running mean at time T is given by
         m(T) = (∫₀ᵀ x(s) ds) / T.
@@ -113,11 +111,11 @@ def running_mean_at_queries(t: np.ndarray, x: np.ndarray, v: np.ndarray,
     for each query time T (which may lie between skeleton times), it adds the contribution
     from the incomplete (partial) segment.
 
-    Parameters:
-        t (np.ndarray): 1D array of skeleton time points (assumed sorted, with t[0]=0).
-        x (np.ndarray): 2D array of positions corresponding to t.
-        v (np.ndarray): 2D array of velocities (one per segment between skeleton nodes).
-        t_query (np.ndarray): 1D array of query times at which to compute the running mean.
+    Args:
+        t: 1D array of skeleton time points (assumed sorted, with t[0]=0).
+        x: 2D array of positions corresponding to t.
+        v: 2D array of velocities (one per segment between skeleton nodes).
+        t_query: 1D array of query times at which to compute the running mean.
 
     Returns:
         np.ndarray: Array of running means at each query time.
@@ -181,8 +179,7 @@ def running_mean_at_queries(t: np.ndarray, x: np.ndarray, v: np.ndarray,
 
 
 def running_variance(t: np.ndarray, x: np.ndarray, v: np.ndarray) -> np.ndarray:
-    """
-    Compute the running variance of the process at each recorded time.
+    """Compute the running variance of the process at each recorded time.
 
     For a process with raw moments
         I1(t) = ∫₀ᵗ x(s) ds   and   I2(t) = ∫₀ᵗ x(s)² ds,
@@ -192,10 +189,10 @@ def running_variance(t: np.ndarray, x: np.ndarray, v: np.ndarray) -> np.ndarray:
     This function accumulates I1 and I2 incrementally by computing, for each segment [t[i-1], t[i]],
     the contribution of that segment using the existing central_moment_from_skeleton function with the mean forced to zero.
 
-    Parameters:
-        t (np.ndarray): 1D array of time points.
-        x (np.ndarray): 2D array of positions.
-        v (np.ndarray): 2D array of velocities (one per segment).
+    Args:
+        t: 1D array of time points.
+        x: 2D array of positions.
+        v: 2D array of velocities (one per segment).
 
     Returns:
         np.ndarray: Array of running variances, one for each time in t.
@@ -236,8 +233,7 @@ def running_variance(t: np.ndarray, x: np.ndarray, v: np.ndarray) -> np.ndarray:
 
 def running_variance_at_queries(t: np.ndarray, x: np.ndarray, v: np.ndarray,
                                 t_query: np.ndarray) -> np.ndarray:
-    """
-    Compute the running variance of the process at arbitrary query times using the skeleton (t, x, v).
+    """Compute the running variance of the process at arbitrary query times using the skeleton (t, x, v).
 
     For a process with raw moments
         I1(T) = ∫₀ᵀ x(s) ds   and   I2(T) = ∫₀ᵀ x(s)² ds,
@@ -248,11 +244,11 @@ def running_variance_at_queries(t: np.ndarray, x: np.ndarray, v: np.ndarray,
     Then, for each query time T (which may lie between skeleton times), it adds the partial
     contribution from the current segment.
 
-    Parameters:
-        t (np.ndarray): 1D array of skeleton time points (assumed sorted, with t[0]=0).
-        x (np.ndarray): 2D array of positions corresponding to t.
-        v (np.ndarray): 2D array of velocities (one per segment between skeleton nodes).
-        t_query (np.ndarray): 1D array of query times at which to compute the running variance.
+    Args:
+        t: 1D array of skeleton time points (assumed sorted, with t[0]=0).
+        x: 2D array of positions corresponding to t.
+        v: 2D array of velocities (one per segment between skeleton nodes).
+        t_query: 1D array of query times at which to compute the running variance.
 
     Returns:
         np.ndarray: Array of running variances at each query time.
@@ -330,11 +326,10 @@ def running_variance_at_queries(t: np.ndarray, x: np.ndarray, v: np.ndarray,
 
 
 def running_sample_mean(samples: np.ndarray) -> np.ndarray:
-    """
-    Compute the running sample mean of a set of samples at each recorded time.
+    """Compute the running sample mean of a set of samples at each recorded time.
 
-    Parameters:
-        samples (np.ndarray): 2D array of samples where each row is a sample.
+    Args:
+        samples: 2D array of samples where each row is a sample.
 
     Returns:
         np.ndarray: Array of running sample means, one for each time point.
@@ -359,8 +354,8 @@ def compute_ess_zigzag(
         num_batches: int = 1000,
         avg: bool = False
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Compute the effective sample size (ESS) of a zigzag process.
+    """Compute the effective sample size (ESS) of a zigzag process.
+
     The ESS is computed using the batch means method, which estimates the variance
     of the sample mean by dividing the total time by the number of batches. The ESS
     is then the total time divided by the autocorrelation of the process, which in
@@ -380,18 +375,19 @@ def compute_ess_zigzag(
     4. Compute ESS using:
         ESS = τ * Var_π(h) / σ²_h
 
-    Parameters:
-        t (np.ndarray): 1D array of time points.
-        x (np.ndarray): 2D array of positions.
-        v (np.ndarray): 2D array of velocities.
-        num_batches (int): Number of batches to use for the batch means method.
-        avg (bool): If True, return the average ESS across all coordinates.
+    Args:
+        t: 1D array of time points.
+        x: 2D array of positions.
+        v: 2D array of velocities.
+        num_batches: Number of batches to use for the batch means method.
+        avg: If True, return the average ESS across all coordinates.
 
     Returns:
-        np.ndarray: The ESS for each coordinate or the average ESS if avg is True.
-        np.ndarray: The autocorrelation of the processes or their avg if avg is True.
-        np.ndarray: The mean of the process.
-        np.ndarray: The variance of the process.
+        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: A tuple containing:
+            - The ESS for each coordinate or the average ESS if avg is True.
+            - The autocorrelation of the processes or their avg if avg is True.
+            - The mean of the process.
+            - The variance of the process.
     """
     total_time = t[-1] - t[0]
     batch_edges = np.linspace(t[0], t[-1], num_batches + 1)
@@ -456,17 +452,16 @@ def grad_fd(f: callable,
             x: np.ndarray,
             h: float = 1e-5,
             n: int = None) -> np.ndarray:
-    """
-    Compute the gradient of a function using finite differences.
+    """Compute the gradient of a function using finite differences.
 
-    Parameters:
-    f (callable): The function for which the gradient is to be computed. It should take a numpy array as input and return a scalar.
-    x (np.ndarray): The point at which the gradient is to be computed. It should be a 1D numpy array.
-    h (float, optional): The step size for the finite difference approximation. Default is 1e-5.
-    n (int, optional): The number of outputs of the function. Default is None.
+    Args:
+        f: The function for which the gradient is to be computed. It should take a numpy array as input and return a scalar.
+        x: The point at which the gradient is to be computed. It should be a 1D numpy array.
+        h: The step size for the finite difference approximation. Default is 1e-5.
+        n: The number of outputs of the function. Default is None.
 
     Returns:
-    np.ndarray: The gradient of the function at the point x. It will be a 1D numpy array of the same length as x.
+        np.ndarray: The gradient of the function at the point x. It will be a 1D numpy array of the same length as x.
     """
     if n is None:
         y = f(x)
@@ -487,17 +482,16 @@ def hessian_fd(f: callable,
                x: np.ndarray,
                h: float = 1e-5,
                n: int = None) -> np.ndarray:
-    """
-    Compute the Hessian matrix of a function using finite differences.
+    """Compute the Hessian matrix of a function using finite differences.
 
-    Parameters:
-    f (callable): The function for which the Hessian is to be computed. It should take a numpy array as input and return a scalar.
-    x (np.ndarray): The point at which the Hessian is to be computed. It should be a 1D numpy array.
-    h (float, optional): The step size for the finite difference approximation. Default is 1e-5.
-    n (int, optional): The number of outputs of the function. Default is None.
+    Args:
+        f: The function for which the Hessian is to be computed. It should take a numpy array as input and return a scalar.
+        x: The point at which the Hessian is to be computed. It should be a 1D numpy array.
+        h: The step size for the finite difference approximation. Default is 1e-5.
+        n: The number of outputs of the function. Default is None.
 
     Returns:
-    np.ndarray: The Hessian matrix of the function at the point x. It will be a 2D numpy array of shape (n, n) where n is the length of x.
+        np.ndarray: The Hessian matrix of the function at the point x. It will be a 2D numpy array of shape (n, n) where n is the length of x.
     """
     if n is None:
         y = f(x)

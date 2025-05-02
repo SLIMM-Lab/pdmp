@@ -11,25 +11,24 @@ LARGE = 1e10
 
 
 class Basis:
+    """Base class for basis functions."""
 
     def __init__(self, n: int):
-        """
-        Initialize the Basis class.
+        """Initialize the Basis class.
 
-        Parameters:
-        n (int): The number of basis functions.
+        Args:
+            n: The number of basis functions.
         """
         self.n_ = n
         self.support_ = np.zeros((n, 2))
 
     def __call__(self, x: np.ndarray, i: int = None) -> np.ndarray:
-        """
-        Evaluate the basis functions at given points.
+        """Evaluate the basis functions at given points.
 
-        Parameters:
-        x (np.ndarray): The points at which to evaluate the basis functions.
-        i (int, optional): The index of the specific basis function to evaluate. If None, evaluate all basis functions.
-                           Default is None.
+        Args:
+            x: The points at which to evaluate the basis functions.
+            i: The index of the specific basis function to evaluate. If None, evaluate all basis functions.
+               Default is None.
 
         Returns:
         np.ndarray: The evaluated basis functions.
@@ -37,21 +36,18 @@ class Basis:
         pass
 
     def get_n(self) -> int:
-        """
-        Get the number of basis functions.
+        """Get the number of basis functions.
 
         Returns:
-        int: The number of basis functions.
+            int: The number of basis functions.
         """
         return self.n_
 
     def get_support(self, i: int = None) -> np.ndarray:
-        """
-        Get the support of the basis functions.
+        """Get the support of the basis functions.
 
-        Parameters:
-        i (int, optional): The index of the specific basis function to get the support for. If None, get the support for
-                           all basis functions. Default is None.
+        Args:
+        i: The index of the specific basis function to get the support for. If None, get the support for all basis functions. Default is None.
 
         Returns:
         np.ndarray: The support of the basis functions.
@@ -62,12 +58,11 @@ class Basis:
 class PiecewiseConstantBasis(Basis):
 
     def __init__(self, n: int, interval: Tuple[float, float]):
-        """
-        Initialize the PiecewiseConstantBasis class.
+        """Initialize the PiecewiseConstantBasis class.
 
-        Parameters:
-        n (int): The number of basis functions.
-        interval (Tuple[float, float]): The interval over which the basis functions are defined.
+        Args:
+            n: The number of basis functions.
+            interval: The interval over which the basis functions are defined.
         """
         super().__init__(n)
         self.interval_ = interval
@@ -85,16 +80,14 @@ class PiecewiseConstantBasis(Basis):
         self.support_[:, 1] = np.linspace(interval[0], interval[1], n + 1)[1:]
 
     def __call__(self, x: np.ndarray, i: int = None) -> np.ndarray:
-        """
-        Evaluate the piecewise constant basis functions at given points.
+        """Evaluate the piecewise constant basis functions at given points.
 
-        Parameters:
-        x (np.ndarray): The points at which to evaluate the basis functions.
-        i (int, optional): The index of the specific basis function to evaluate. If None, evaluate all basis functions.
-                           Default is None.
+        Args:
+            x: The points at which to evaluate the basis functions.
+            i: The index of the specific basis function to evaluate. If None, evaluate all basis functions. Default is None.
 
         Returns:
-        np.ndarray: The evaluated basis functions.
+            np.ndarray: The evaluated basis functions.
         """
         if i is None:
             return np.array([basis(x) for basis in self.basis_]).T
@@ -102,15 +95,13 @@ class PiecewiseConstantBasis(Basis):
             return self.basis_[i](x)
 
     def get_support(self, i: int = None) -> np.ndarray:
-        """
-        Get the support of the piecewise constant basis functions.
+        """Get the support of the piecewise constant basis functions.
 
-        Parameters:
-        i (int, optional): The index of the specific basis function to get the support for. If None, get the support for
-                           all basis functions. Default is None.
+        Args:
+            i: The index of the specific basis function to get the support for. If None, get the support for all basis functions. Default is None.
 
         Returns:
-        np.ndarray: The support of the basis functions.
+            np.ndarray: The support of the basis functions.
         """
         if i is None:
             return self.support_
@@ -123,18 +114,17 @@ def squared_exponential_kernel(x: np.ndarray,
                                sigma: float = 1.0,
                                l: float = 1.0,
                                **kwargs) -> float:
-    """
-    Compute the squared exponential kernel between two points.
+    """Compute the squared exponential kernel between two points.
 
-    Parameters:
-    x (np.ndarray): The first point.
-    y (np.ndarray): The second point.
-    sigma (float, optional): The standard deviation parameter of the kernel. Default is 1.0.
-    l (float, optional): The length scale parameter of the kernel. Default is 1.0.
-    **kwargs: Additional keyword arguments.
+    Args:
+        x: The first point.
+        y: The second point.
+        sigma: The standard deviation parameter of the kernel. Default is 1.0.
+        l: The length scale parameter of the kernel. Default is 1.0.
+        kwargs: Additional keyword arguments.
 
     Returns:
-    float: The computed kernel value.
+        float: The computed kernel value.
     """
     return sigma**2 * np.exp(-((x - y)**2) / (2 * l**2))
 
@@ -145,18 +135,17 @@ def compute_coefficients(kernel: Callable[
                          interval: Tuple[float, float],
                          weights: Callable[[np.ndarray], float] = None,
                          kernel_params: Dict = None) -> np.ndarray:
-    """
-    Compute the coefficients for the given basis functions using the specified kernel.
+    """Compute the coefficients for the given basis functions using the specified kernel.
 
-    Parameters:
-    kernel (Callable[[np.ndarray, np.ndarray, float, float], float]): The kernel function to use.
-    basis (Basis): The basis functions.
-    interval (Tuple[float, float]): The interval over which to compute the coefficients.
-    weights (Callable[[np.ndarray], float], optional): A function to compute weights. Default is None.
-    kernel_params (Dict[str, float], optional): Parameters for the kernel function. Default is None.
+    Args:
+        kernel: The kernel function to use.
+        basis: The basis functions.
+        interval: The interval over which to compute the coefficients.
+        weights: A function to compute weights. Default is None.
+        kernel_params: Parameters for the kernel function. Default is None.
 
     Returns:
-    np.ndarray: The computed coefficients.
+        np.ndarray: The computed coefficients.
     """
 
     n = basis.get_n()
@@ -198,17 +187,16 @@ def monte_carlo_2d(func: Callable[[np.ndarray, np.ndarray], np.ndarray],
                    x_lim: Tuple[float, float],
                    y_lim: Tuple[float, float],
                    num_samples: int = 100000) -> float:
-    """
-    Perform Monte Carlo integration over a 2D domain. Mostly for testing purposes.
+    """Perform Monte Carlo integration over a 2D domain. Mostly for testing purposes.
 
-    Parameters:
-    func (Callable[[np.ndarray, np.ndarray], np.ndarray]): The function to integrate. It should take two numpy arrays (x and y coordinates) and return an array of function values.
-    x_lim (Tuple[float, float]): The limits for the x-axis as a tuple (min, max).
-    y_lim (Tuple[float, float]): The limits for the y-axis as a tuple (min, max).
-    num_samples (int, optional): The number of random samples to generate. Default is 100000.
+    Args:
+        func: The function to integrate. It should take two numpy arrays (x and y coordinates) and return an array of function values.
+        x_lim: The limits for the x-axis as a tuple (min, max).
+        y_lim: The limits for the y-axis as a tuple (min, max).
+        num_samples: The number of random samples to generate. Default is 100000.
 
     Returns:
-    float: The estimated integral of the function over the specified domain.
+        float: The estimated integral of the function over the specified domain.
     """
     x_samples = np.random.uniform(x_lim[0], x_lim[1], num_samples)
     y_samples = np.random.uniform(y_lim[0], y_lim[1], num_samples)
@@ -219,15 +207,14 @@ def monte_carlo_2d(func: Callable[[np.ndarray, np.ndarray], np.ndarray],
 
 def get_gaussian_random_field_projection_from_dict(
         config: Dict[str, Any], **kwargs) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Load the projection configuration.
+    """Load the projection configuration.
 
-    Parameters:
-    projection_config (Dict[str, Any]): The projection configuration.
-    **kwargs: Additional keyword arguments.
+    Args:
+        config: The projection configuration.
+        kwargs: Additional keyword arguments.
 
     Returns:
-    Callable[[np.ndarray], np.ndarray]: The projection function.
+        Callable[[np.ndarray], np.ndarray]: The projection function.
     """
 
     kernel_params = config['kernel_params']

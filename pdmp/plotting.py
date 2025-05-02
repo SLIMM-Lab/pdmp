@@ -15,17 +15,16 @@ def plot_samples(samples: np.ndarray,
                  n_vis: int = 500,
                  size=3,
                  **kwargs) -> plt.Axes:
-    """
-    Plot samples on a given matplotlib axes object.
+    """Plot samples on a given matplotlib axes object.
 
-    Parameters:
-    samples (np.ndarray): The samples to plot, expected to be a 2D array.
-    ax (plt.Axes): The matplotlib axes object to plot on.
-    color_code (bool, optional): Whether to color code the samples. Default is True.
-    n_vis (int, optional): Number of samples to visualize. Default is 500.
+    Args:
+        samples: The samples to plot, expected to be a 2D array.
+        ax: The matplotlib axes object to plot on.
+        color_code: Whether to color code the samples. Default is True.
+        n_vis: Number of samples to visualize. Default is 500.
 
     Returns:
-    plt.Axes: The matplotlib axes object with the samples plotted.
+        plt.Axes: The matplotlib axes object with the samples plotted.
     """
 
     n_vis = np.min([n_vis, samples.shape[0]])
@@ -46,16 +45,28 @@ def plot_trace(samples: np.ndarray,
                components: list[int] = None,
                keep_ticks: bool = True,
                axis_label='\\theta') -> tuple[plt.Figure, plt.Axes]:
-    """
-    Plot the trace of samples
+    """Plot the trace of samples
 
-    Parameters:
-    samples (np.ndarray): The samples to plot, expected to be a 2D array.
-    components (list[int], optional): The components to plot. Default is None.
+    Args:
+        samples: The samples to plot, expected to be a 2D array.
+        components: The indices of the components to plot. Default is None.
+        keep_ticks: Whether to keep the ticks on the axes. Default is True.
+        axis_label: The label for the y-axis. Default is '\\theta'.
+
+    Returns:
+        tuple: A tuple containing the matplotlib figure and axes objects.
     """
 
     def plot_one_trace(ax: plt.Axes, samples: np.ndarray, component: int,
                        axis_label: str):
+        """Plot one trace of the samples.
+
+        Args:
+            ax: The matplotlib axes object to plot on.
+            samples: The samples to plot, expected to be a 2D array.
+            component: The index of the component to plot.
+            axis_label: The label for the y-axis.
+        """
 
         ax.grid(False)
 
@@ -112,21 +123,20 @@ def plot_pdf_grad_contours(target: Union[Distribution, SurrogateModel],
                            cmap: matplotlib.colors.Colormap = sns.color_palette(
                                'rocket', as_cmap=True),
                            transformation: Transformation = None) -> plt.Axes:
-    """
-    Plot the probability density function (PDF) contours of a distribution.
+    """Plot the probability density function (PDF) contours of a distribution.
 
-    Parameters:
-    taget (Distribution, SurrogateModel): The target distribution to plot.
-    ax (plt.Axes): The matplotlib axes object to plot on.
-    plot_limits (tuple): A tuple containing two lists, each specifying the x and y axis limits respectively.
-    n_grid (int, optional): Number of grid points for the x and y axes. Default is 100.
-    alpha (float, optional): Transparency level of the contour plot. Default is 0.6.
-    n_levels (int, optional): Number of contour levels to plot. Default is 20.
-    cmap (sns.palettes._ColorPalette, optional): Colormap to use for the contour plot. Default is 'rocket' colormap.
-    transformation (Transformation, optional): The transformation to apply to the target distribution. Default is None.
+    Args:
+        taget: The target distribution to plot.
+        ax: The matplotlib axes object to plot on.
+        plot_limits: A tuple containing two lists, each specifying the x and y axis limits respectively.
+        n_grid: Number of grid points for the x and y axes. Default is 100.
+        alpha: Transparency level of the contour plot. Default is 0.6.
+        n_levels: Number of contour levels to plot. Default is 20.
+        cmap: Colormap to use for the contour plot. Default is 'rocket' colormap.
+        transformation: The transformation to apply to the target distribution. Default is None.
 
     Returns:
-    plt.Axes: The matplotlib axes object with the PDF contours plotted.
+        plt.Axes: The matplotlib axes object with the PDF contours plotted.
     """
 
     # check if levels are given or already defined
@@ -175,21 +185,20 @@ def plot_pdf_contours(target: Union[Distribution, SurrogateModel],
                       cmap: matplotlib.colors.Colormap = sns.color_palette(
                           'rocket', as_cmap=True),
                       transformation: Transformation = None) -> plt.Axes:
-    """
-    Plot the probability density function (PDF) contours of a distribution.
+    """Plot the probability density function (PDF) contours of a distribution.
 
-    Parameters:
-    taget (Distribution, SurrogateModel): The target distribution to plot.
-    ax (plt.Axes): The matplotlib axes object to plot on.
-    plot_limits (tuple): A tuple containing two lists, each specifying the x and y axis limits respectively.
-    n_grid (int, optional): Number of grid points for the x and y axes. Default is 100.
-    alpha (float, optional): Transparency level of the contour plot. Default is 0.6.
-    n_levels (int, optional): Number of contour levels to plot. Default is 20.
-    cmap (sns.palettes._ColorPalette, optional): Colormap to use for the contour plot. Default is 'rocket' colormap.
-    transformation (Transformation, optional): The transformation to apply to the target distribution. Default is None.
+    Args:
+        target: The target distribution to plot.
+        ax: The matplotlib axes object to plot on.
+        plot_limits: A tuple containing two lists, each specifying the x and y axis limits respectively.
+        n_grid: Number of grid points for the x and y axes. Default is 100.
+        alpha: Transparency level of the contour plot. Default is 0.6.
+        levels: Number of contour levels to plot. Default is 20.
+        cmap: Colormap to use for the contour plot. Default is 'rocket' colormap.
+        transformation: The transformation to apply to the target distribution. Default is None.
 
     Returns:
-    plt.Axes: The matplotlib axes object with the PDF contours plotted.
+        plt.Axes: The matplotlib axes object with the PDF contours plotted.
     """
 
     # check if levels are given or already defined
@@ -244,22 +253,21 @@ def plot_pfd_contour_conditional(
     cmap: matplotlib.colors.ListedColormap = sns.color_palette('rocket',
                                                                as_cmap=True)
 ) -> plt.Axes:
-    """
-    Plot the conditional probability density function (PDF) contours of a distribution.
+    """Plot the conditional probability density function (PDF) contours of a distribution.
 
-    Parameters:
-    target (Distribution, SurrogateModel): The target distribution to plot.
-    ax (plt.Axes): The matplotlib axes object to plot on.
-    plot_limits (tuple): A tuple containing two lists, each specifying the x and y axis limits respectively.
-    slice_loc (np.ndarray): The coordinates to condition on.
-    idcs (tuple, optional): The indices of the plane to condition on. Default is (0, 1).
-    n_grid (int, optional): Number of grid points for the x and y axes. Default is 100.
-    alpha (float, optional): Transparency level of the contour plot. Default is 0.6.
-    n_levels (int, optional): Number of contour levels to plot. Default is 20.
-    cmap (sns.palettes._ColorPalette, optional): Colormap to use for the contour plot. Default is 'rocket' colormap.
+    Args:
+        target: The target distribution to plot.
+        ax: The matplotlib axes object to plot on.
+        plot_limits: A tuple containing two lists, each specifying the x and y axis limits respectively.
+        slice: The coordinates to condition on.
+        idcs_plane: The indices of the plane to condition on. Default is (0, 1).
+        n_grid: Number of grid points for the x and y axes. Default is 100.
+        alpha: Transparency level of the contour plot. Default is 0.6.
+        n_levels: Number of contour levels to plot. Default is 20.
+        cmap: Colormap to use for the contour plot. Default is 'rocket' colormap.
 
     Returns:
-    plt.Axes: The matplotlib axes object with the PDF contours plotted.
+        plt.Axes: The matplotlib axes object with the PDF contours plotted.
     """
     if isinstance(target, SurrogateModel):
         f_eval = lambda x: target.eval(x, delta=True)
@@ -291,19 +299,18 @@ def plot_pfd_contour_marginal(samples: np.ndarray,
                               cmap: matplotlib.colors.ListedColormap = sns.
                               color_palette('rocket', as_cmap=True),
                               **kde_kwargs) -> plt.Axes:
-    """
-    Plot the probability density function (PDF) contours of a multivariate normal distribution.
+    """Plot the probability density function (PDF) contours of a multivariate normal distribution.
 
-    Parameters:
-    samples (np.ndarray): The samples to plot, expected to be a 2D array.
-    ax (plt.Axes): The matplotlib axes object to plot on.
-    idcs (tuple, optional): The indices of the dimensions to plot. Default is (0, 1).
-    alpha (float, optional): Transparency level of the contour plot. Default is 0.6.
-    n_levels (int, optional): Number of contour levels to plot. Default is 20.
-    cmap (matplotlib.colors.ListedColormap, optional): Colormap to use for the contour plot. Default is 'rocket' colormap.
+    Args:
+        samples: The samples to plot, expected to be a 2D array.
+        ax: The matplotlib axes object to plot on.
+        idcs: The indices of the dimensions to plot. Default is (0, 1).
+        alpha: Transparency level of the contour plot. Default is 0.6.
+        n_levels: Number of contour levels to plot. Default is 20.
+        cmap: Colormap to use for the contour plot. Default is 'rocket' colormap.
 
     Returns:
-    plt.Axes: The matplotlib axes object with the PDF contours plotted.
+        plt.Axes: The matplotlib axes object with the PDF contours plotted.
     """
 
     sns.kdeplot(x=samples[:, idcs[0]],

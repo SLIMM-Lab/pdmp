@@ -7,7 +7,13 @@ import argparse
 import subprocess as sp
 
 
-def get_n_cups():
+def get_n_cups() -> int:
+    """Get the number of CPUs currently in use.
+
+    Returns:
+        int: The number of CPUs currently in use.
+    """
+
     # Command to sum ppn values for jobs that specify Resource_List.nodes
     cmd_primary = (
         "qstat -f -u lriccius | awk '/Resource_List.nodes/ { "

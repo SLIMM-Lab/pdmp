@@ -153,7 +153,7 @@ def numpy_to_yaml(data: Any) -> Any:
     """Convert numpy arrays in the configuration dictionary back to lists.
 
     Args:
-        data (Any): The data to convert.
+        data: The data to convert.
 
     Returns:
         Any: The data with numpy arrays converted to lists.
@@ -174,8 +174,9 @@ def numpy_to_yaml(data: Any) -> Any:
 
 
 class CustomDumper(yaml.SafeDumper):
-    """
-    Custom YAML Dumper that forces lists to be displayed in bracket format [x, y, z]
+    """Custom YAML Dumper for list in bracket format
+
+    This custom YAML dumper forces lists to be displayed in bracket format [x, y, z]
     while keeping dictionaries in the usual indented structure.
     """
 

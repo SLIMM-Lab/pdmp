@@ -15,11 +15,10 @@ from pdmp.forward_model import get_model
 
 
 def parse_args():
-    """
-    Parse the command line arguments.
+    """Parse the command line arguments.
 
     Returns:
-    argparse.Namespace: The command line arguments.
+        argparse.Namespace: The command line arguments.
     """
 
     parser = argparse.ArgumentParser(description="Run observation generation.")
@@ -34,15 +33,14 @@ def parse_args():
 
 
 def generate_observations(config: dict[str, Any], rng: np.random.Generator):
-    """
-    Generate observations.
+    """Generate observations.
 
-    Parameters:
-    config (dict): The configuration.
-    rng (np.random.Generator): The random number generator.
+    Args:
+        config: The configuration.
+        rng: The random number generator.
 
     Returns:
-    np.ndarray: The observations.
+        np.ndarray: The observations.
     """
 
     # load the observation configuration

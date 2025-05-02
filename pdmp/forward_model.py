@@ -2,70 +2,72 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sympy as sy
 
+from typing import override
+
 from pdmp.project_field import compute_coefficients, squared_exponential_kernel, PiecewiseConstantBasis
 from pdmp import logger
 
 
 class Model:
-    """
-    Base class for the forward model
-    """
+    """Base class for the forward model"""
 
     def __init__(self):
         pass
 
     def eval(self, params: np.ndarray, **kwargs) -> np.ndarray:
-        """
-        Evaluate the forward model
+        """Evaluate the forward model
+
         Args:
-            params (np.ndarray): parameter values
-            **kwargs: additional arguments
+            params: parameter values
+            kwargs: additional keyword arguments
+
         Returns:
             np.ndarray: model evaluation
         """
         raise NotImplementedError
 
     def eval_grad(self, params: np.ndarray, **kwargs) -> np.ndarray:
-        """
-        Evaluate the gradient (jacobian) of the forward model outputs with respect to the parameters
+        """Evaluate the gradient (jacobian) of the forward model outputs with respect to the parameters
+
         Args:
-            params (np.ndarray): parameter values
-            **kwargs: additional arguments
+            params: parameter values
+            kwargs: additional keyword arguments
+
         Returns:
             np.ndarray: gradient of model evaluation
         """
         raise NotImplementedError
 
     def eval_hessian(self, params: np.ndarray, **kwargs) -> np.ndarray:
-        """
-        Evaluate the hessian of the forward model outputs with respect to the parameters
+        """Evaluate the hessian of the forward model outputs with respect to the parameters
+
         Args:
-            params (np.ndarray): parameter values
-            **kwargs: additional arguments
+            params: parameter values
+            kwargs: additional arguments
+
         Returns:
             np.ndarray: hessian of model evaluation
         """
         raise NotImplementedError
 
     def get_dim_in(self) -> int:
-        """
-        Get dimension of the model outputs
+        """Get dimension of the model outputs
+
         Returns:
             int: dimension of the model
         """
         raise NotImplementedError
 
     def get_dim_out(self) -> int:
-        """
-        Get dimension of the model outputs
+        """Get dimension of the model outputs
+
         Returns:
             int: dimension of the model outputs
         """
         raise NotImplementedError
 
     def get_n_settings(self) -> int:
-        """
-        Get number of settings.
+        """Get number of settings.
 
         Returns:
             int: Number of settings. Default is 1 if not overridden by derived classes.
@@ -74,10 +76,11 @@ class Model:
 
     @classmethod
     def from_dict(cls, config: dict):
-        """
-        Create a model from a dictionary configuration.
+        """Create a model from a dictionary configuration.
+
         Args:
-            config (dict): configuration dictionary
+            config: configuration dictionary
+
         Returns:
             Model: model
         """
@@ -85,17 +88,15 @@ class Model:
 
 
 class PiecewiseConstantModel(Model):
-    """
-    Forward model for deformation of a 1d bar with piecewise constant Young's modulus
-    """
+    """    Forward model for deformation of a 1d bar with piecewise constant Young's modulus."""
 
     def __init__(self, F: np.ndarray, n_params: int, x_obs: np.ndarray):
-        """
-        Initialize the model
+        """Initialize the model
+
         Args:
-            F (np.ndarray): collection of prescribed forces for each setting
-            n_params (int): number of parameters
-            x_obs (np.ndarray): observed x values
+            F: collection of prescribed forces for each setting
+            n_params: number of parameters
+            x_obs: observed x values
         """
         super().__init__()
         self.F = sy.symbols('F')  # Symbolic representation of F
@@ -162,11 +163,12 @@ class PiecewiseConstantModel(Model):
                         for hessian_row in hessian]
 
     def eval_E(self, params: np.ndarray, x: np.ndarray) -> np.ndarray:
-        """
-        Evaluate Young's modulus at given x values
+        """Evaluate Young's modulus at given x values
+
         Args:
-            params (np.ndarray): parameter values
-            x (np.ndarray): x values
+            params: parameter values
+            x: x values
+
         Returns:
             np.ndarray: Young's modulus evaluated at x
         """
@@ -179,12 +181,13 @@ class PiecewiseConstantModel(Model):
              params: np.ndarray,
              x: np.ndarray = None,
              idx: int = None) -> np.ndarray:
-        """
-        Evaluate displacements u at given x locations for setting idx
+        """Evaluate displacements u at given x locations for setting idx
+
         Args:
-            params (np.ndarray): parameter values
-            x (np.ndarray): x values
-            idx (int): setting index
+            params: parameter values
+            x: x values
+            idx: setting index
+
         Returns:
             np.ndarray: u evaluated at x
         """
@@ -206,12 +209,13 @@ class PiecewiseConstantModel(Model):
                              *[param[:, None] for param in params.T])
 
     def eval_grad(self, params: np.ndarray, x: np.ndarray = None, idx: int = 0):
-        """
-        Evaluate gradient of u with respect to parameters
+        """Evaluate gradient of u with respect to parameters
+
         Args:
-            params (np.ndarray): parameter values
-            x (np.ndarray): x values
-            idx (int): setting index
+            params: parameter values
+            x: x values
+            idx: setting index
+
         Returns:
             np.ndarray: gradient of u with respect to parameters
         """
@@ -229,12 +233,13 @@ class PiecewiseConstantModel(Model):
                      params: np.ndarray,
                      x: np.ndarray = None,
                      idx: int = 0) -> np.ndarray:
-        """
-        Evaluate Hessian of u with respect to parameters
+        """Evaluate Hessian of u with respect to parameters
+
         Args:
-            params (np.ndarray): parameter values
-            x (np.ndarray): x values
-            idx (int): setting index
+            params: parameter values
+            x: x values
+            idx: setting index
+
         Returns:
             np.ndarray: Hessian of u with respect to parameters
         """
@@ -253,36 +258,24 @@ class PiecewiseConstantModel(Model):
                                             *params)  # Evaluate Hessian
         return hessian
 
+    @override
     def get_dim_in(self) -> int:
-        """
-        Get dimension of the model
-        Returns:
-            int: dimension of the model
-        """
         return self.n_params  # Return number of parameters
 
     def get_dim_out(self) -> int:
-        """
-        Get dimension of the model outputs
-        Returns:
-            int: dimension of the model outputs
-        """
         return len(self.x_obs_)
 
+    @override
     def get_n_settings(self):
-        """
-        Get number of settings
-        Returns:
-            int: number of settings
-        """
         return self.n_settings_  # Return number of settings
 
     @classmethod
     def from_dict(cls, config: dict):
-        """
-        Create a PiecewiseConstantModel from a dictionary configuration.
+        """Create a PiecewiseConstantModel from a dictionary configuration.
+
         Args:
             config (dict): configuration dictionary
+
         Returns:
             PiecewiseConstantModel: piecewise constant model
         """
@@ -308,19 +301,23 @@ def get_piececwise_constant_model(
     rng: np.random.Generator = np.random.default_rng(0),
     kernel_params: dict[str, float] = None
 ) -> tuple[PiecewiseConstantModel, np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Get a piecewise constant model with noisy observations
+    """Get a piecewise constant model with noisy observations
+
     Args:
-        n_params (int): number of parameters
-        n_obs_loc (int): number of observation locations
-        n_obs (int): number of observations
-        sigma_obs (float): observation noise
-        mean (float): mean for the prior
-        rng (np.random.Generator): random number generator
-        kernel_params (dict[str, float]): kernel parameters
+        n_params: number of parameters
+        n_obs_loc: number of observation locations
+        n_obs: number of observations
+        sigma_obs: observation noise
+        mean: mean for the prior
+        rng: random number generator
+        kernel_params: kernel parameters
+
     Returns:
-        tuple[PiecewiseConstantModel, np.ndarray, np.ndarray, np.ndarray]:
-            model, observations, ground truth, prior_cov
+        tuple[PiecewiseConstantModel, np.ndarray, np.ndarray, np.ndarray]: A tuple containing
+            - model
+            - observations
+            - ground truth
+            - prior_cov
     """
 
     if kernel_params is None:
@@ -357,16 +354,14 @@ def get_piececwise_constant_model(
 
 
 class LinearModel(Model):
-    """
-    Forward model for a linear system (mainly for testing purposes)
-    """
+    """Forward model for a linear system (mainly for testing purposes)"""
 
     def __init__(self, A: np.ndarray, b: np.ndarray):
-        """
-        Initialize the model
+        """Initialize the model
+
         Args:
-            A (np.ndarray): matrix A
-            b (np.ndarray): vector b
+            A: matrix A
+            b: vector b
         """
         super().__init__()
         assert A.shape[0] == b.shape[0], "Dimensions do not match"
@@ -377,10 +372,11 @@ class LinearModel(Model):
 
     @classmethod
     def from_dict(cls, config: dict):
-        """
-        Create a LinearModel from a dictionary configuration.
+        """Create a LinearModel from a dictionary configuration.
+
         Args:
             config (dict): configuration dictionary
+
         Returns:
             LinearModel: linear model
         """
@@ -388,62 +384,34 @@ class LinearModel(Model):
         b = np.array(config['b'])
         return cls(A, b)
 
+    @override
     def eval(self, params: np.ndarray, **kwargs) -> np.ndarray:
-        """
-        Evaluate the forward model
-        Args:
-            params (np.ndarray): parameter values
-            **kwargs: additional arguments
-        Returns:
-            np.ndarray: model evaluation
-        """
         return self.A_ @ params + self.b_
 
+    @override
     def eval_grad(self, params: np.ndarray, **kwargs) -> np.ndarray:
-        """
-        Evaluate the gradient (jacobian) of the forward model outputs with respect to the parameters
-        Args:
-            params (np.ndarray): parameter values
-            **kwargs: additional arguments
-        Returns:
-            np.ndarray: gradient of model evaluation
-        """
         return self.A_
 
+    @override
     def eval_hessian(self, params: np.ndarray, **kwargs) -> np.ndarray:
-        """
-        Evaluate the hessian of the forward model outputs with respect to the parameters
-        Args:
-            params (np.ndarray): parameter values
-            **kwargs: additional arguments
-        Returns:
-            np.ndarray: hessian of model evaluation
-        """
         s = self.A_.shape
         return np.zeros((s[0], s[1], s[1]))
 
+    @override
     def get_dim_in(self) -> int:
-        """
-        Get dimension of the model outputs
-        Returns:
-            int: dimension of the model
-        """
         return self.dim_in_
 
+    @override
     def get_dim_out(self) -> int:
-        """
-        Get dimension of the model outputs
-        Returns:
-            int: dimension of the model outputs
-        """
         return self.dim_out_
 
 
 def get_model(config: dict):
-    """
-    Get a model from a configuration dictionary
+    """Get a model from a configuration dictionary
+
     Args:
-        config (dict): configuration dictionary
+        config: configuration dictionary
+
     Returns:
         Model: model
     """
