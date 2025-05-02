@@ -5,6 +5,14 @@ import os
 
 
 def setup_logger(name: str) -> logging.Logger:
+    """Setting up the logger.
+
+    Args:
+        name: name of the logger that is displayed in the log messages.
+
+    Returns:
+        logging.logger: a logger object that can be used to log messages.
+    """
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
 
@@ -34,6 +42,14 @@ def setup_file_handler(logger: logging.Logger,
                        log_dir: str,
                        log_file: str = "mcmc_run.log",
                        level="INFO"):
+    """Setting up the file handler for the logger.
+
+    Args:
+        logger: The logger object to which the file handler will be added.
+        log_dir: The directory where the log file will be created.
+        log_file: The name of the log file. Defaults to "mcmc_run.log".
+        level: The logging level for the file handler. Defaults to "INFO".
+    """
 
     # create log dir and set log path
     os.makedirs(log_dir, exist_ok=True)

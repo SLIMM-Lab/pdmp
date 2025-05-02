@@ -2,6 +2,7 @@ import numpy as np
 
 from pdmp.distributions import Distribution
 from pdmp.surrogates import SurrogateModel
+from pdmp import logger
 
 SAMPLER_REGISTRY = {}
 
@@ -25,8 +26,17 @@ def register_sampler(name):
 class Sampler:
     """Base class for samplers."""
 
-    def __init__(self, *args, **kawrgs):
-        pass
+    def __init__(self, *args, **kwargs):
+
+        # check for unused keyword arguments
+        unused_args = []
+
+        for key in kwargs:
+            if key != 'name':
+                unused_args.append(key)
+
+        if len(unused_args) > 0:
+            logger.warning(f"Unused keyword arguments: {unused_args}")
 
     @classmethod
     def from_dict(cls,

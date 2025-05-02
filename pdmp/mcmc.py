@@ -15,6 +15,7 @@ from pdmp import logger
 
 
 class StepSampler(Sampler):
+    """Base class for step-based samplers."""
 
     def __init__(self,
                  target: Distribution,
@@ -24,17 +25,16 @@ class StepSampler(Sampler):
                  prec: np.ndarray = None,
                  cov_factor: float = 1.,
                  **kwargs):
-        """
-        Initialize the StepSampler class.
+        """Initialize the StepSampler class.
 
-        Parameters:
-        target (Distribution): The target distribution to sample from.
-        n_samples (int, optional): The number of samples to generate. Default is 10000.
-        rng (np.random.Generator, optional): Random number generator. Default is None.
-        seed (int, optional): Seed for the random number generator. Default is None.
-        prec (np.ndarray, optional): Preconditioner matrix. Default is None.
+        Args:
+            target: The target distribution to sample from.
+            n_samples: The number of samples to generate. Default is 10000.
+            rng: Random number generator. Default is None.
+            seed: Seed for the random number generator. Default is None.
+            prec: Preconditioner matrix. Default is None.
         """
-        super().__init__()
+        super().__init__(**kwargs)
 
         self.target = target
         self._dim = self.target.get_dim()
@@ -71,8 +71,10 @@ class StepSampler(Sampler):
         self._prec_L = np.linalg.cholesky(self._prec)
 
     def _reset(self, x_0: np.ndarray = None):
-        """
-        Reset the sampler state.
+        """Reset the sampler state.
+
+        Args:
+            x_0: Initial state. Default is None.
         """
         self._iter = 1
         self._n_accept = 1
@@ -88,11 +90,10 @@ class StepSampler(Sampler):
         self.chain[0, :] = self._state
 
     def _get_sample_covariance(self) -> np.ndarray:
-        """
-        Get the sample covariance of the chain.
+        """Get the sample covariance of the chain.
 
         Returns:
-        np.ndarray: The sample covariance matrix.
+            np.ndarray: The sample covariance matrix.
         """
         if self._dim == 1:
             return np.array([[np.var(self.chain[:self._iter])]])
@@ -100,24 +101,31 @@ class StepSampler(Sampler):
             return np.cov(self.chain[:self._iter], rowvar=False)
 
     def _set_preconditioner(self, cov: np.ndarray):
-        """
-        Set the preconditioner matrix.
+        """Set the preconditioner matrix.
 
-        Parameters:
-        cov (np.ndarray): The covariance matrix to set as the preconditioner.
+        Args:
+            cov: The covariance matrix to set as the preconditioner.
         """
         self._prec = cov
         self._prec_L = np.linalg.cholesky(self._prec)
 
     def _step(self):
-        """
-        Perform a single step.
+        """Performs a single step.
+
+        Raises:
+            NotImplementedError: This method must be implemented in a subclass.
         """
         raise NotImplementedError(
             "The step method must be implemented in a subclass.")
 
     @override
     def write_data(self, folder: str, precision: int = 6):
+        """Write the sampler data to a file.
+
+        Args:
+            folder: The folder to write the data to.
+            precision: The precision of the data. Default is 6.
+        """
 
         if not os.path.exists(folder):
             os.makedirs(folder)
@@ -137,37 +145,37 @@ class StepSampler(Sampler):
 
 @register_sampler('RandomWalkMetropolis')
 class RandomWalkMetropolisSampler(StepSampler):
-    """
-    A class to perform sampling with the Random-Walk Metropolis algorithm.
-    """
+    """A class to perform sampling with the Random-Walk Metropolis algorithm."""
 
     def __init__(self,
                  target: Distribution,
                  sigma: float = 0.5,
                  n_samples: int = 10000,
-                 rng: np.random.Generator = None,
-                 seed: int = None,
                  prec: np.ndarray = None,
                  cov_factor: float = 1.,
                  x_0: np.ndarray = None,
+                 rng: np.random.Generator = None,
+                 seed: int = None,
                  **kwargs):
-        """
-        Initialize the RandomWalkMetropolisSampler class.
+        """Initialize the RandomWalkMetropolisSampler class.
 
-        Parameters:
-        target (Distribution): The target distribution to sample from.
-        sigma (float, optional): The standard deviation of the proposal distribution. Default is 0.5.
-        n_samples (int, optional): The number of samples to generate. Default is 10000.
-        rng (np.random.Generator, optional): Random number generator. Default is None.
-        seed (int, optional): Seed for the random number generator. Default is None.
-        prec (np.ndarray, optional): Preconditioner matrix. Default is None.
+        Args:
+            target: The target distribution to sample from.
+            sigma: The standard deviation of the proposal distribution. Default is 0.5.
+            n_samples: The number of samples to generate. Default is 10000.
+            prec: Preconditioner matrix. Default is None.
+            cov_factor: Covariance factor for the proposal distribution after initial phase. Default is 1.
+            rng: Random number generator. Default is None.
+            seed: Seed for the random number generator. Default is None.
+            kwargs: Additional keyword arguments. Default is None.
         """
         super().__init__(target=target,
                          n_samples=n_samples,
                          rng=rng,
                          seed=seed,
                          prec=prec,
-                         cov_factor=cov_factor)
+                         cov_factor=cov_factor,
+                         **kwargs)
         self._sigma = sigma
         self._log_density_old = 0.
         self._reset(x_0)
@@ -177,16 +185,16 @@ class RandomWalkMetropolisSampler(StepSampler):
         self._accepted[0] = True
 
     def _reset(self, x_0: np.ndarray = None):
-        """
-        Reset the sampler state.
+        """Reset the sampler state.
+
+        Args:
+            x_0: Initial state. Default is None.
         """
         super()._reset(x_0)
         self._log_density_old = self.target.log_density(self._state)
 
     def _step(self):
-        """
-        Perform a single RWM step.
-        """
+        """Perform a single RWM step."""
         proposal = self._state + self._sigma * self._prec_L @ self._proposal_dist.get_sample(
         )
         self._proposals[self._iter, :] = proposal
@@ -239,9 +247,7 @@ class RandomWalkMetropolisSampler(StepSampler):
 
 @register_sampler('LangevinDynamics')
 class LangevinDynamicsSampler(StepSampler):
-    """
-    Langevin Dynamics Sampler class for sampling from a target distribution using Langevin dynamics.
-    """
+    """Langevin Dynamics Sampler class for sampling from a target distribution using Langevin dynamics."""
 
     def __init__(self,
                  target: Distribution,
@@ -254,24 +260,26 @@ class LangevinDynamicsSampler(StepSampler):
                  cov_factor: float = 1.,
                  x_0: np.ndarray = None,
                  **kwargs):
-        """
-        Initialize the LangevinDynamicsSampler class.
+        """Initialize the LangevinDynamicsSampler class.
 
-        Parameters:
-        target (Distribution): The target distribution to sample from.
-        sigma (float, optional): The standard deviation of the proposal distribution. Default is 0.5.
-        n_samples (int, optional): The number of samples to generate. Default is 10000.
-        adjusted (bool, optional): Whether to use the adjusted Langevin dynamics. Default is True.
-        prec (np.ndarray, optional): Preconditioner matrix. Default is None.
-        rng (np.random.Generator, optional): Random number generator. Default is None.
-        seed (int, optional): Seed for the random number generator. Default is None.
+        Args:
+            target: The target distribution to sample from.
+            sigma: The standard deviation of the proposal distribution. Default is 0.5.
+            n_samples: The number of samples to generate. Default is 10000.
+            adjusted: Whether to use the adjusted Langevin dynamics. Default is True.
+            prec: Preconditioner matrix. Default is None.
+            cov_factor: Covariance factor for the proposal distribution after initial phase. Default is 1.
+            rng: Random number generator. Default is None.
+            seed: Seed for the random number generator. Default is None.
+            kwargs: Additional keyword arguments. Default is None.
         """
         super().__init__(target=target,
                          n_samples=n_samples,
                          rng=rng,
                          seed=seed,
                          prec=prec,
-                         cov_factor=cov_factor)
+                         cov_factor=cov_factor,
+                         **kwargs)
         self.sigma_ = sigma
         self.log_density_ = 0.
         self.grad_log_density_ = np.zeros(self._dim, dtype=np.float64)
@@ -279,8 +287,10 @@ class LangevinDynamicsSampler(StepSampler):
         self._reset(x_0)
 
     def _reset(self, x_0: np.ndarray = None):
-        """
-        Reset the sampler state.
+        """Reset the sampler state.
+
+        Args:
+            x_0: Initial state. Default is None.
         """
         super()._reset(x_0)
         self.log_density_ = self.target.log_density(self._state)
@@ -288,25 +298,22 @@ class LangevinDynamicsSampler(StepSampler):
 
     def _log_proposal_density(self, y: np.ndarray, x: np.ndarray,
                               grad_x: np.ndarray) -> float:
-        """
-        Calculate the log proposal density.
+        """Calculate the log proposal density.
 
-        Parameters:
-        y (np.ndarray): The proposed state.
-        x (np.ndarray): The current state.
-        grad_x (np.ndarray): The gradient of the log density at the current state.
+        Args:
+            y: The proposed state.
+            x: The current state.
+            grad_x: The gradient of the log density at the current state.
 
         Returns:
-        float: The log proposal density.
+            float: The log proposal density.
         """
         diff = y - x - 0.5 * self.sigma_**2 * self._prec @ grad_x
         return -0.5 * np.linalg.norm(
             np.linalg.solve(self.sigma_ * self._prec_L, diff))**2
 
     def _step(self):
-        """
-        Perform a single Langevin dynamics step.
-        """
+        """Perform a single Langevin dynamics step."""
         self.randn_ = self._proposal_dist.get_sample()
         # self.randn_ = np.array([0.8037, -1.715])
         prop = (self._state + self.sigma_ * self._prec_L @ self.randn_ +
@@ -375,32 +382,33 @@ class HamiltonianMonteCarlo(StepSampler):
                  leap_frog_steps: int = 20,
                  n_samples: int = 10000,
                  prec: np.ndarray = None,
+                 x_0: np.ndarray = None,
+                 plot: bool = False,
+                 plot_limits: Tuple[float, float] = None,
                  rng: np.random.Generator = None,
                  seed: int = None,
-                 plot: bool = False,
-                 x_0: np.ndarray = None,
-                 plot_limits: Tuple[float, float] = None,
                  **kwargs):
-        """
-        Initialize the HamiltonianMonteCarlo class.
+        """Initialize the HamiltonianMonteCarlo class.
 
-        Parameters:
-        target (Distribution): The target distribution to sample from.
-        step_scale (float, optional): The step size for the leapfrog integrator. Default is 0.1.
-        leap_frog_steps (int, optional): The number of leapfrog steps to perform. Default is 20.
-        n_samples (int, optional): The number of samples to generate. Default is 10000.
-        prec (np.ndarray, optional): Preconditioner matrix for the momentum distribution. Default is None.
-        rng (np.random.Generator, optional): Random number generator. Default is None.
-        seed (int, optional): Seed for the random number generator. Default is None.
-        plot (bool, optional): Whether to plot the sampling process. Default is False.
-        plot_limits (Tuple[float, float], optional): Limits for the plot. Default is None.
-        plot_joint (bool, optional): Whether to plot the joint distribution. Default is False.
+        Args:
+            target: The target distribution to sample from.
+            step_scale: The step size for the leapfrog integrator. Default is 0.1.
+            leap_frog_steps: The number of leapfrog steps to perform. Default is 20.
+            n_samples: The number of samples to generate. Default is 10000.
+            prec: Preconditioner matrix for the momentum distribution. Default is None.
+            plot: Whether to plot the sampling process. Default is False.
+            plot_limits: Limits for the plot. Default is None.
+            plot_joint: Whether to plot the joint distribution. Default is False.
+            rng: Random number generator. Default is None.
+            seed: Seed for the random number generator. Default is None.
+            kwargs: Additional keyword arguments. Default is None.
         """
         super().__init__(target=target,
                          n_samples=n_samples,
                          rng=rng,
                          seed=seed,
-                         prec=prec)
+                         prec=prec,
+                         **kwargs)
 
         self._step_scale = step_scale
         self._leap_frog_steps = leap_frog_steps
@@ -420,15 +428,16 @@ class HamiltonianMonteCarlo(StepSampler):
 
     def _leap_frog_step(self, p0: np.ndarray,
                         q0: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Perform a single leapfrog step.
+        """Perform a single leapfrog step.
 
-        Parameters:
-        p0 (np.ndarray): Initial momentum.
-        q0 (np.ndarray): Initial position.
+        Args:
+            p0: Initial momentum.
+            q0: Initial position.
 
         Returns:
-        Tuple[np.ndarray, np.ndarray]: Updated momentum and position.
+            tuple[np.ndarray, np.ndarray]: A tuple containing:
+                - Updated momentum vector.
+                - Updated position vector.
         """
         p = p0 + self._step_scale * 0.5 * self.target.grad_log_density(q0)
         q = q0 + self._step_scale * self._prec_inv @ p
@@ -436,15 +445,14 @@ class HamiltonianMonteCarlo(StepSampler):
         return p, q
 
     def _get_hamiltonian(self, p: np.ndarray, q: np.ndarray) -> float:
-        """
-        Calculate the Hamiltonian.
+        """Calculate the Hamiltonian.
 
-        Parameters:
-        p (np.ndarray): Momentum.
-        q (np.ndarray): Position.
+        Args:
+            p: Momentum.
+            q: Position.
 
         Returns:
-        float: The Hamiltonian value.
+            float: The Hamiltonian value.
         """
         potential = -self.target.log_density(q)
         kinetic = 0.5 * p @ self._prec_inv @ p
@@ -454,9 +462,7 @@ class HamiltonianMonteCarlo(StepSampler):
         return potential + kinetic
 
     def _step(self):
-        """
-        Perform a single HMC step.
-        """
+        """Perform a single HMC step."""
         p_hist = np.empty((self._leap_frog_steps + 1, self._dim))
         q_hist = np.empty((self._leap_frog_steps + 1, self._dim))
 
@@ -503,9 +509,7 @@ class HamiltonianMonteCarlo(StepSampler):
 
     @override
     def run(self):
-        """
-        Run the HMC sampler.
-        """
+        """Run the HMC sampler."""
         # disable tqdm if running on a cluster
         disable_tqdm = 'PBS_ENVIRONMENT' in os.environ or 'SLURM_JOB_ID' in os.environ
 
@@ -529,8 +533,7 @@ class HamiltonianMonteCarlo(StepSampler):
             self._fig.savefig(f"plots/hmc_2d_l2.p_x")
 
     def _init_plot(self, plot_limits: Tuple[float, float] = None):
-        """
-        Initialize the plot for the Hamiltonian Monte Carlo sampler.
+        """Initialize the plot for the Hamiltonian Monte Carlo sampler.
 
         This method sets up the plotting environment, including the figure and axes,
         and configures the plot limits and labels based on the dimensionality of the
@@ -589,41 +592,40 @@ class HamiltonianMonteCarlo(StepSampler):
 
 @register_sampler('NaiveNUTS')
 class NaiveNUTS(StepSampler):
-    """
-    Naive version of the No-U-Turn sampler (NUTS)
-    """
+    """Naive version of the No-U-Turn sampler (NUTS)"""
 
     def __init__(self,
                  target: Distribution,
                  epsilon: float = 0.1,
                  n_samples: int = 10000,
                  prec: np.ndarray = None,
-                 rng: np.random.Generator = None,
-                 seed: int = None,
                  x_0: np.ndarray = None,
+                 delta_max: float = 1000.,
                  plot: bool = False,
                  plot_limits: Tuple[float, float] = None,
-                 delta_max: float = 1000.,
+                 rng: np.random.Generator = None,
+                 seed: int = None,
                  **kwargs):
         """Naive version of the No-U-Turn sampler (NUTS).
 
         Args:
-            target (Distribution): The target distribution to sample from.
-            epsilon (float, optional): The step size for the leapfrog integrator. Defaults to 0.1.
-            n_samples (int, optional): The number of samples to generate. Defaults to 10000.
-            prec (np.ndarray, optional): Preconditioner matrix for the momentum distribution. Defaults to None.
-            rng (np.random.Generator, optional): Random number generator. Defaults to None.
-            seed (int, optional): Seed for the random number generator. Defaults to None.
-            x_0 (np.ndarray, optional): Initial position. Defaults to None.
-            plot (bool, optional): Whether to plot the sampling process. Defaults to False.
-            plot_limits (Tuple[float, float], optional): Limits for the plot. Defaults to None.
-            delta_max (float, optional): Maximum energy difference threshold. Defaults to 1000.
+            target: The target distribution to sample from.
+            epsilon: The step size for the leapfrog integrator. Defaults to 0.1.
+            n_samples: The number of samples to generate. Defaults to 10000.
+            prec: Preconditioner matrix for the momentum distribution. Defaults to None.
+            x_0: Initial position. Defaults to None.
+            delta_max: Maximum energy difference threshold. Defaults to 1000.
+            plot: Whether to plot the sampling process. Defaults to False.
+            plot_limits: Limits for the plot. Defaults to None.
+            rng: Random number generator. Defaults to None.
+            seed: Seed for the random number generator. Defaults to None.
         """
         super().__init__(target=target,
                          n_samples=n_samples,
                          rng=rng,
                          seed=seed,
-                         prec=prec)
+                         prec=prec,
+                         **kwargs)
 
         self._n_evals = np.zeros(n_samples, dtype=int)
 
@@ -714,15 +716,15 @@ class NaiveNUTS(StepSampler):
         """Perform a single leapfrog step.
 
         Args:
-            p0 (np.ndarray): Initial momentum.
-            q0 (np.ndarray): Initial position.
-            v (int): Direction of the leapfrog step.
-            epsilon (float): Step size.
+            p0: Initial momentum.
+            q0: Initial position.
+            v: Direction of the leapfrog step.
+            epsilon: Step size.
 
         Returns:
             Tuple[np.ndarray, np.ndarray]: A tuple containing:
-                - p (np.ndarray): Updated momentum.
-                - q (np.ndarray): Updated position.
+                - Updated momentum.
+                - Updated position.
         """
         p = p0 + v * epsilon * 0.5 * self.target.grad_log_density(q0)
         q = q0 + v * epsilon * self._prec_inv @ p
@@ -776,27 +778,27 @@ class NaiveNUTS(StepSampler):
                          zorder=10)
 
     def _step(self):
-        """Perform a single NUTS step.
-        """
+        """Perform a single NUTS step."""
         trajectory = []
 
-        def build_tree(p, q, u, v, j):
+        def build_tree(p: np.ndarray, q: np.ndarray, u: float, v: int, j: int):
             """Build a tree of leap frog steps.
 
             Args:
-                p (np.ndarray): Momentum.
-                q (np.ndarray): Position.
-                u (np.ndarray): Random variable for slice sampling.
-                v (int): Direction of the leapfrog step.
-                j (int): Current depth of the tree.
+                p: Momentum.
+                q: Position.
+                u: Random variable for slice sampling.
+                v: Direction of the leapfrog step.
+                j: Current depth of the tree.
 
             Returns:
-                p_minus (np.ndarray): Momentum of leftmost leaf.
-                q_minus (np.ndarray): Position of leftmost leaf.
-                p_plus (np.ndarray): Momentum of rightmost leaf.
-                q_plus (np.ndarray): Position of rightmost leaf.
-                C_prime (list[np.ndarray]): Set of candidate points C'.
-                s_prime (int): Whether conditions for continuation are satisfied (0 or 1).
+                tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[np.ndarray], int]: A tuple containing:
+                    - Momentum of leftmost leaf.
+                    - Position of leftmost leaf.
+                    - Momentum of rightmost leaf.
+                    - Position of rightmost leaf.
+                    - Set of candidate points C'.
+                    - Whether conditions for continuation are satisfied (0 or 1).
             """
             # base case: take a single leap-frog step
             if j == 0:
@@ -922,22 +924,21 @@ class NaiveNUTS(StepSampler):
 
 @register_sampler('EfficientNUTS')
 class EfficientNUTS(NaiveNUTS):
-    """
-    Efficient NUTS sampler class for sampling from a target distribution using the base version of the algorithm.
-    """
+    """Efficient NUTS sampler class for sampling from a target distribution using the base version of the algorithm."""
 
     def __init__(self, target: Distribution, **kwargs):
-        """ Initialize the HamiltonianMonteCarlo class.
+        """Initialize the HamiltonianMonteCarlo class.
 
         Args:
-            target (Distribution): The target distribution to sample from.
-            step_scale (float, optional): The step size for the leapfrog integrator. Defaults to 0.1.
-            n_samples (int, optional): The number of samples to generate. Defaults to 10000.
-            prec (np.ndarray, optional): Preconditioner matrix for the momentum distribution. Defaults to None.
-            rng (np.random.Generator, optional): Random number generator. Defaults to None.
-            seed (int, optional): Seed for the random number generator. Defaults to None.
-            plot (bool, optional): Whether to plot the sampling process. Defaults to False.
-            plot_limits (Tuple[float, float], optional): Limits for the plot. Defaults to None.
+            target: The target distribution to sample from.
+            step_scale: The step size for the leapfrog integrator. Defaults to 0.1.
+            n_samples: The number of samples to generate. Defaults to 10000.
+            prec: Preconditioner matrix for the momentum distribution. Defaults to None.
+            delta_max: Maximum energy difference threshold. Defaults to 1000.
+            plot: Whether to plot the sampling process. Defaults to False.
+            plot_limits: Limits for the plot. Defaults to None.
+            rng: Random number generator. Defaults to None.
+            seed: Seed for the random number generator. Defaults to None.
         """
         super().__init__(target=target, **kwargs)
 
@@ -952,20 +953,21 @@ class EfficientNUTS(NaiveNUTS):
             """Build a tree of leap frog steps.
 
             Args:
-                p (np.ndarray): Momentum.
-                q (np.ndarray): Position.
-                u (np.ndarray): Random variable for slice sampling.
-                v (int): Direction of the leapfrog step.
-                j (int): Current depth of the tree.
+                p: Momentum.
+                q: Position.
+                u: Random variable for slice sampling.
+                v: Direction of the leapfrog step.
+                j: Current depth of the tree.
 
             Returns:
-                p_minus (np.ndarray): Momentum of leftmost leaf.
-                q_minus (np.ndarray): Position of leftmost leaf.
-                p_plus (np.ndarray): Momentum of rightmost leaf.
-                q_plus (np.ndarray): Position of rightmost leaf.
-                q_prime (np.ndarray): Position of the candidate leaf.
-                n_prime (int): Number of candidate leaves in C'.
-                s_prime (int): Whether conditions for continuation are satisfied (0 or 1).
+                tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, int]: A tuple containing:
+                    - Momentum of leftmost leaf.
+                    - Position of leftmost leaf.
+                    - Momentum of rightmost leaf.
+                    - Position of rightmost leaf.
+                    - Position of the candidate leaf.
+                    - Number of candidate leaves in C'.
+                    - Whether conditions for continuation are satisfied (0 or 1).
             """
             # base case: take a single leap-frog step
             if j == 0:
@@ -1066,8 +1068,9 @@ class EfficientNUTS(NaiveNUTS):
 
 @register_sampler('DualAveragingNUTS')
 class DualAveragingNUTS(NaiveNUTS):
-    """
-    Dual averaging NUTS sampler class for sampling from a target distribution using the efficient version of the
+    """Dual averaging NUTS sampler class
+
+    Algoprithm for sampling from a target distribution using the efficient version of the
     algorithm with dual averaging of the step size epsilon.
     """
 
@@ -1080,17 +1083,21 @@ class DualAveragingNUTS(NaiveNUTS):
                  M_adapt: int = 1000,
                  target_acceptance_rate: float = 0.65,
                  **kwargs):
-        """
-        Initialize the HamiltonianMonteCarlo class.
+        """Initialize the HamiltonianMonteCarlo class.
 
-        Parameters:
-        target (Distribution): The target distribution to sample from.
-        n_samples (int, optional): The number of samples to generate. Default is 10000.
-        prec (np.ndarray, optional): Preconditioner matrix for the momentum distribution. Default is None.
-        rng (np.random.Generator, optional): Random number generator. Default is None.
-        seed (int, optional): Seed for the random number generator. Default is None.
-        plot (bool, optional): Whether to plot the sampling process. Default is False.
-        plot_limits (Tuple[float, float], optional): Limits for the plot. Default is None.
+        Args:
+            target: The target distribution to sample from.
+            n_samples: The number of samples to generate. Default is 10000.
+            prec: Preconditioner matrix for the momentum distribution. Default is None.
+            delta_max: Maximum energy difference threshold. Defaults to 1000.
+            epsilon_bar_0: Initial step size for the leapfrog integrator. Default is 1.
+            gamma: Step size for the dual averaging algorithm. Default is 0.05.
+            t_0: Initial time for the dual averaging algorithm. Default is 10.
+            kappa: Exponent for the dual averaging algorithm. Default is 0.75.
+            plot: Whether to plot the sampling process. Default is False.
+            plot_limits: Limits for the plot. Default is None.
+            rng: Random number generator. Default is None.
+            seed: Seed for the random number generator. Default is None.
         """
         super().__init__(target=target, **kwargs)
 
@@ -1105,16 +1112,15 @@ class DualAveragingNUTS(NaiveNUTS):
         epsilon_0 = self._find_reasonable_epsilon()
         self._mu = np.log(10 * epsilon_0)
         self._epsilon = epsilon_0
-        print(f"epsilon 0: {self._epsilon}")
+        logger.info(f"epsilon 0: {self._epsilon}")
 
         self._acceptance_rate = 0.0
 
     def _find_reasonable_epsilon(self) -> float:
-        """
-        Find a reasonable epsilon for the leapfrog step size.
+        """Find a reasonable epsilon for the leapfrog step size.
 
         Returns:
-        float: A reasonable epsilon value.
+            float: A reasonable epsilon value.
         """
         epsilon = 1.
         p = self._prec_L @ self._proposal_dist.get_sample()
@@ -1140,27 +1146,28 @@ class DualAveragingNUTS(NaiveNUTS):
             """Build a tree of leap frog steps.
 
             Args:
-                p (np.ndarray): Momentum.
-                q (np.ndarray): Position.
-                u (np.ndarray): Random variable for slice sampling.
-                v (int): Direction of the leapfrog step.
-                j (int): Current depth of the tree.
-                epsilon (float): Step size.
-                p_0 (np.ndarray): Initial momentum.
-                q_0 (np.ndarray): Initial position.
+                p: Momentum.
+                q: Position.
+                u: Random variable for slice sampling.
+                v: Direction of the leapfrog step.
+                j: Current depth of the tree.
+                epsilon: Step size.
+                p_0: Initial momentum.
+                q_0: Initial position.
 
             Returns:
-                p_minus (np.ndarray): Momentum of leftmost leaf.
-                q_minus (np.ndarray): Position of leftmost leaf.
-                p_plus (np.ndarray): Momentum of rightmost leaf.
-                q_plus (np.ndarray): Position of rightmost leaf.
-                q_prime (np.ndarray): Position of the candidate leaf.
-                n_prime (int): Number of candidate leaves in C'.
-                s_prime (int): Whether conditions for continuation are satisfied (0 or 1).
-                alpha (float): Acceptance probability.
-                n_alpha (int): Number of accepted samples.
+                tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, int, float, int]:
+                A tuple containing:
+                    - Momentum of leftmost leaf.
+                    - Position of leftmost leaf.
+                    - Momentum of rightmost leaf.
+                    - Position of rightmost leaf.
+                    - Position of the candidate leaf.
+                    - Number of candidate leaves in C'.
+                    - Whether conditions for continuation are satisfied (0 or 1).
+                    - Acceptance probability.
+                    - Number of accepted samples.
             """
-
             # base case: take a single leap-frog step
             if j == 0:
                 self._n_evals[self._iter] += 1

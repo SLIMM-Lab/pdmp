@@ -13,11 +13,10 @@ from pdmp.loader import get_target, get_sampler, get_surrogate, yaml_to_numpy, s
 
 
 def parse_args():
-    """
-    Parse the command line arguments.
+    """Parse the command line arguments.
 
     Returns:
-    argparse.Namespace: The command line arguments.
+        argparse.Namespace: The command line arguments.
     """
 
     parser = argparse.ArgumentParser(description="Run Monte Carlo simulation.")

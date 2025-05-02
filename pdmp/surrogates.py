@@ -33,54 +33,54 @@ dtype = torch.float64
 
 
 class SurrogateModel(object):
-    """
-    Base class for surrogate models.
-    """
+    """Base class for surrogate models."""
+
+    gaussian: Optional[MultivariateNormal] = None
+    """Laplace approximation of the target distribution as base model."""
 
     def __init__(self, *args, **kwargs):
+        """Initialize the surrogate model.
+
+        Args:
+            args: Positional arguments.
+            kwargs: Keyword arguments.
         """
-        Initialize the surrogate model.
-        """
-        self.gaussian = None
 
     @classmethod
     def from_dict(cls, target: Distribution, rng: np.random.Generator,
                   **kwargs):
-        """
-        Create a surrogate model derived class from a dictionary.
+        """Create a surrogate model derived class from a dictionary.
 
-        Parameters:
-        config (dict): The configuration dictionary.
-        target (Distribution): The target distribution.
-        rng (np.random.Generator): The random number generator.
+        Args:
+            target: The target distribution.
+            rng: The random number generator.
+            kwargs: Additional keyword arguments.
 
         Returns:
-        ConstantSurrogate: The constant surrogate model.
+            SurrogateModel: The surrogate model.
         """
         return cls(target=target, rng=rng, **kwargs)
 
     def eval(self, x: np.ndarray, **kwargs) -> np.ndarray:
-        """
-        Evaluate the surrogate model at a point.
+        """Evaluate the surrogate model at a point.
 
-        Parameters:
-        x (np.ndarray): The point at which the surrogate model is to be evaluated.
+        Args:
+            x: The point at which the surrogate model is to be evaluated.
 
         Returns:
-        float: The value of the surrogate model at the point x.
+            np.ndarray: The value of the surrogate model at the point x.
         """
         raise NotImplementedError
 
     def grad(self, x: np.ndarray, idx: int = None) -> np.ndarray:
-        """
-        Compute the gradient of the surrogate model at a point.
+        """Compute the gradient of the surrogate model at a point.
 
-        Parameters:
-        x (np.ndarray): The point at which the gradient is to be computed.
-        idx (int, optional): The index of the component of the grad to be computed. Default is None.
+        Args:
+            x: The point at which the gradient is to be computed.
+            idx: The index of the component of the grad to be computed. Default is None.
 
         Returns:
-        float: The gradient of the surrogate model at the point x.
+            np.ndarray: The gradient of the surrogate model at the point x.
         """
         raise NotImplementedError
 
@@ -88,33 +88,30 @@ class SurrogateModel(object):
                  x: np.ndarray,
                  y: np.ndarray,
                  dy_dx: np.ndarray = None) -> None:
-        """
-        Add data to the surrogate model.
+        """Add data to the surrogate model.
 
-        Parameters:
-        x (np.ndarray): The input data.
-        y (np.ndarray): The output data.
-        dy_dx (np.ndarray): The gradient of the output data.
+        Args:
+            x: The input data.
+            y: The output data.
+            dy_dx: The gradient of the output data. Default is None.
         """
         pass
 
-    def train(self, *args, **kwargs) -> None:
+    def train(self, *args, **kwargs):
+        """Train the surrogate model.
+
+        Args:
+            args: Additional arguments.
+            kwargs: Additional keyword arguments.
         """
-        Train the surrogate model.
-        """
-        raise NotImplementedError
+        pass
 
 
 class ConstantSurrogate(SurrogateModel):
-    """
-    Constant surrogate model.
-    """
+    """Constant surrogate model."""
 
-    def __init__(self, **kwargs):
-        """
-        Initialize the constant surrogate model.
-        """
-        super().__init__(**kwargs)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     @override
     def eval(self, x: np.ndarray, **kwargs) -> np.ndarray:
@@ -129,19 +126,22 @@ class ConstantSurrogate(SurrogateModel):
 
 
 class RandomConstantSurrogate(SurrogateModel):
-    """
-    Random constant surrogate model.
-    """
+    """Random constant surrogate model."""
 
-    def __init__(self, rng: np.random.Generator, *, var: float = 1.0, **kwargs):
-        """
-        Initialize the random constant surrogate model.
+    def __init__(self,
+                 rng: np.random.Generator,
+                 *args,
+                 var: float = 1.0,
+                 **kwargs):
+        """Initialize the random constant surrogate model.
 
-        Parameters:
-        rng (np.random.Generator): The random number generator.
-        var (float): The variance of the random constant surrogate model.
+        Args:
+            rng: The random number generator.
+            args: Additional positional arguments.
+            var: The variance of the random constant surrogate model.
+            kwargs: Additional keyword arguments.
         """
-        super().__init__(**kwargs)
+        super().__init__(*args, **kwargs)
         self._var = var
         self._rng = rng
 
@@ -162,28 +162,28 @@ class RandomConstantSurrogate(SurrogateModel):
 
 
 class LaplaceSurrogate(SurrogateModel):
-    """
-    Laplace approximation to the target distribution.
-    """
+    """Laplace approximation to the target distribution."""
 
     def __init__(self,
                  target: Distribution,
                  rng: np.random.Generator,
-                 *,
+                 *args,
                  mean: np.ndarray = None,
                  cov: np.ndarray = None,
                  x_0: np.ndarray = None,
                  **kwargs):
-        """
-        Initialize the Laplace approximation. If mean and or cov are not provided, they are computed using the target.
+        """Initialize the Laplace approximation. If mean and or cov are not provided, they are computed using the target.
 
-        Parameters:
-        target (Distribution): The target distribution.
-        mean (np.ndarray): The mean of the Laplace approximation.
-        cov (np.ndarray): The covariance matrix of the Laplace approximation.
-        x_0 (np.ndarray): The initial point for the Laplace approximation.
+        Args:
+            target: The target distribution.
+            rng: The random number generator.
+            args: Additional keyword arguments.
+            mean: The mean of the Laplace approximation.
+            cov: The covariance matrix of the Laplace approximation.
+            x_0: The initial point for the Laplace approximation.
+            kwargs: Additional keyword arguments.
         """
-        super().__init__(**kwargs)
+        super().__init__(*args, **kwargs)
 
         if isinstance(target, Posterior):
             target = cast(Posterior, target)
@@ -208,83 +208,47 @@ class LaplaceSurrogate(SurrogateModel):
         self._delta = self.gaussian.log_density(
             self._mean) - target.log_density(self._mean)
 
+    @override
     def eval(self, x: np.ndarray, delta: bool = False, **kwargs) -> np.ndarray:
-        """
-        Evaluate the Laplace approximation at a point.
+        """Evaluate the Laplace approximation at a point.
 
-        Parameters:
-        x (np.ndarray): The point at which the Laplace approximation is to be evaluated.
+        Args:
+            x: The point at which the Laplace approximation is to be evaluated.
+            delta: If True, return the value of the Laplace approximation at the point x minus the delta term. Default is False.
+            kwargs: Additional keyword arguments.
 
         Returns:
-        float: The value of the Laplace approximation at the point x.
+            float: The value of the Laplace approximation at the point x.
         """
         return self.gaussian.log_density(x) - delta * self._delta
 
+    @override
     def grad(self, x: np.ndarray, idx: int = None) -> np.ndarray:
-        """
-        Compute the gradient of the Laplace approximation at a point.
-
-        Parameters:
-        x (np.ndarray): The point at which the gradient is to be computed.
-        idx (int, optional): The index of the component of the gradient to be computed. Default is None.
-
-        Returns:
-        np.ndarray: The gradient of the Laplace approximation at the point x.
-        """
         if idx is None:
             return self.gaussian.grad_log_density(x)
         else:
             return self.gaussian.grad_log_density(x)[idx]
 
-    def add_data(self,
-                 x: np.ndarray,
-                 y: np.ndarray,
-                 dy_dx: np.ndarray = None) -> None:
-        """
-        Add data to the Laplace approximation. Nothing to do here!
-
-        Parameters:
-        x (np.ndarray): The input data.
-        y (np.ndarray): The output data
-        """
-        pass
-
-    def train(self, *args, **kwargs) -> None:
-        """
-        Update the Laplace approximation. Nothing to do here!
-
-        Parameters:
-        args: Additional arguments.
-        kwargs: Additional keyword arguments.
-
-        Returns:
-        None
-        """
-        pass
-
     def get_samples(self, n: int) -> np.ndarray:
-        """
-        Get samples from the Laplace approximation.
+        """Get samples from the Laplace approximation.
 
-        Parameters:
-        n (int): The number of samples to generate.
+        Args:
+            n: The number of samples to generate.
 
         Returns:
-        np.ndarray: An array of samples from the Laplace approximation.
+            np.ndarray: An array of samples from the Laplace approximation.
         """
         return self.gaussian.get_sample(n)
 
 
 class NeuralNetwork(SurrogateModel):
-    """
-    Neural network surrogate model based on PyTorch.
-    """
+    """Neural network surrogate model based on PyTorch."""
 
     def __init__(self,
                  target: Distribution,
                  hidden_layers: list,
                  rng: np.random.Generator,
-                 *,
+                 *args,
                  n_samples: int = 100,
                  epochs: int = 5000,
                  batch_size: int = 20,
@@ -298,25 +262,26 @@ class NeuralNetwork(SurrogateModel):
                  train_on_init: bool = True,
                  update_model: list = None,
                  **kwargs):
-        """
-        Initialize the neural network surrogate model.
+        """Initialize the neural network surrogate model.
 
-        Parameters:
-        target (Distribution): The target distribution.
-        hidden_layers (list): The number of hidden layers in the neural network.
-        rng (np.random.Generator): The random number generator.
-        n_samples (int): The number of samples to generate.
-        epochs (int): Number of training epochs.
-        batch_size (int): Batch size for training.
-        weight_decay (float): Weight decay for the optimizer.
-        val_split (float): Fraction of data to use for validation.
-        patience (int): Number of epochs to wait for improvement in validation loss before stopping early.
-        print_every (int): Print training information every print_every epochs.
-        lr (float): Learning rate for the optimizer.
-        lr_scheduler (str): Learning rate scheduler.
-        lr_scheduler_params (dict): Learning rate scheduler parameters.
-        train_on_init (bool): Whether to train the model on initialization.
-        update_model (list): List of number of samples after which to update the model.
+        Args:
+            target: The target distribution.
+            hidden_layers: The number of hidden layers in the neural network.
+            rng: The random number generator.
+            args: Additional positional arguments.
+            n_samples: The number of samples to generate.
+            epochs: Number of training epochs.
+            batch_size: Batch size for training.
+            weight_decay: Weight decay for the optimizer.
+            val_split: Fraction of data to use for validation.
+            patience: Number of epochs to wait for improvement in validation loss before stopping early.
+            print_every: Print training information every print_every epochs.
+            lr: Learning rate for the optimizer.
+            lr_scheduler: Learning rate scheduler.
+            lr_scheduler_params: Learning rate scheduler parameters.
+            train_on_init: Whether to train the model on initialization.
+            update_model: List of number of samples after which to update the model.
+            kwargs: Additional keyword arguments.
         """
         super().__init__(**kwargs)
         if update_model is None:
@@ -329,9 +294,9 @@ class NeuralNetwork(SurrogateModel):
                 layers.append(nn.Tanh())
         self._model = nn.Sequential(*layers)
 
-        self._laplace = LaplaceSurrogate.from_dict(kwargs,
-                                                   target=target,
-                                                   rng=rng)
+        self._laplace = LaplaceSurrogate.from_dict(target=target,
+                                                   rng=rng,
+                                                   **kwargs)
 
         # init all data
         self._x_data = None
@@ -435,37 +400,38 @@ class NeuralNetwork(SurrogateModel):
                 self._n_data_buffer = 0
 
     def save_model(self, path: str = 'neural_network.th') -> None:
-        """
-        Save the neural network model to a file.
+        """Save the neural network model to a file.
 
-        Parameters:
-        path (str): The path to the file.
+        Args:
+            path: The path to the file. Default is 'neural_network.th'.
         """
         torch.save(self._model.state_dict(), path)
 
     def load_model(self, path: str = 'neural_network.th') -> None:
-        """
-        Load the neural network model from a file.
+        """Load the neural network model from a file.
 
-        Parameters:
-        path (str): The path to the file.
+        Args:
+            path: The path to the file. Default is 'neural_network.th'.
         """
         self._model.load_state_dict(torch.load(path, weights_only=True))
 
     def train(self, *args, epochs: int, batch_size: int, print_every: int,
               patience: int, lr: float, val_split: float, weight_decay: float,
-              lr_scheduler: str, lr_scheduler_params: dict, **kwargs) -> None:
-        """
-        Train the neural network surrogate model using stored data.
+              lr_scheduler: str, lr_scheduler_params: dict, **kwargs):
+        """Train the neural network surrogate model using stored data.
 
-        Parameters:
-        epochs (int): Number of training epochs.
-        batch_size (int): Batch size for training.
-        print_every (int): Print training information every print_every epochs.
-        patience (int): Number of epochs to wait for improvement in validation loss before stopping early.
-        lr (float): Learning rate for the optimizer.
-        lr_scheduler (str): Type of learning rate scheduler. Admissible values are 'StepLR' and 'ReduceLROnPlateau'.
-        lr_scheduler_params (dict): Parameters for the learning rate scheduler.
+        Args:
+            args: Additional positional arguments.
+            epochs: Number of training epochs.
+            batch_size: Batch size for training.
+            print_every: Print training information every print_every epochs.
+            patience: Number of epochs to wait for improvement in validation loss before stopping early.
+            lr: Learning rate for the optimizer.
+            val_split: Fraction of data used for validation.
+            weight_decay: Weight decay for the optimizer.
+            lr_scheduler: Type of learning rate scheduler. Admissible values are 'StepLR' and 'ReduceLROnPlateau'.
+            lr_scheduler_params: Parameters for the learning rate scheduler.
+            kwargs: Additional keyword arguments.
         """
 
         train_losses = []
@@ -589,12 +555,18 @@ class NeuralNetwork(SurrogateModel):
 
 
 class ExactGPModel(ExactGP):
-    """
-    Exact Gaussian process model based on GPyTorch.
-    """
+    """Exact Gaussian process model based on GPyTorch."""
 
     def __init__(self, train_x: torch.tensor, train_y: torch.tensor,
                  likelihood: _GaussianLikelihoodBase, ard_num_dims: int):
+        """Initialize the exact Gaussian process model.
+
+        Args:
+            train_x: The training input data.
+            train_y: The training output data.
+            likelihood: The likelihood function.
+            ard_num_dims: The number of dimensions for the ARD kernel.
+        """
 
         super(ExactGPModel, self).__init__(train_x, train_y, likelihood)
         self._mean_module = ConstantMean()
@@ -607,46 +579,45 @@ class ExactGPModel(ExactGP):
 
 
 class GaussianProcessBase(SurrogateModel):
-    """
-    Base class for Gaussian process surrogate models.
-    """
+    """Base class for Gaussian process surrogate models."""
 
     def __init__(self,
-                 rng: np.random.Generator,
                  target: Distribution,
+                 rng: np.random.Generator,
+                 *args,
+                 n_samples: int = 100,
                  lbfgs_steps: int = 5,
                  n_restarts: int = 50,
-                 n_samples: int = 100,
-                 print_every: int = 1,
                  lr: float = 0.5,
                  tolerance_grad: float = 1e-7,
                  tolerance_change: float = 1e-9,
                  update_model: list = None,
                  retrain_threshold: int = 1000,
                  eval_strategy: str = 'mean',
+                 print_every: int = 1,
                  **kwargs):
-        """
-        Initialize the Gaussian process surrogate model.
+        """Initialize the Gaussian process surrogate model.
 
-        Parameters:
-        target (Distribution): The target distribution.
-        rng (np.random.Generator): The random number generator.
-        train_iters (int): Number of training iterations.
-        n_restarts (int): Number of restarts for hyperparameter optimization.
-        lr (float): Learning rate for the optimizer.
-        lr_scheduler (str): Learning rate scheduler.
-        lr_scheduler_params (dict): Learning rate scheduler parameters.
-        print_every (int): Print training information every print_every iterations.
-        update_model (list): List of number of samples after which to update the model.
-        retrain_threshold (int): Number of samples after which to retrain the model.
-        eval_strategy (str): Evaluation strategy. Admissible values are 'mean' and 'mean_plus_std'.
+        Args:
+            target: The target distribution.
+            rng: The random number generator.
+            args: Additional positional arguments.
+            n_samples: The number of training data to use.
+            lbfgs_steps: Number of lbfgs iterations during hyperparameter fitting.
+            n_restarts: Number of restarts for hyperparameter optimization.
+            lr: Learning rate for the optimizer.
+            update_model: List of number of samples after which to update the model.
+            retrain_threshold: Number of samples after which to retrain the model.
+            eval_strategy: Evaluation strategy. Admissible values are 'mean' and 'mean_plus_std'.
+            print_every: Print training information every print_every iterations.
+            kwargs: Additional keyword arguments.
         """
-        super().__init__()
+        super().__init__(*args, **kwargs)
 
         # get laplace approximation
-        self._laplace = LaplaceSurrogate.from_dict(kwargs,
-                                                   target=target,
-                                                   rng=rng)
+        self._laplace = LaplaceSurrogate.from_dict(target=target,
+                                                   rng=rng,
+                                                   **kwargs)
         self._rng = rng
 
         # init all data
@@ -692,53 +663,59 @@ class GaussianProcessBase(SurrogateModel):
                 "Choose from: 'mean', 'mean_plus_std'")
 
     @override
-    def add_data(self,
-                 x: np.ndarray,
-                 y: np.ndarray,
-                 dy_dx: np.ndarray = None) -> None:
-        """
-        Add data to the Gaussian process surrogate model. Nothing to do here!
+    def add_data(self, x: np.ndarray, y: np.ndarray, dy_dx: np.ndarray = None):
+        """Wrapper for the _add_data_on and _add_data_off methods.
 
-        Parameters:
-        x (np.ndarray): The input data.
-        y (np.ndarray): The output data
+        Depending on the training stage, _add_data either points to _add_data_on or _add_data_off.
+
+        Args:
+            x: The input data.
+            y: The output data.
+            dy_dx: The gradient of the output data. Default is None.
         """
         return self._add_data(x, y, dy_dx)
 
     def _add_data_on(self,
                      x: np.ndarray,
                      y: np.ndarray,
-                     dy_dx: np.ndarray = None) -> None:
-        """
-        Add data to the Gaussian process surrogate model. Nothing to do here!
+                     dy_dx: np.ndarray = None):
+        """Add data to the Gaussian process surrogate model.
 
-        Parameters:
-        x (np.ndarray): The input data.
-        y (np.ndarray): The output data
-        dy_dx (np.ndarray): The gradient of the output data with respect to x
+        Args:
+            x (np.ndarray): The input data.
+            y (np.ndarray): The output data
+            dy_dx (np.ndarray): The gradient of the output data with respect to x
         """
         raise NotImplementedError
 
     def _add_data_off(self,
                       x: np.ndarray,
                       y: np.ndarray,
-                      dy_dx: np.ndarray = None) -> None:
-        """
-        Add data to the Gaussian process surrogate model. Nothing to do here!
+                      dy_dx: np.ndarray = None):
+        """Add data to the Gaussian process surrogate model. Nothing to do here!
 
-        Parameters:
-        x (np.ndarray): The input data.
-        y (np.ndarray): The output data
-        dy_dx (np.ndarray): The gradient of the output data with respect to x
+        Args:
+            x: The input data.
+            y: The output data
+            dy_dx: The gradient of the output data with respect to x
         """
         pass
 
     @override
     def train(self, *args, lbfgs_steps: int, n_restarts: int, print_every: int,
               lr: float, tolerance_grad: float, tolerance_change: float,
-              **kwargs) -> None:
-        """
-        Update the Gaussian process surrogate model.
+              **kwargs):
+        """Update the Gaussian process surrogate model.
+
+        Args:
+            args: Additional positional arguments.
+            lbfgs_steps: Number of lbfgs iterations during hyperparameter fitting.
+            n_restarts: Number of restarts for hyperparameter optimization.
+            print_every: Print training information every print_every iterations.
+            lr: Learning rate for the optimizer.
+            tolerance_grad: Tolerance for the gradient.
+            tolerance_change: Tolerance for the change in loss.
+            kwargs: Additional keyword arguments.
         """
 
         logger.info(f"Training {self.__class__.__name__} surrogate model ...")
@@ -898,12 +875,10 @@ class GaussianProcessBase(SurrogateModel):
         self._likelihood.eval()
 
     def _log_state_dict(self, end_of_line: str = '\n') -> str:
-        """
-        Log the state dictionary of the model.
+        """Log the state dictionary of the model.
 
-        Parameters
-        end_of_line : str
-            The end of line character. Default is '\n'.
+        Args:
+            end_of_line :The end of line character. Default is '\n'.
 
         Returns
             str: The state dictionary of the model as a string
@@ -925,63 +900,58 @@ class GaussianProcessBase(SurrogateModel):
         return self._grad(x, idx=idx)
 
     def _eval_mean(self, x: np.ndarray, **kwargs) -> np.ndarray:
-        """
-        Evaluate the mean of the Gaussian process model.
+        """Evaluate the mean of the Gaussian process model.
 
-        Parameters:
-        x (np.ndarray): The input data.
-        kwargs: Additional keyword arguments
+        Args:
+            x: The input data.
+            kwargs: Additional keyword arguments
 
         Returns:
-        np.ndarray: The mean of the Gaussian process model.
+            np.ndarray: The mean of the Gaussian process model.
         """
         raise NotImplementedError
 
     def _eval_mean_plus_std(self, x: np.ndarray, **kwargs) -> np.ndarray:
-        """
-        Evaluate the mean of the Gaussian process model and add the standard deviation.
+        """Evaluate the mean of the Gaussian process model and add the standard deviation.
 
-        Parameters:
-        x (np.ndarray): The input data.
-        kwargs: Additional keyword arguments
+        Args:
+            x: The input data.
+            kwargs: Additional keyword arguments
 
         Returns:
-        np.ndarray: The mean of the Gaussian process model plus the standard deviation.
+            np.ndarray: The mean of the Gaussian process model plus the standard deviation.
         """
         raise NotImplementedError
 
     def _grad_mean(self, x: np.ndarray, idx: int = None) -> np.ndarray:
-        """
-        Compute the gradient of the mean of the Gaussian process model.
+        """Compute the gradient of the mean of the Gaussian process model.
 
-        Parameters:
-        x (np.ndarray): The input data.
-        idx (int): The index of the component of the gradient to be computed. Default is None.
+        Args:
+            x: The input data.
+            idx: The index of the component of the gradient to be computed. Default is None.
 
         Returns:
-        np.ndarray: The gradient of the mean of the Gaussian process model.
+            np.ndarray: The gradient of the mean of the Gaussian process model.
         """
         raise NotImplementedError
 
     def _grad_mean_plus_std(self, x: np.ndarray, idx: int = None) -> np.ndarray:
-        """
-        Compute the gradient of the mean of the Gaussian process model plus the standard deviation.
+        """Compute the gradient of the mean of the Gaussian process model plus the standard deviation.
 
-        Parameters:
-        x (np.ndarray): The input data.
-        idx (int): The index of the component of the gradient to be computed. Default is None.
+        Args:
+            x: The input data.
+            idx: The index of the component of the gradient to be computed. Default is None.
 
         Returns:
-        np.ndarray: The gradient of the mean of the Gaussian process model plus the standard deviation.
+            np.ndarray: The gradient of the mean of the Gaussian process model plus the standard deviation.
         """
         raise NotImplementedError
 
-    def save_model(self, path: str = 'model_params') -> None:
-        """
-        Save the neural network model to a file.
+    def save_model(self, path: str = 'model_params'):
+        """Save the neural network model to a file.
 
-        Parameters:
-        path (str): The path to the file.
+        Args:
+            path: The path to the file. Default is 'model_params'.
         """
 
         if not os.path.exists(path):
@@ -992,12 +962,11 @@ class GaussianProcessBase(SurrogateModel):
         np.savetxt(os.path.join(path, 'x_data.dat'), self._x_data.numpy())
         np.savetxt(os.path.join(path, 'y_data.dat'), self._y_data.numpy())
 
-    def load_model(self, path: str = 'model_params') -> None:
-        """
-        Load the neural network model from a file.
+    def load_model(self, path: str = 'model_params'):
+        """Load the neural network model from a file.
 
-        Parameters:
-        path (str): The path to the file.
+        Args:
+            path: The path to the file. Default is 'model_params'.
         """
 
         model_params = torch.load(os.path.join(path, 'model_params.th'))
@@ -1015,20 +984,26 @@ class GaussianProcessBase(SurrogateModel):
 
 
 class GaussianProcess(GaussianProcessBase):
-    """
-    Gaussian process surrogate model based on GPyTorch.
-    """
+    """Gaussian process surrogate model based on GPyTorch."""
 
     def __init__(self,
-                 rng: np.random.Generator,
                  target: Distribution,
+                 rng: np.random.Generator,
+                 *args,
                  train_on_init: bool = True,
                  n_samples: int = 100,
                  **kwargs):
+        """Initialize the Gaussian process surrogate model.
+
+        Args:
+            target: The target distribution.
+            rng: The random number generator.
+            args: Additional positional arguments.
+            train_on_init: Whether to train the model on initialization.
+            n_samples: The number of training data to use.
+            kwargs: Additional keyword arguments.
         """
-        Initialize the Gaussian process surrogate model.
-        """
-        super().__init__(rng=rng, target=target, n_samples=n_samples, **kwargs)
+        super().__init__(target, rng, *args, n_samples=n_samples, **kwargs)
 
         # define likelihood, get model, and set optimizer
         self._likelihood = GaussianLikelihood()
@@ -1055,7 +1030,7 @@ class GaussianProcess(GaussianProcessBase):
     def _add_data_on(self,
                      x: np.ndarray,
                      y: np.ndarray,
-                     dy_dx: np.ndarray = None) -> None:
+                     dy_dx: np.ndarray = None):
 
         x = np.atleast_2d(x)
         y = np.atleast_1d(y)
@@ -1170,17 +1145,25 @@ class GaussianProcess(GaussianProcessBase):
 
 
 class DerivativeGPModel(ExactGP):
-    """
-    Gaussian process model based on GPyTorch that also observes gradients.
-    """
+    """Gaussian process model based on GPyTorch that also observes gradients."""
 
     def __init__(self, train_x: torch.tensor, train_y: torch.tensor,
                  likelihood: _GaussianLikelihoodBase, ard_num_dims: int):
+        """Initialize the Gaussian process model.
+
+        Args:
+            train_x: The training input data.
+            train_y: The training output data.
+            likelihood: The likelihood function.
+            ard_num_dims: The number of dimensions for the ARD kernel.
+        """
+
         super().__init__(train_x, train_y, likelihood)
         self._mean_module = ConstantMeanGrad()
         self._covar_module = ScaleKernel(
             RBFKernelGrad(ard_num_dims=ard_num_dims))
 
+    @override
     def forward(self, x: torch.tensor) -> MultitaskMultivariateNormal:
         mean_x = self._mean_module(x)
         covar_x = self._covar_module(x)
@@ -1188,20 +1171,26 @@ class DerivativeGPModel(ExactGP):
 
 
 class DerivativeGaussianProcess(GaussianProcessBase):
-    """
-    Gaussian process surrogate model based on GPyTorch that also observes gradients.
-    """
+    """Gaussian process surrogate model based on GPyTorch that also observes gradients."""
 
     def __init__(self,
-                 rng: np.random.Generator,
                  target: Distribution,
+                 rng: np.random.Generator,
+                 *args,
                  train_on_init: bool = True,
                  n_samples: int = 100,
                  **kwargs):
+        """Initialize the Derivative Gaussian process surrogate model.
+
+        Args:
+            target: The target distribution.
+            rng: The random number generator.
+            args: Additional positional arguments.
+            train_on_init: Whether to train the model on initialization.
+            n_samples: The number of training data to use.
+            kwargs: Additional keyword arguments.
         """
-        Initialize the Derivative Gaussian process surrogate model.
-        """
-        super().__init__(rng=rng, target=target, n_samples=n_samples, **kwargs)
+        super().__init__(target, rng, *args, n_samples=n_samples, **kwargs)
 
         # define likelihood, get model, and set optimizer
         self._likelihood = MultitaskGaussianLikelihood(

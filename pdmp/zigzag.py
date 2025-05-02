@@ -6,7 +6,7 @@ import yaml
 import matplotlib.pyplot as plt
 import numpy as np
 
-from typing import cast, Any
+from typing import cast, Any, Union, override
 
 from tqdm import tqdm
 
@@ -22,9 +22,7 @@ from pdmp.plotting_utils import get_2d_despined_figure
 
 @register_sampler('ZigZag')
 class ZigZagSampler(Sampler):
-    """
-    ZigZagSampler class for sampling from a target distribution using the ZigZag process.
-    """
+    """ZigZagSampler class for sampling from a target distribution using the ZigZag process."""
 
     def __init__(self,
                  target: Distribution,
@@ -33,35 +31,40 @@ class ZigZagSampler(Sampler):
                  n_max: int = None,
                  t_max: float = None,
                  gamma: float = 1e-6,
-                 rng: np.random.Generator = None,
-                 seed: int = None,
-                 sub_sampling: bool = False,
+                 dt: float = 0.001,
                  n_events_accepted: int = None,
+                 offset_shrinkage: float = 0.0,
+                 x_0: np.ndarray = None,
+                 v_0: np.ndarray = None,
+                 sub_sampling: bool = False,
                  print_every: int = 100,
                  update_bar_every: int = 10,
-                 offset_shrinkage: float = 0.0,
+                 rng: np.random.Generator = None,
+                 seed: int = None,
                  **kwargs):
-        """
-        Initialize the ZigZagSampler class.
+        """Initialize the ZigZagSampler class.
 
-        Parameters:
-        target (Distribution): The target distribution to sample from.
-        n_events (int, optional): The number of events to sample. Default is 1000.
-        gamma (float, optional): The refresh rate parameter for the ZigZag process. Default is 1e-6 to avoid zero
-            division.
-        rng (np.random.Generator, optional): Random number generator. Default is None.
-        seed (int, optional): Seed for the random number generator. Default is None.
-        approximation (dict, optional): Approximation parameters. Default is None.
-        sub_sampling (bool, optional): Whether to use sub-sampling. Default is False.
-        n_events_accepted (int, optional): Number of accepted events. Default is None.
-        print_every (int, optional): Interval to print outputs.
-        kwargs: Additional keyword arguments.
+        Args:
+            target: The target distribution to sample from.
+            surrogate: The surrogate model to use. Default is None.
+            n_max: The number of events to sample. Default is 1000.
+            t_max: The maximum time to sample. Default is None.
+            gamma: The refresh rate parameter for the ZigZag process. Default is 1e-6 to avoid zero division.
+            dt: The time step for the ZigZag process. Default is 0.001.
+            n_events_accepted: Number of accepted events. Default is None.
+            offset_shrinkage: The shrinkage parameter for the offset. Default is 0.0.
+            x_0: Initial position. Default is None.
+            v_0: Initial velocity. Default is None.
+            sub_sampling: Whether to use sub-sampling. Default is False.
+            print_every: Interval to print outputs.
+            rng: Random number generator. Default is None.
+            seed: Seed for the random number generator. Default is None.
+            kwargs: Additional keyword arguments.
         """
         super().__init__()
 
         self.target = target
         self._dim = self.target.get_dim()
-        # self.n_obs_ = self.target.get_n_obs()
 
         if n_max is not None:
             self._n_max = n_max
@@ -78,28 +81,27 @@ class ZigZagSampler(Sampler):
             self._n_max = 1000
             self.run = self._run_budget
 
+        # init all variables
         self.times = np.zeros(self._n_max)
         self.positions = np.zeros((self._n_max, self._dim))
         self.velocities = np.zeros((self._n_max, self._dim))
         self._iter = 0
         self._gamma = gamma
-        self._offset = np.zeros(self._dim)
+        self._dt = dt
+        self.offset = np.zeros(self._dim)
         self._offset_history = np.zeros((self._n_max, self._dim))
-        self._thinning = False
         self._n_accepted = 0
         self._n_accepted_0 = n_events_accepted
         self._accepted_iters = np.zeros(self._n_accepted_0, dtype=int)
+        self._offset_shrinkage = offset_shrinkage
         self._sub_sampling = sub_sampling
+        self._thinning = False
+
+        # init logging related variables
         self._print_every = print_every
         self._update_bar_every = update_bar_every
-        self._offset_shrinkage = offset_shrinkage
 
-        # if 'ss' in kwargs:
-        #     self.ss_ = kwargs['ss']
-        #
-        # if 'us' in kwargs:
-        #     self.us_ = kwargs['us']
-
+        # get rng
         if rng is None and seed is None:
             self._rng = np.random.default_rng(0)
         elif rng is None:
@@ -107,17 +109,15 @@ class ZigZagSampler(Sampler):
         else:
             self._rng = rng
 
-        if 'x_0' in kwargs:
-            self.positions[0] = kwargs['x_0']
-        else:
+        # if not specified draw iid standard normal samples as inital position
+        if x_0 is None:
             self.positions[0] = self._rng.normal(0, 1, self._dim)
 
-        # draw initial velocity from binomial distribution
-        if 'v_0' in kwargs:
-            self.velocities[0] = kwargs['v_0']
-        else:
+        # if not specified draw initial velocity from binomial distribution
+        if v_0 is None:
             self.velocities[0] = 2 * self._rng.binomial(1, 0.5, self._dim) - 1
 
+        # check how events from pdmp should be generated
         if hasattr(self.target, 'get_bounds'):
             pass
         elif surrogate is not None:
@@ -143,12 +143,12 @@ class ZigZagSampler(Sampler):
             if isinstance(surrogate, ConstantSurrogate):
                 self.surrogate = cast(ConstantSurrogate, surrogate)
                 self._generate_event_times = self._inverse_cdf
-                self._offset = np.ones_like(self._offset)
+                self.offset = np.ones_like(self.offset)
 
             if isinstance(surrogate, RandomConstantSurrogate):
                 self.surrogate = cast(RandomConstantSurrogate, surrogate)
                 self._generate_event_times = self._inverse_cdf
-                self._offset = np.ones_like(self._offset)
+                self.offset = np.ones_like(self.offset)
 
             self._cdf_rates = self._surrogate_rates
 
@@ -160,27 +160,32 @@ class ZigZagSampler(Sampler):
             self._generate_event_times = self._inverse_cdf
             self._cdf_rates = self._target_rates
 
-        if 'dt' in kwargs:
-            self._dt = kwargs['dt']
-        else:
-            self._dt = 0.001
+        # TODO: either implement sub-sampling or remove it
+        # self.n_obs_ = self.target.get_n_obs()
+        # if 'ss' in kwargs:
+        #     self.ss_ = kwargs['ss']
+        #
+        # if 'us' in kwargs:
+        #     self.us_ = kwargs['us']
 
-        logger.info("ZigZagSampler initialized.")
+        if kwargs is not None:
+            logger.warning(f'Unused kwargs: \n{kwargs}')
+
+        logger.info(f"{self.__class__.__name__} initialized.")
 
     def _target_rates(self,
                       x: np.ndarray,
                       idx_d: int = None,
                       idx_n: int = None) -> np.ndarray:
-        """
-        Calculate the rates for the target ZigZag process.
+        """Calculate the rates for the target ZigZag process.
 
-        Parameters:
-        x (np.ndarray): The current position.
-        idx_d (int, optional): Dimension index. Default is None.
-        idx_n (int, optional): Observation index. Default is None.
+        Args:
+            x: The current position.
+            idx_d: Dimension index. Default is None.
+            idx_n: Observation index. Default is None.
 
         Returns:
-        np.ndarray: The calculated rates.
+            np.ndarray: The calculated rates.
         """
 
         grad = self.target.grad_log_density(x)
@@ -200,32 +205,32 @@ class ZigZagSampler(Sampler):
                          x: np.ndarray,
                          idx_d: int = None,
                          idx_n: int = None) -> np.ndarray:
-        """
-        Calculate the surrogate rates for the surrogate ZigZag process.
+        """Calculate the surrogate rates for the surrogate ZigZag process.
 
-        Parameters:
-        x (np.ndarray): The current position.
-        idx_d (int, optional): Dimension index. Default is None.
-        idx_n (int, optional): Observation index. Default is None.
+        Args:
+            x: The current position.
+            idx_d: Dimension index. Default is None.
+            idx_n: Observation index. Default is None.
 
         Returns:
-        np.ndarray: The calculated surrogate rates.
+            np.ndarray: The calculated surrogate rates.
         """
         if idx_d is None:
             rates = -self.surrogate.grad(x) * self.velocities[
-                self._iter] + self._offset
+                self._iter] + self.offset
             return np.maximum(rates, 0) + self._gamma
         else:
             rate = -self.surrogate.grad(x, idx_d) * self.velocities[
-                self._iter, idx_d] + self._offset[idx_d]
+                self._iter, idx_d] + self.offset[idx_d]
             return np.maximum(rate, 0) + self._gamma
 
-    def _inverse_cdf(self) -> tuple[np.ndarray, int]:
-        """
-        Generate event times using the inverse cdf method.
+    def _inverse_cdf(self) -> tuple[float, int]:
+        """Generate event times using the inverse cdf method.
 
         Returns:
-        np.ndarray: The generated event times.
+            tuple[float, int]: A tuple containing
+                - The generated event time.
+                - The index of the dimension where the event occurred.
         """
         # recover rng from previous iteration in case of rejection
         if self._s is None:
@@ -266,12 +271,13 @@ class ZigZagSampler(Sampler):
         i = np.argmin(taus)
         return taus[i], i
 
-    def _inverse_cdf_linear(self) -> tuple[np.ndarray, int]:
-        """
-        Generate event times using the inverse cdf method assuming b linear rate function.
+    def _inverse_cdf_linear(self) -> tuple[np.float64, int]:
+        """Generate event times using the inverse cdf method assuming b linear rate function.
 
         Returns:
-        np.ndarray: The generated event times.
+            tuple[float, int]: A tuple containing
+                - The generated event time.
+                - The index of the dimension where the event occurred.
         """
 
         # # get samples from the CDF
@@ -286,14 +292,14 @@ class ZigZagSampler(Sampler):
 
         # init variables
         s = np.zeros(self._dim)
-        taus = S / (self._gamma + self._offset)
+        taus = S / (self._gamma + self.offset)
 
         # get the linear approximation of the rates
         a = self.velocities[self._iter] * (
             self.surrogate.gaussian.get_inv_cov() @ self.velocities[self._iter])
         b = (self.velocities[self._iter] * (self.surrogate.gaussian.get_inv_cov(
         ) @ (self.positions[self._iter] - self.surrogate.gaussian.get_mean())) +
-             self._offset)
+             self.offset)
 
         # compute root
         taus_0 = -b / a
@@ -332,33 +338,31 @@ class ZigZagSampler(Sampler):
         return taus[j], j
 
     def _approximate_rates(self, x: np.ndarray, idx=None) -> np.ndarray:
-        """
-        Calculate the approximate rates for the ZigZag process.
+        """Calculate the approximate rates for the ZigZag process.
 
-        Parameters:
-        x (np.ndarray): The current position.
-        idx (int, optional): Dimension index. Default is None.
+        Args:
+            x: The current position.
+            idx: Dimension index. Default is None.
 
         Returns:
-        np.ndarray: The calculated approximate rates.
+            np.ndarray: The calculated approximate rates.
         """
 
         if idx is None:
             rates = -self.velocities[self._iter] * self.surrogate.grad(
-                x) + self._offset
+                x) + self.offset
             return np.maximum(rates, 0) + self._gamma
         else:
             rate = -self.velocities[self._iter, idx] * self.surrogate.grad(
-                x, idx) + self._offset[idx]
+                x, idx) + self.offset[idx]
             return np.maximum(rate, 0) + self._gamma
 
     def _poisson_thinning(self, j: int, T: np.ndarray):
-        """
-        Perform Poisson thinning for the ZigZag process.
+        """Perform Poisson thinning for the ZigZag process.
 
-        Parameters:
-        j (int): Dimension index.
-        T (np.ndarray): Time increment.
+        Args:
+            j: Dimension index.
+            T: Time increment.
         """
         pos = self.positions[self._iter] + T * self.velocities[self._iter]
         m = self._target_rates(pos, idx_d=j)
@@ -371,14 +375,14 @@ class ZigZagSampler(Sampler):
 
         if m > M:
             delta_offset = 1.01 * (m - M) + 1e-3
-            self._offset[j] += delta_offset
+            self.offset[j] += delta_offset
             self._revert_step()
             logger.info(
                 f"  Action at time {self.times[self._iter]:.2f}; current position: {self.positions[self._iter]}"
             )
             logger.info(f"     upper bound too tight, m: {m:.4f}, M: {M:.4f}")
             logger.info(
-                f"      ...increasing offset {j} by {delta_offset:.4e} to: {self._offset[j]:.4f}"
+                f"      ...increasing offset {j} by {delta_offset:.4e} to: {self.offset[j]:.4f}"
             )
         elif u < (m / M):
             self.velocities[self._iter + 1, j] = -self.velocities[self._iter, j]
@@ -390,9 +394,7 @@ class ZigZagSampler(Sampler):
             self._s = None
 
     def _step(self):
-        """
-        Perform a single ZigZag step.
-        """
+        """Perform a single ZigZag step."""
         T, j = self._generate_event_times()
         self.times[self._iter + 1] = self.times[self._iter] + T
         self.positions[
@@ -406,32 +408,28 @@ class ZigZagSampler(Sampler):
             self._poisson_thinning(j, T)
 
         dt = self.times[self._iter + 1] - self.times[self._iter]
-        self._offset *= np.exp(-self._offset_shrinkage * dt)
-        self._offset_history[self._iter + 1] = self._offset
+        self.offset *= np.exp(-self._offset_shrinkage * dt)
+        self._offset_history[self._iter + 1] = self.offset
         self._iter += 1
 
     def _revert_step(self):
-        """
-        Revert the last ZigZag step.
-        """
+        """Revert the last ZigZag step."""
         self.times[self._iter + 1] = 0.
         self.positions[self._iter + 1] = 0.
         self.velocities[self._iter + 1] = 0
         self._offset_history[self._iter + 1] = 0.
 
         dt = self.times[self._iter] - self.times[self._iter - 1]
-        self._offset *= np.exp(self._offset_shrinkage * dt)
+        self.offset *= np.exp(self._offset_shrinkage * dt)
         self._iter -= 1
 
     def _shutdown(self):
-        """
-        Shutdown the ZigZag sampler.
-        """
+        """Shutdown the ZigZag sampler."""
 
         logger.info("Shutting down ZigZag sampler. Summary:")
         if self._thinning:
             logger.info(f"    Acceptance rate : {self.acceptance_rate:.3f}")
-            logger.info(f"    Final offsets    : {self._offset}")
+            logger.info(f"    Final offsets    : {self.offset}")
 
             # this is kept so that model evaluations could be tracked
             self._times_all = self.times
@@ -446,9 +444,8 @@ class ZigZagSampler(Sampler):
         logger.info("Run successfully completed.")
 
     def _run_budget(self):
-        """
-        Run the ZigZag sampler.
-        """
+        """Run the ZigZag sampler."""
+
         logger.warning(
             f"Running ZigZag sampler with budget n_max={self._n_max}")
 
@@ -472,9 +469,7 @@ class ZigZagSampler(Sampler):
         self._shutdown()
 
     def _run_time(self):
-        """
-        Run the ZigZag sampler.
-        """
+        """Run the ZigZag sampler."""
 
         logger.warning(
             f"Running ZigZag sampler with time limit T={self._t_max}")
@@ -511,14 +506,8 @@ class ZigZagSampler(Sampler):
 
         self._shutdown()
 
+    @override
     def write_data(self, folder: str, precision: int = 6):
-        """
-        Write the chain data to a file.
-
-        Parameters:
-        filename (str): The name of the folder to write the data to.
-        precision (int, optional): The precision of the data. Default is 6.
-        """
 
         if not os.path.exists(folder):
             os.makedirs(folder)
@@ -526,7 +515,7 @@ class ZigZagSampler(Sampler):
         data = {}
         if self._thinning:
             data['acceptance_rate'] = self.acceptance_rate
-            data['offset'] = self._offset
+            data['offset'] = self.offset
 
         with open(os.path.join(folder, 'other.pkl'), 'wb') as f:
             pickle.dump(data, f)
@@ -554,23 +543,12 @@ class ZigZagSampler(Sampler):
 
     @property
     def acceptance_rate(self) -> float:
-        """
-        Get the acceptance rate.
+        """Get the acceptance rate.
 
         Returns:
-        float: The acceptance rate.
+            float: The acceptance rate.
         """
         return self._n_accepted / len(self._eval_times)
-
-    @property
-    def offset(self):
-        """
-        Get the offset.
-
-        Returns:
-        float: The offset.
-        """
-        return self._offset
 
 
 if __name__ == '__main__':
