@@ -64,7 +64,7 @@ class ZigZagSampler(Sampler):
         super().__init__()
 
         self.target = target
-        self._dim = self.target.get_dim()
+        self._dim = self.target.dim
 
         if n_max is not None:
             self._n_max = n_max
@@ -161,7 +161,7 @@ class ZigZagSampler(Sampler):
             self._cdf_rates = self._target_rates
 
         # TODO: either implement sub-sampling or remove it
-        # self.n_obs_ = self.target.get_n_obs()
+        # self.n_obs_ = self.target.n_obs
         # if 'ss' in kwargs:
         #     self.ss_ = kwargs['ss']
         #
@@ -296,9 +296,9 @@ class ZigZagSampler(Sampler):
 
         # get the linear approximation of the rates
         a = self.velocities[self._iter] * (
-            self.surrogate.gaussian.get_inv_cov() @ self.velocities[self._iter])
-        b = (self.velocities[self._iter] * (self.surrogate.gaussian.get_inv_cov(
-        ) @ (self.positions[self._iter] - self.surrogate.gaussian.get_mean())) +
+            self.surrogate.gaussian.inv_C @ self.velocities[self._iter])
+        b = (self.velocities[self._iter] * (self.surrogate.gaussian.inv_C @ (
+            self.positions[self._iter] - self.surrogate.gaussian.mean)) +
              self.offset)
 
         # compute root

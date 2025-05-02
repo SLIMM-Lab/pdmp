@@ -286,7 +286,7 @@ class NeuralNetwork(SurrogateModel):
         super().__init__(**kwargs)
         if update_model is None:
             update_model = []
-        hidden_layers = [target.get_dim()] + hidden_layers + [1]
+        hidden_layers = [target.dim] + hidden_layers + [1]
         layers = []
         for i in range(len(hidden_layers) - 1):
             layers.append(nn.Linear(hidden_layers[i], hidden_layers[i + 1]))
@@ -1008,7 +1008,7 @@ class GaussianProcess(GaussianProcessBase):
         # define likelihood, get model, and set optimizer
         self._likelihood = GaussianLikelihood()
         self._model = ExactGPModel(None, None, self._likelihood,
-                                   target.get_dim())
+                                   target.dim)
 
         # train model unless specified otherwise
         if train_on_init:
@@ -1194,16 +1194,16 @@ class DerivativeGaussianProcess(GaussianProcessBase):
 
         # define likelihood, get model, and set optimizer
         self._likelihood = MultitaskGaussianLikelihood(
-            num_tasks=target.get_dim() + 1)
+            num_tasks=target.dim + 1)
         self._model = DerivativeGPModel(None, None, self._likelihood,
-                                        target.get_dim())
+                                        target.dim)
 
         # train model unless specified otherwise
         if train_on_init:
             samples = self._laplace.get_samples(n_samples)
             self._x_data = torch.tensor(samples, dtype=dtype)
             self._y_data = torch.zeros(n_samples,
-                                       target.get_dim() + 1,
+                                       target.dim + 1,
                                        dtype=dtype)
 
             for i in range(n_samples):

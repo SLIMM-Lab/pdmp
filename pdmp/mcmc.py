@@ -37,7 +37,7 @@ class StepSampler(Sampler):
         super().__init__(**kwargs)
 
         self.target = target
-        self._dim = self.target.get_dim()
+        self._dim = self.target.dim
         self._n_samples = n_samples
         self._state = np.zeros(self._dim, dtype=np.float64)
         self.chain = np.zeros((self._n_samples, self._dim), dtype=np.float64)

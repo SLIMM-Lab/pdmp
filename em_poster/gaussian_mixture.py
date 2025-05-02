@@ -41,7 +41,7 @@ if __name__ == '__main__':
     prior = GaussianMixture(means, covs, weights, rng=rng)
     likelihood = FlatLikelihood(2)
     target = Posterior(prior, likelihood)
-    mixture_cov = prior.get_cov()
+    mixture_cov = prior.cov
 
     plot_limits = ([-6., 6.], [-2.2, 2.2])
     scale = 0.35
