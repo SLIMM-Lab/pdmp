@@ -18,9 +18,6 @@ large = 1e20
 class Distribution:
     """Base class for probability distributions."""
 
-    dim: int
-    """The dimension of the distribution."""
-
     def __init__(self, rng: np.random.Generator = None, seed: int = None):
         if rng is None and seed is None:
             self.rng = np.random.default_rng(0)
@@ -29,7 +26,17 @@ class Distribution:
         else:
             self.rng = rng
 
-    def get_mean(self) -> np.ndarray:
+    @property
+    def dim(self) -> int:
+        """Get the dimension of the distribution.
+
+        Returns:
+            int: The dimension of the distribution.
+        """
+        raise NotImplementedError
+
+    @property
+    def mean(self) -> np.ndarray:
         """Get the mean of the distribution.
 
         Returns:
@@ -37,7 +44,8 @@ class Distribution:
         """
         raise NotImplementedError
 
-    def get_cov(self) -> np.ndarray:
+    @property
+    def cov(self) -> np.ndarray:
         """Get the covariance of the distribution.
 
         Returns:
@@ -103,12 +111,6 @@ class Distribution:
 class MultivariateNormal(Distribution):
     """Multivariate normal distribution."""
 
-    mean: np.ndarray
-    """The mean of the distribution."""
-
-    cov: np.ndarray
-    """The covariance matrix of the distribution."""
-
     cov_L: np.ndarray
     """The Cholesky decomposition of the covariance matrix."""
 
@@ -127,13 +129,13 @@ class MultivariateNormal(Distribution):
                  rng: np.random.Generator = None,
                  seed: int = None):
         super().__init__(rng=rng, seed=seed)
-        self.mean = mean
-        self.dim = mean.shape[0]
-        self.cov = cov
+        self._dim = mean.shape[0]
+        self._mean = mean
+        self._cov = cov
         self.cov_L = np.linalg.cholesky(cov)
-        self.inv_C = sp.linalg.cho_solve((self.cov_L, True), np.eye(self.dim))
+        self.inv_C = sp.linalg.cho_solve((self.cov_L, True), np.eye(self._dim))
         self.log_det = np.log(self.cov_L.diagonal()).sum()
-        self.constant = -0.5 * np.log(2.0 * np.pi) * self.dim
+        self.constant = -0.5 * np.log(2.0 * np.pi) * self._dim
 
     @classmethod
     def from_dict(cls,
@@ -144,20 +146,28 @@ class MultivariateNormal(Distribution):
             raise ValueError("Parameters must include 'mean' and 'cov'.")
         return cls(mean=params['mean'], cov=params['cov'], rng=rng, seed=seed)
 
+    @property
+    def mean(self) -> np.ndarray:
+        return self._mean
+
+    @property
+    def cov(self):
+        return self._cov
+
     @override
     def get_sample(self, n: int = 1) -> np.ndarray:
         if n == 1:
-            z = self.rng.standard_normal(size=self.dim)
-            return self.cov_L @ z + self.mean
+            z = self.rng.standard_normal(size=self._dim)
+            return self.cov_L @ z + self._mean
         else:
-            z = self.rng.standard_normal(size=(n, self.dim))
-            return z @ self.cov_L + self.mean
+            z = self.rng.standard_normal(size=(n, self._dim))
+            return z @ self.cov_L + self._mean
 
     @override
     def log_density(self, x: np.ndarray) -> np.ndarray:
-        diff = x - self.mean
+        diff = x - self._mean
         if diff.ndim == 1:
-            if self.dim == 1:
+            if self._dim == 1:
                 return self.constant - self.log_det - 0.5 * np.abs(
                     diff / self.cov_L[0, 0])**2
             else:
@@ -169,7 +179,7 @@ class MultivariateNormal(Distribution):
 
     @override
     def grad_log_density(self, x: np.ndarray) -> np.ndarray:
-        diff = x - self.mean
+        diff = x - self._mean
         return -sp.linalg.solve_triangular(
             self.cov_L.transpose(),
             sp.linalg.solve_triangular(
@@ -245,16 +255,16 @@ class GaussianMixture(Distribution):
     def mean(self) -> np.ndarray:
         mean = np.zeros(self.dim_)
         for i in range(self.n_components):
-            mean += self.weights[i] * self.dists[i].get_mean()
+            mean += self.weights[i] * self.dists[i].mean
         return mean
 
     @property
     def cov(self) -> np.ndarray:
         cov = np.zeros((self.dim_, self.dim_))
-        mean = self.get_mean()
+        mean = self.mean
         for i in range(self.n_components):
-            diff = self.dists[i].get_mean() - mean
-            cov += self.weights[i] * (self.dists[i].get_cov() +
+            diff = self.dists[i].mean - mean
+            cov += self.weights[i] * (self.dists[i].cov +
                                       np.outer(diff, diff))
         return cov
 
@@ -385,8 +395,8 @@ class MultivariateLogNormal(Distribution):
         # self.cov = np.exp(mu_i + mu_i.transpose() + 0.5 * (sig_ii + sig_ii.transpose())) @ (np.exp(cov) - 1)
         # TODO: finish
 
-        self.dim = mean.shape[0]
-        self.constant_ = -0.5 * np.log(2.0 * np.pi) * self.dim
+        self._dim = mean.shape[0]
+        self.constant_ = -0.5 * np.log(2.0 * np.pi) * self._dim
 
     @classmethod
     def from_dict(cls,
@@ -396,6 +406,10 @@ class MultivariateLogNormal(Distribution):
         if 'mean' not in params or 'cov' not in params:
             raise ValueError("Parameters must include 'mean' and 'cov'.")
         return cls(mean=params['mean'], cov=params['cov'], rng=rng, seed=seed)
+
+    @property
+    def dim(self) -> int:
+        return self._dim
 
     @override
     def log_density(self, x: np.ndarray) -> np.ndarray:
@@ -435,13 +449,13 @@ class CubicDistribution(Distribution):
                  rng: np.random.Generator = None,
                  seed: int = None):
         super().__init__(rng=rng, seed=seed)
-        self.dim = mean.shape[0]
+        self._dim = mean.shape[0]
         self._normal = MultivariateNormal(mean, cov, rng=rng, seed=seed)
         self._a = a
         if cubic_diag is not None:
             self.cubic_diag = cubic_diag
         else:
-            self.cubic_diag = np.ones(self.dim)
+            self.cubic_diag = np.ones(self._dim)
 
     @classmethod
     def from_dict(cls,
@@ -458,26 +472,30 @@ class CubicDistribution(Distribution):
                    rng=rng,
                    seed=seed)
 
-    @override
+    @property
+    def dim(self) -> int:
+        return self._dim
+
+    @property
     def mean(self) -> np.ndarray:
         return self._normal.mean
 
     @override
     def log_density(self, x: np.ndarray) -> np.ndarray:
-        d = x - self._normal.get_mean()
+        d = x - self._normal.mean
         return (np.sum(
             (1 - 2 * (d > 0)) * self._a / 3 * self.cubic_diag * d ** 3) +
                 self._normal.log_density(x))
 
     @override
     def grad_log_density(self, x: np.ndarray) -> np.ndarray:
-        d = x - self._normal.get_mean()
+        d = x - self._normal.mean
         return ((1 - 2 * (d > 0)) * (self._a * self.cubic_diag * d ** 2) +
                 self._normal.grad_log_density(x))
 
     @override
     def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
-        d = x - self._normal.get_mean()
+        d = x - self._normal.mean
         return ((1 - 2 *
                  (d > 0)) * (2 * self._a * np.diag(self.cubic_diag * d)) +
                 self._normal.hessian_log_density(x))
@@ -585,13 +603,17 @@ class GaussianLikelihood(Likelihood):
         self._n_params_ = model.get_dim_in()
         self._u_obs = u_obs
         self.n_obs = self._u_obs.shape[0]
-        self.dim = self._u_obs.shape[1]
+        self._dim = self._u_obs.shape[1]
         self._sigma = sigma
         self._dists = []
         for i in range(self.n_obs):
             self._dists.append(
                 MultivariateNormal(self._u_obs[i],
-                                   sigma ** 2 * np.eye(self.dim)))
+                                   sigma ** 2 * np.eye(self._dim)))
+
+    @property
+    def dim(self) -> int:
+        return self._dim
 
     @override
     def log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
@@ -654,8 +676,12 @@ class FlatLikelihood(Likelihood):
                  rng: np.random.Generator = None,
                  seed: int = None):
         super().__init__(rng=rng, seed=seed)
-        self.dim = dim
+        self._dim = dim
         self.n_obs = 0
+
+    @property
+    def dim(self) -> int:
+        return self._dim
 
     @override
     def log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
@@ -666,7 +692,7 @@ class FlatLikelihood(Likelihood):
                          params: np.ndarray,
                          idx: int = None) -> np.ndarray:
         if idx is None:
-            return np.zeros(self.dim)
+            return np.zeros(self._dim)
         else:
             return np.zeros(1)
 
@@ -674,7 +700,7 @@ class FlatLikelihood(Likelihood):
     def hessian_log_density(self,
                             params: np.ndarray,
                             idx: int = None) -> np.ndarray:
-        return np.zeros((self.dim, self.dim))
+        return np.zeros((self._dim, self._dim))
 
 
 def get_prior(
