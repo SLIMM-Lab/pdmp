@@ -147,6 +147,10 @@ class MultivariateNormal(Distribution):
         return cls(mean=params['mean'], cov=params['cov'], rng=rng, seed=seed)
 
     @property
+    def dim(self) -> int:
+        return self._dim
+
+    @property
     def mean(self) -> np.ndarray:
         return self._mean
 
@@ -1281,7 +1285,7 @@ def find_mean(target: Distribution, x_0: np.ndarray = None) -> np.ndarray:
                 logger.warning(
                     "  Method get_sample not implemented for target.")
 
-        if hasattr(target, 'mean'):
+        if 'mean' in type(target).__dict__ and not isinstance(type(target).__dict__['mean'], property):
             try:
                 x_0 = target.mean
                 success = True
