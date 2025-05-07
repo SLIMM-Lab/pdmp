@@ -11,6 +11,7 @@ from pdmp.forward_model import get_model
 from pdmp.sampler import Sampler, SAMPLER_REGISTRY
 from pdmp.mcmc import StepSampler
 from pdmp.zigzag import ZigZagSampler
+from pdmp.bouncy_particle import BouncyParticleSampler
 from pdmp.surrogates import SurrogateModel, SURROGATE_REGISTRY
 
 
