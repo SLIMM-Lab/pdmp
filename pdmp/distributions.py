@@ -943,7 +943,7 @@ class AffineTransformtion(Transformation):
 
     @override
     def inverse_transform(self, x: np.ndarray) -> np.ndarray:
-        return self._M_inv @ (x - self._b)
+        return (x - self._b) @ self._M_inv.T
 
     @override
     def jacobian(self, xi: np.ndarray) -> np.ndarray:
