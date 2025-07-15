@@ -204,6 +204,8 @@ class LaplaceSurrogate(SurrogateModel):
             self._mean = mean
             self._cov = cov
 
+        logger.info(f"Laplace mean: {self._mean}, Laplace cov: {self._cov}")
+
         self.gaussian = MultivariateNormal(self._mean, self._cov, rng=rng)
         self._delta = self.gaussian.log_density(
             self._mean) - target.log_density(self._mean)
