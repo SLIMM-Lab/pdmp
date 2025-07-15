@@ -22,3 +22,5 @@ dependencies:
   - gpytorch
   - arviz
   - yapf
+  - pip:
+    - geomloss
