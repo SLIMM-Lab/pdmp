@@ -40,6 +40,9 @@ class BouncyParticleSampler(Sampler):
                  print_every: int = 100,
                  update_bar_every: int = 10,
                  offset_shrinkage: float = 0.0,
+                 x_0: np.ndarray = None,
+                 x_0_lap: bool = False,
+                 v_0: np.ndarray = None,
                  **kwargs):
         """
         Initialize the BouncyParticleSampler class.
@@ -103,17 +106,26 @@ class BouncyParticleSampler(Sampler):
         else:
             self._rng = rng
 
-        if 'x_0' in kwargs:
-            self.positions[0] = kwargs['x_0']
+        # if not specified draw iid standard normal samples as inital position
+        if x_0 is None:
+            if x_0_lap:
+                lap = LaplaceSurrogate.from_dict(target=self.target, rng=self._rng)
+                self.positions[0] = lap.get_samples(1)
+            else:
+                self.positions[0] = self._rng.normal(0, 1, self._dim)
         else:
-            self.positions[0] = self._rng.normal(0, 1, self._dim)
+            self.positions[0] = x_0
 
-        # initialize velocities from unit sphere
-        if 'v_0' in kwargs:
-            self.velocities[0] = kwargs['v_0']
-        else:
+        # if not specified draw initial velocity from binomial distribution
+        if v_0 is None:
             v = self._rng.normal(0, 1, self._dim)
             self.velocities[0] = v / np.linalg.norm(v)
+        else:
+            if len(v_0) != self._dim:
+                raise ValueError(
+                    f"Initial velocity v_0 must have the same dimension as target distribution, expected {self._dim}, got {len(v_0)}"
+                )
+            self.velocities[0] = v_0
 
         # Setup surrogate model if provided
         if surrogate is not None:

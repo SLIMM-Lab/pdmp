@@ -35,6 +35,7 @@ class ZigZagSampler(Sampler):
                  n_events_accepted: int = None,
                  offset_shrinkage: float = 0.0,
                  x_0: np.ndarray = None,
+                 x_0_lap: bool = False,
                  v_0: np.ndarray = None,
                  sub_sampling: bool = False,
                  print_every: int = 100,
@@ -111,11 +112,27 @@ class ZigZagSampler(Sampler):
 
         # if not specified draw iid standard normal samples as inital position
         if x_0 is None:
-            self.positions[0] = self._rng.normal(0, 1, self._dim)
+            if x_0_lap:
+                lap = LaplaceSurrogate.from_dict(target=self.target, rng=self._rng)
+                self.positions[0] = lap.get_samples(1)
+            else:
+                self.positions[0] = self._rng.normal(0, 1, self._dim)
+        else:
+            self.positions[0] = x_0
 
         # if not specified draw initial velocity from binomial distribution
         if v_0 is None:
             self.velocities[0] = 2 * self._rng.binomial(1, 0.5, self._dim) - 1
+        else:
+            if len(v_0) != self._dim:
+                raise ValueError(
+                    f"Initial velocity v_0 must have the same dimension as target distribution, expected {self._dim}, got {len(v_0)}"
+                )
+            if not np.all((v_0 == -1) + (v_0 == 1)):
+                raise ValueError(
+                    f"All components of initial velocity v_0 must be either -1 or +1, got {v_0}"
+                )
+            self.velocities[0] = v_0
 
         # check how events from pdmp should be generated
         if hasattr(self.target, 'get_bounds'):
