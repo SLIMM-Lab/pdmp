@@ -10,12 +10,12 @@ from tqdm import tqdm
 
 from pdmp import logger
 from pdmp.sampler import Sampler, SAMPLER_REGISTRY, register_sampler
-from pdmp.distributions import Distribution, MultivariateNormal
+from pdmp.distributions import Distribution
 from pdmp.surrogates import (SurrogateModel, LaplaceSurrogate, NeuralNetwork,
                              GaussianProcess, DerivativeGaussianProcess,
                              ConstantSurrogate, RandomConstantSurrogate)
 
-@register_sampler('BouncyParticleSampler')
+@register_sampler('BouncyParticle')
 class BouncyParticleSampler(Sampler):
     """
     Bouncy Particle Sampler class for sampling from a target distribution.
@@ -408,7 +408,7 @@ class BouncyParticleSampler(Sampler):
                    fmt=f'%.{precision}e')
         np.savetxt(os.path.join(folder, 'velocities.dat'),
                    self.velocities,
-                   fmt='%d')
+                   fmt=f'%.{precision}e')
         if self._thinning:
             np.savetxt(os.path.join(folder, 'times_all.dat'),
                        self._times_all,
