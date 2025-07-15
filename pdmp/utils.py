@@ -1,3 +1,4 @@
+import arviz
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.special import binom
@@ -447,6 +448,56 @@ def compute_ess_zigzag(
     else:
         return ess, autocorrelation, mean_pi, var_pi
 
+def sample_uniform_along_path(positions: np.ndarray, velocities: np.ndarray,
+                              times: np.ndarray, t_k: float, N: int) -> np.ndarray:
+    """N samples uniformly spaced along the path corresponting to interval [0,t_k].
+
+    Args:
+        positions: 2D array of positions at the skeleton times.
+        velocities: 2D array of velocities (one per segment).
+        times: 1D array of skeleton time points.
+        t_k: The end time for sampling.
+        N: Number of samples to draw.
+
+    Returns:
+        x: 2D array of sampled positions, shape (N, d), where d is the dimension of the positions.
+    """
+    u = np.linspace(0, t_k, N)  # N uniform times
+    x = np.empty((N, positions.shape[1]))
+    seg_idx = np.searchsorted(times, u, side="right") - 1
+    dt = u - np.asarray(times)[seg_idx]
+    x[:] = np.asarray(
+        positions)[seg_idx] + dt[:, None] * np.asarray(velocities)[seg_idx]
+    return x  # shape (N,d)
+
+def compute_ess_zigzag_from_samples(t: np.ndarray,
+                                    x: np.ndarray,
+                                    v: np.ndarray,
+                                    n_samples: int = None) -> tuple[np.ndarray, np.ndarray]:
+    """Compute the effective sample size (ESS) of a zigzag process from samples.
+
+    Args:
+        x: 2D array of positions (samples).
+        t: 1D array of time points corresponding to the samples.
+        v: 2D array of velocities (one per segment).
+        n_samples: Number of samples to consider. If None, all samples are used.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]: A tuple containing:
+            - The ESS for each coordinate or the average ESS if n_samples is specified.
+            - The autocorrelation of the processes or their avg if n_samples is specified.
+    """
+
+    if n_samples is None:
+        n_samples = int(x.shape[0] * 10)
+
+    samples = sample_uniform_along_path(x, v, t, t[-1], n_samples)
+
+    dataset = arviz.from_dict(posterior={"param": samples[None, :, :]})
+    ess = arviz.ess(dataset).to_array().values.flatten()
+    autocorr = len(samples) / ess
+
+    return ess, autocorr
 
 def grad_fd(f: callable,
             x: np.ndarray,
