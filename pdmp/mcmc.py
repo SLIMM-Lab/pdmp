@@ -244,6 +244,24 @@ class RandomWalkMetropolisSampler(StepSampler):
         logger.info(
             f"Total acceptance rate: {self._n_accept / self._n_samples}")
 
+    @override
+    def write_data(self, folder: str, precision: int = 6):
+        """Write the sampler data to a file.
+        Args:
+            folder: The folder to write the data to.
+            precision: The precision of the data. Default is 6.
+        """
+
+        super().write_data(folder, precision)
+
+        np.savetxt(os.path.join(folder, 'accepted.dat'),
+                   self._accepted,
+                   fmt=f'%i')
+
+        np.savetxt(os.path.join(folder, 'proposals.dat'),
+                   self._proposals,
+                   fmt=f'%.{precision}e')
+
 
 @register_sampler('LangevinDynamics')
 class LangevinDynamicsSampler(StepSampler):
