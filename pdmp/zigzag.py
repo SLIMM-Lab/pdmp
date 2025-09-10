@@ -241,7 +241,7 @@ class ZigZagSampler(Sampler):
                 self._iter, idx_d] + self.offset[idx_d]
             return np.maximum(rate, 0) + self._gamma
 
-    def _inverse_cdf(self) -> tuple[float, int]:
+    def _inverse_cdf(self) -> tuple[np.floating, np.integer]:
         """Generate event times using the inverse cdf method.
 
         Returns:
@@ -288,7 +288,7 @@ class ZigZagSampler(Sampler):
         i = np.argmin(taus)
         return taus[i], i
 
-    def _inverse_cdf_linear(self) -> tuple[np.float64, int]:
+    def _inverse_cdf_linear(self) -> tuple[np.floating, np.integer]:
         """Generate event times using the inverse cdf method assuming b linear rate function.
 
         Returns:
