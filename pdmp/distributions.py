@@ -502,6 +502,149 @@ class MultivariateLogNormal(Distribution):
             sp.linalg.solve_triangular(self.covL_, diff, lower=True))) / x
 
 
+class GammaDistribution(Distribution):
+    """Gamma distribution with shape alpha and scale beta."""
+    def __init__(
+        self,
+        alpha: float,
+        beta: float,
+        rng: np.random.Generator = None,
+        seed: int = None
+    ):
+        super().__init__(rng=rng, seed=seed)
+        self.alpha = alpha
+        self.beta = beta
+        self._dim = 1
+        self._mean = alpha * beta
+        self._cov = np.array([[alpha * beta**2]])
+        self._log_norm = alpha * np.log(beta) + sp.special.gammaln(alpha)
+
+    @classmethod
+    def from_dict(
+        cls,
+        params: dict[str, Union[float, np.ndarray]],
+        rng: np.random.Generator = None,
+        seed: int = None
+    ):
+        if 'alpha' not in params or 'beta' not in params:
+            raise ValueError("Parameters must include 'alpha' and 'beta'.")
+        return cls(alpha=params['alpha'], beta=params['beta'], rng=rng, seed=seed)
+
+    @property
+    def dim(self) -> int:
+        return self._dim
+
+    @property
+    def mean(self) -> np.ndarray:
+        return np.array([self._mean])
+
+    @property
+    def cov(self) -> np.ndarray:
+        return self._cov
+
+    @override
+    def get_sample(self, n: int = 1) -> np.ndarray:
+        samples = self.rng.gamma(self.alpha, self.beta, size=n)
+        if n == 1:
+            return np.array([samples])  # keep shape (1,)
+        return samples.reshape(n, 1)
+
+    @override
+    def log_density(self, x: np.ndarray) -> np.ndarray:
+        xv = np.atleast_1d(x).astype(float)
+        # clamp to small positive
+        xv[xv <= 0] = small
+        return (self.alpha - 1) * np.log(xv) - xv / self.beta - self._log_norm
+
+    @override
+    def grad_log_density(self, x: np.ndarray) -> np.ndarray:
+        xv = float(x) if x.ndim == 0 else x.flatten()[0]
+        # derivative w.r.t. x
+        return np.array([(self.alpha - 1) / xv - 1 / self.beta])
+
+    @override
+    def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
+        xv = float(x) if x.ndim == 0 else x.flatten()[0]
+        # second derivative
+        return np.array([[-(self.alpha - 1) / (xv**2)]])
+
+
+class BetaDistribution(Distribution):
+    """Beta distribution with shape parameters alpha and beta."""
+    def __init__(
+        self,
+        alpha: float,
+        beta: float,
+        rng: np.random.Generator = None,
+        seed: int = None
+    ):
+        super().__init__(rng=rng, seed=seed)
+        self.alpha = alpha
+        self.beta = beta
+        self._dim = 1
+        # E[X] and Var[X]
+        self._mean = alpha / (alpha + beta)
+        self._cov = np.array([[alpha * beta / ((alpha + beta)**2 * (alpha + beta + 1))]])
+        # log normalization constant = ln B(alpha,beta)
+        self._log_norm = sp.special.betaln(alpha, beta)
+
+    @classmethod
+    def from_dict(
+        cls,
+        params: dict[str, Union[float, np.ndarray]],
+        rng: np.random.Generator = None,
+        seed: int = None
+    ):
+        if 'alpha' not in params or 'beta' not in params:
+            raise ValueError("Parameters must include 'alpha' and 'beta'.")
+        return cls(alpha=params['alpha'], beta=params['beta'], rng=rng, seed=seed)
+
+    @property
+    def dim(self) -> int:
+        return self._dim
+
+    @property
+    def mean(self) -> np.ndarray:
+        return np.array([self._mean])
+
+    @property
+    def cov(self) -> np.ndarray:
+        return self._cov
+
+    @override
+    def get_sample(self, n: int = 1) -> np.ndarray:
+        samples = self.rng.beta(self.alpha, self.beta, size=n)
+        if n == 1:
+            return np.array([samples])
+        return samples.reshape(n, 1)
+
+    @override
+    def log_density(self, x: np.ndarray) -> np.ndarray:
+        xv = np.atleast_1d(x).astype(float)
+        xv[xv <= 0] = small
+        xv[xv >= 1] = 1 - small
+        return ((self.alpha - 1) * np.log(xv)
+                + (self.beta - 1) * np.log(1 - xv)
+                - self._log_norm)
+
+    @override
+    def grad_log_density(self, x: np.ndarray) -> np.ndarray:
+        xv = float(x) if x.ndim == 0 else x.flatten()[0]
+        xv = max(min(xv, 1 - small), small)
+        return np.array([
+            (self.alpha - 1) / xv - (self.beta - 1) / (1 - xv)
+        ])
+
+    @override
+    def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
+        xv = float(x) if x.ndim == 0 else x.flatten()[0]
+        xv = max(min(xv, 1 - small), small)
+        return np.array([[
+            -(self.alpha - 1) / (xv**2)
+            - (self.beta - 1) / ((1 - xv)**2)
+        ]])
+
+
 class CubicDistribution(Distribution):
     """Distribution with a cubic term in the log-density."""
 
@@ -806,6 +949,10 @@ def get_prior(
         return CubicDistribution.from_dict(config, rng=rng)
     elif config['name'] == 'MultivariateLogNormal':
         return MultivariateLogNormal.from_dict(config, rng=rng)
+    elif config['name'] == 'Gamma':
+        return GammaDistribution.from_dict(config, rng=rng)
+    elif config['name'] == 'Beta':
+        return BetaDistribution.from_dict(config, rng=rng)
     elif config['name'] == 'GaussianRandomField':
         mean, cov = get_gaussian_random_field_projection_from_dict(config)
         return MultivariateNormal(mean, cov, rng=rng)
