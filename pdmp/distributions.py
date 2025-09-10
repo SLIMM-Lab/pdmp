@@ -108,6 +108,76 @@ class Distribution:
         return 0
 
 
+class JointDistribution(Distribution):
+    """Independent joint of multiple distributions."""
+    def __init__(self, distributions: list[Distribution], *, rng=None, seed=None):
+        super().__init__(rng=rng, seed=seed)
+        self.distributions = distributions
+        self._dims = [dist.dim for dist in distributions]
+        self._dim = sum(self._dims)
+
+    @property
+    def dim(self) -> int:
+        return self._dim
+
+    @property
+    def mean(self) -> np.ndarray:
+        return np.concatenate([dist.mean for dist in self.distributions])
+
+    @property
+    def cov(self) -> np.ndarray:
+        return sp.linalg.block_diag(*[dist.cov for dist in self.distributions])
+
+    @override
+    def get_sample(self, n: int = 1) -> np.ndarray:
+        samples = [dist.get_sample(n) for dist in self.distributions]
+        if n == 1:
+            parts = [s if s.ndim == 1 else s.reshape(-1) for s in samples]
+            return np.concatenate(parts)
+        else:
+            rows = [(s if s.ndim == 2 else s.reshape(n, -1)) for s in samples]
+            return np.hstack(rows)
+
+    @override
+    def log_density(self, x: np.ndarray) -> np.ndarray:
+        if x.ndim == 1:
+            total = 0.0
+            idx = 0
+            for dist, d in zip(self.distributions, self._dims):
+                total += dist.log_density(x[idx:idx + d])
+                idx += d
+            return total
+        # batch of points
+        out = np.zeros(x.shape[0])
+        starts = np.cumsum([0] + self._dims[:-1])
+        for dist, d, start in zip(self.distributions, self._dims, starts):
+            out += dist.log_density(x[:, start:start + d])
+        return out
+
+    @override
+    def grad_log_density(self, x: np.ndarray) -> np.ndarray:
+        if x.ndim == 1:
+            grads = []
+            idx = 0
+            for dist, d in zip(self.distributions, self._dims):
+                grads.append(dist.grad_log_density(x[idx:idx + d]))
+                idx += d
+            return np.concatenate(grads)
+        # batch of points
+        return np.vstack([self.grad_log_density(xi) for xi in x])
+
+    @override
+    def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
+        if x.ndim == 1:
+            blocks = []
+            idx = 0
+            for dist, d in zip(self.distributions, self._dims):
+                blocks.append(dist.hessian_log_density(x[idx:idx + d]))
+                idx += d
+            return sp.linalg.block_diag(*blocks)
+        # batch of points
+        return np.array([self.hessian_log_density(xi) for xi in x])
+
 class MultivariateNormal(Distribution):
     """Multivariate normal distribution."""
 
