@@ -279,14 +279,16 @@ class ZigZagSampler(Sampler):
             taus += self._dt
             rate_t0 = rate_t1
 
+        # find component that reached s first
+        i = np.argmax((integral - s) / rate_t1)
+
         # linear correction to last step
-        taus -= (integral - s) / rate_t1
+        tau = taus[i] - (integral[i] - s[i]) / rate_t1[i]
 
         # logger.debug(f"S    : {s}")
         # logger.debug(f"taus : {taus}")
 
-        i = np.argmin(taus)
-        return taus[i], i
+        return tau, i
 
     def _inverse_cdf_linear(self) -> tuple[np.floating, np.integer]:
         """Generate event times using the inverse cdf method assuming b linear rate function.
