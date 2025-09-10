@@ -129,10 +129,10 @@ class MultivariateNormal(Distribution):
                  rng: np.random.Generator = None,
                  seed: int = None):
         super().__init__(rng=rng, seed=seed)
-        self._dim = mean.shape[0]
-        self._mean = mean
-        self._cov = cov
-        self.cov_L = np.linalg.cholesky(cov)
+        self._mean = np.atleast_1d(mean)
+        self._dim = len(self._mean)
+        self._cov = np.atleast_2d(cov)
+        self.cov_L = np.linalg.cholesky(self._cov)
         self.inv_C = sp.linalg.cho_solve((self.cov_L, True), np.eye(self._dim))
         self.log_det = np.log(self.cov_L.diagonal()).sum()
         self.constant = -0.5 * np.log(2.0 * np.pi) * self._dim
