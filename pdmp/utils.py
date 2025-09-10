@@ -347,6 +347,31 @@ def running_sample_mean(samples: np.ndarray) -> np.ndarray:
 
     return running_means
 
+def running_sample_variance(samples: np.ndarray) -> np.ndarray:
+    """Compute the running sample variance of a set of samples at each recorded time.
+
+    Args:
+        samples: 2D array of samples where each row is a sample.
+
+    Returns:
+        np.ndarray: Array of running sample variances, one for each time point.
+    """
+    n_samples, d = samples.shape
+    running_means = np.zeros((n_samples, d))
+    running_vars = np.zeros((n_samples, d))
+
+    running_means[0] = samples[0]
+    running_vars[0] = 0.0
+
+    for i in range(1, n_samples):
+        delta = samples[i] - running_means[i - 1]
+        running_means[i] = running_means[i - 1] + delta / (i + 1)
+        running_vars[i] = (
+            (i - 1) * running_vars[i - 1] + delta * (samples[i] - running_means[i])
+        ) / i
+
+    return running_vars
+
 
 def compute_ess_zigzag(
         t: np.ndarray,
