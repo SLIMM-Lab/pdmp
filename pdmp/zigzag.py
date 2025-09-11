@@ -159,12 +159,12 @@ class ZigZagSampler(Sampler):
 
             if isinstance(surrogate, ConstantSurrogate):
                 self.surrogate = cast(ConstantSurrogate, surrogate)
-                self._generate_event_times = self._inverse_cdf
+                self._generate_event_times = self._inverse_cdf_constant
                 self.offset = np.ones_like(self.offset)
 
             if isinstance(surrogate, RandomConstantSurrogate):
                 self.surrogate = cast(RandomConstantSurrogate, surrogate)
-                self._generate_event_times = self._inverse_cdf
+                self._generate_event_times = self._inverse_cdf_constant
                 self.offset = np.ones_like(self.offset)
 
             self._cdf_rates = self._surrogate_rates
@@ -354,6 +354,34 @@ class ZigZagSampler(Sampler):
             # logger.debug(f"taus: {taus}")
 
         j = np.argmin(taus)
+        return taus[j], j
+
+    def _inverse_cdf_constant(self) -> tuple[np.floating , np.integer]:
+        """Generate event times using analytical formula for constant surrogate rates.
+
+        For constant surrogate models, the rates are constant (offset + gamma),
+        so we can use the analytical inverse CDF: tau = S / rate.
+
+        Returns:
+            tuple[float, int]: A tuple containing
+                - The generated event time.
+                - The index of the dimension where the event occurred.
+        """
+        # recover rng from previous iteration in case of rejection
+        if self._s is None:
+            self._s = -np.log(self._rng.uniform(0, 1, self._dim))
+        s = self._s
+
+        # For constant surrogate, rates are just offset + gamma
+        # (since surrogate gradient is zero everywhere)
+        rates = self.offset + self._gamma
+
+        # Analytical inverse CDF for constant rates: tau = S / rate
+        taus = s / rates
+
+        # Find component that reaches s first (minimum tau)
+        j = np.argmin(taus)
+
         return taus[j], j
 
     def _approximate_rates(self, x: np.ndarray, idx=None) -> np.ndarray:
@@ -591,3 +619,30 @@ if __name__ == '__main__':
     plot_pdf_contours(posterior, ax, plot_limits=plot_limits)
     ax.plot(*positions.T)
     plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

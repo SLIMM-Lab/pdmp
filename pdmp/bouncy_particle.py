@@ -132,7 +132,13 @@ class BouncyParticleSampler(Sampler):
             self._thinning = True
             self._s = None
             self.surrogate = surrogate
-            self._generate_event_times = self._inverse_cdf
+            # Select the correct event time generation method based on surrogate type
+            if isinstance(surrogate, LaplaceSurrogate):
+                self._generate_event_times = self._inverse_cdf_linear
+            elif isinstance(surrogate, (ConstantSurrogate, RandomConstantSurrogate)):
+                self._generate_event_times = self._inverse_cdf_constant
+            else:
+                self._generate_event_times = self._inverse_cdf
             self._cdf_rates = self._surrogate_rates
             self._eval_times = []
             self._times_all = None
@@ -226,6 +232,77 @@ class BouncyParticleSampler(Sampler):
             return tau, 0  # Bounce event
         else:
             return refresh_time, 1  # Refresh event
+
+    def _inverse_cdf_linear(self) -> tuple[float, int]:
+        """
+        Generate event time using the inverse CDF method with a linear surrogate rate (Laplace surrogate).
+
+        Returns:
+            tuple[float, int]: The generated event time and event type (0 for bounce, 1 for refresh)
+        """
+        # Sample exponential time for next event
+        S = -np.log(self._rng.uniform())
+
+        # Sample exponential time for next refresh
+        refresh_time = self._rng.exponential(scale=1.0 / self._refresh_rate)
+
+        v = self.velocities[self._iter]
+        x = self.positions[self._iter]
+        lap = self.surrogate  # Should be LaplaceSurrogate
+        inv_C = lap.gaussian.inv_C
+        mean = lap.gaussian.mean
+        offset = self._offset if hasattr(self, '_offset') else 0.0
+        gamma = self._gamma
+
+        a = float(v @ inv_C @ v)
+        b = float(v @ inv_C @ (x - mean)) + offset
+
+        # Solve for tau: integral_0^tau (a t + b + gamma) dt = S
+        # That is: (a/2) * tau^2 + b * tau + gamma * tau = S
+        # (a/2) * tau^2 + (b + gamma) * tau - S = 0
+        A = 0.5 * a
+        B = b + gamma
+        C = -S
+        discriminant = B**2 - 4*A*C
+        if discriminant < 0:
+            tau = float('inf')  # No real solution, treat as infinite
+        else:
+            tau = (-B + np.sqrt(discriminant)) / (2*A) if A != 0 else -C/B
+            if tau < 0:
+                tau = (-B - np.sqrt(discriminant)) / (2*A) if A != 0 else -C/B
+            if tau < 0:
+                tau = float('inf')
+
+        # Return the smaller of bounce time and refresh time, with event type
+        if tau < refresh_time:
+            return tau, 0  # Bounce event
+        else:
+            return refresh_time, 1  # Refresh event
+
+    def _inverse_cdf_constant(self) -> tuple[float, int]:
+        """
+        Generate event time using analytical formula for constant surrogate rates.
+
+        Returns:
+            tuple[float, int]: The generated event time and event type (0 for bounce, 1 for refresh)
+        """
+        # Sample exponential time for next event
+        S = -np.log(self._rng.uniform())
+
+        # Sample exponential time for next refresh
+        refresh_time = self._rng.exponential(scale=1.0 / self._refresh_rate)
+
+        rate = self._offset + self._gamma
+        if rate <= 0:
+            tau = float('inf')
+        else:
+            tau = S / rate
+
+        if tau < refresh_time:
+            return tau, 0  # Bounce event
+        else:
+            return refresh_time, 1  # Refresh event
+
 
     def _step(self):
         """
