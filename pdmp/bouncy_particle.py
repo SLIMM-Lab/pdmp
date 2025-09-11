@@ -219,7 +219,7 @@ class BouncyParticleSampler(Sampler):
             rate_t0 = rate_t1
 
         # Linear interpolation for better accuracy
-        tau -= dt * (integral - s) / rate_t1
+        tau -= (integral - s) / rate_t1
 
         # Return the smaller of bounce time and refresh time, with event type
         if tau < refresh_time:
