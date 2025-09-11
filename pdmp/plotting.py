@@ -177,7 +177,7 @@ def plot_pdf_grad_contours(target: Union[Distribution, SurrogateModel],
 
 def plot_pdf_contours(target: Union[Distribution, SurrogateModel],
                       ax: plt.Axes,
-                      plot_limits: tuple[list[float], list[float]],
+                      plot_limits: tuple[list[float], list[float]] = None,
                       n_grid: int = 100,
                       alpha: float = 0.6,
                       levels: Union[int, np.ndarray] = None,
@@ -218,6 +218,14 @@ def plot_pdf_contours(target: Union[Distribution, SurrogateModel],
         f_eval = lambda x: target.eval(x, delta=True)
     else:
         f_eval = target.log_density
+
+    if plot_limits is None:
+        bounds = ax.dataLim.bounds
+        # Check if any bounds are infinite and use viewLim as fallback
+        if any(np.isinf(bounds)):
+            bounds = ax._viewLim.bounds
+        plot_limits = ([bounds[0], bounds[0] + bounds[2]],
+                       [bounds[1], bounds[1] + bounds[3]])
 
     x = np.linspace(*plot_limits[0], n_grid)
     y = np.linspace(*plot_limits[1], n_grid)
