@@ -89,21 +89,40 @@ class Model:
 class PiecewiseConstantModel(Model):
     """    Forward model for deformation of a 1d bar with piecewise constant Young's modulus."""
 
-    def __init__(self, F: np.ndarray, n_params: int, x_obs: np.ndarray):
+    def __init__(self, F: np.ndarray, n_params: int, x_obs: np.ndarray, field=None):
         """Initialize the model
 
         Args:
             F: collection of prescribed forces for each setting
-            n_params: number of parameters
+            n_params: number of parameters (ignored if field provided)
             x_obs: observed x values
+            field: Optional GaussianRandomField providing coefficient dimension
         """
         super().__init__()
         self.F_vals = F  # Actual values of F
         self.n_settings_ = self.F_vals.shape[0]  # Number of settings
-        # assert self.n_settings_ == len(x_obs), "Number of settings does not match number of observations"
         self.x_obs_ = x_obs  # Observations
+        # store field if provided
+        self.field = field
+        if self.field is not None:
+            self.n_params = int(self.field.dim)
+        else:
+            self.n_params = n_params  # Number of parameters
+        if self.n_params is None:
+            raise ValueError("Either n_params or field must define parameter dimension.")
 
-        self.n_params = n_params  # Number of parameters
+    def _effective_params(self, params: np.ndarray) -> np.ndarray:
+        """Return the piecewise constant parameter vector used by the analytic formula.
+
+        If a GaussianRandomField is attached, evaluate it at cell midpoints to obtain
+        effective piecewise constant values (these coincide with coefficients
+        for a PiecewiseConstantBasis). Otherwise, return params directly.
+        """
+        if self.field is None:
+            return np.asarray(params, dtype=float)
+        n = self.n_params
+        midpoints = (np.arange(n) + 0.5) / n
+        return self.field.evaluate(params, midpoints)
 
     def eval_E(self, params: np.ndarray, x: np.ndarray) -> np.ndarray:
         """Evaluate Young's modulus E(x) without sympy.
@@ -128,7 +147,8 @@ class PiecewiseConstantModel(Model):
         # Interval index I = ceil(x * n); clip to [1, n]
         I = np.ceil(x * n).astype(int)
         np.clip(I, 1, n, out=I)
-        return params[I - 1]
+        params_eff = self._effective_params(params)
+        return params_eff[I - 1]
 
     def eval(self, params: np.ndarray, x: np.ndarray = None, idx: int = 0) -> np.ndarray:
         """Analytic evaluation of u
@@ -140,15 +160,16 @@ class PiecewiseConstantModel(Model):
             x = self.x_obs_
         x = np.asarray(x, dtype=float)
         params = np.asarray(params, dtype=float)
+        params_eff = self._effective_params(params)
         n = self.n_params
-        if params.shape[0] != n:
-            raise ValueError("params must be a vector of length n_params for analytic evaluation")
+        if params_eff.shape[0] != n:
+            raise ValueError("effective params must be a vector of length n_params for analytic evaluation")
         I = np.ceil(x * n).astype(int)
         np.clip(I, 1, n, out=I)
-        inv_p = 1.0 / params
+        inv_p = 1.0 / params_eff
         cumsum_inv = np.concatenate(([0.0], np.cumsum(inv_p)))  # length n+1
         base_sum = (1.0 / n) * cumsum_inv[I - 1]
-        final_term = (x - (I - 1) / n) / params[I - 1]
+        final_term = (x - (I - 1) / n) / params_eff[I - 1]
         return self.F_vals[idx] * (base_sum + final_term)
 
     def eval_grad(self, params: np.ndarray, x: np.ndarray = None, idx: int = 0) -> np.ndarray:
@@ -164,13 +185,14 @@ class PiecewiseConstantModel(Model):
             x = self.x_obs_
         x = np.asarray(x, dtype=float)
         params = np.asarray(params, dtype=float)
+        params_eff = self._effective_params(params)
         n = self.n_params
-        if params.shape[0] != n:
-            raise ValueError("params must be a vector of length n_params for analytic gradient")
+        if params_eff.shape[0] != n:
+            raise ValueError("effective params must be a vector of length n_params for analytic gradient")
         m = x.size
         I = np.ceil(x * n).astype(int)
         np.clip(I, 1, n, out=I)
-        inv_p2 = 1.0 / (params**2)
+        inv_p2 = 1.0 / (params_eff**2)
         base_prefix = -(1.0 / n) * inv_p2
         G = np.zeros((m, n), dtype=float)
         Fval = self.F_vals[idx]
@@ -178,7 +200,8 @@ class PiecewiseConstantModel(Model):
             stop = Ii - 1
             if stop > 0:
                 G[row, :stop] = base_prefix[:stop]
-            G[row, Ii - 1] = -(x[row] - (Ii - 1) / n) / (params[Ii - 1]**2)
+            G[row, Ii - 1] = -(x[row] - (Ii - 1) / n) / (params_eff[Ii - 1]**2)
+        # Chain rule: if field basis is piecewise constant, Jacobian is identity; otherwise this is an approximation.
         return Fval * G
 
     def eval_hessian(self, params: np.ndarray, x: np.ndarray = None, idx: int = 0) -> np.ndarray:
@@ -194,21 +217,21 @@ class PiecewiseConstantModel(Model):
             x = self.x_obs_
         x = np.asarray(x, dtype=float)
         params = np.asarray(params, dtype=float)
+        params_eff = self._effective_params(params)
         n = self.n_params
-        if params.shape[0] != n:
-            raise ValueError("params must be a vector of length n_params for analytic Hessian")
+        if params_eff.shape[0] != n:
+            raise ValueError("effective params must be a vector of length n_params for analytic Hessian")
         m = x.size
         I = np.ceil(x * n).astype(int)
         np.clip(I, 1, n, out=I)
-        inv_p3 = 1.0 / (params**3)
+        inv_p3 = 1.0 / (params_eff**3)
         H = np.zeros((m, n, n), dtype=float)
         Fval = self.F_vals[idx]
         for row, Ii in enumerate(I):
             if Ii - 1 > 0:
-                # k < I contributes 2/n * 1/p_k^3
                 H[row, :Ii - 1, :Ii - 1] = np.diag(2.0 / n * inv_p3[:Ii - 1])
-            # k = I
             H[row, Ii - 1, Ii - 1] = 2.0 * (x[row] - (Ii - 1) / n) * inv_p3[Ii - 1]
+        # Chain rule note as above.
         return Fval * H
 
     @override
@@ -223,17 +246,21 @@ class PiecewiseConstantModel(Model):
         return self.n_settings_  # Return number of settings
 
     @classmethod
-    def from_dict(cls, config: dict):
+    def from_dict(cls, config: dict, field=None):
         """Create a PiecewiseConstantModel from a dictionary configuration.
 
         Args:
             config (dict): configuration dictionary
+            field (GaussianRandomField, optional): field providing coefficient dimension
 
         Returns:
             PiecewiseConstantModel: piecewise constant model
         """
         F = np.array(config['F'])
-        n_params = config['dim']
+        if field is not None:
+            n_params = field.dim
+        else:
+            n_params = config['dim']
 
         if 'x_obs' in config:
             x_obs = np.array(config['x_obs'])
@@ -242,7 +269,7 @@ class PiecewiseConstantModel(Model):
         else:
             raise ValueError("Observation locations not provided")
 
-        return cls(F, n_params, x_obs)
+        return cls(F, n_params, x_obs, field=field)
 
 
 def get_piececwise_constant_model(
@@ -359,17 +386,18 @@ class LinearModel(Model):
         return self.dim_out_
 
 
-def get_model(config: dict):
+def get_model(config: dict, field=None):
     """Get a model from a configuration dictionary
 
     Args:
         config: configuration dictionary
+        field: Optional GaussianRandomField to inject into model (if supported)
 
     Returns:
         Model: model
     """
     if config['name'] == 'PiecewiseConstant':
-        return PiecewiseConstantModel.from_dict(config)
+        return PiecewiseConstantModel.from_dict(config, field=field)
     elif config['name'] == 'Linear':
         return LinearModel.from_dict(config)
     else:

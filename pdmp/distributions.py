@@ -923,12 +923,14 @@ class FlatLikelihood(Likelihood):
 def get_prior(
     config: dict[str, Union[str, np.ndarray, float]],
     rng: np.random.Generator = None,
+    field=None,
 ) -> Distribution:
     """Get a prior distribution from a dictionary.
 
     Args:
         config: The configuration of the prior.
         rng: The random number generator. Default is None.
+        field: Optional GaussianRandomField instance (used when name == 'FromField').
 
     Returns:
         Distribution: The prior distribution.
@@ -953,11 +955,13 @@ def get_prior(
         return GammaDistribution.from_dict(config, rng=rng)
     elif config['name'] == 'Beta':
         return BetaDistribution.from_dict(config, rng=rng)
+    elif config['name'] == 'FromField':
+        if field is None:
+            raise ValueError("Prior 'FromField' requires a field instance.")
+        return field.coefficient_distribution(rng=rng)
+    # this one is here for legacy reasons
     elif config['name'] == 'GaussianRandomField':
         mean, cov = get_gaussian_random_field_projection_from_dict(config)
-        return MultivariateNormal(mean, cov, rng=rng)
-    elif config['name'] == 'GaussianRandomFieldNorm':
-        mean, cov = get_gaussian_random_field_projection_norm_from_dict(config)
         return MultivariateNormal(mean, cov, rng=rng)
     else:
         raise ValueError(f"Prior {config['name']} not recognized.")
