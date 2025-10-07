@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import sympy as sy
 
 from typing import override
 
@@ -43,7 +42,7 @@ class Model:
 
         Args:
             params: parameter values
-            kwargs: additional arguments
+            kwargs: additional keyword arguments
 
         Returns:
             np.ndarray: hessian of model evaluation
@@ -378,6 +377,13 @@ def get_model(config: dict):
 
 
 if __name__ == '__main__':
+
+    # Use non-interactive backend if display may not be available
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+    except Exception:  # pragma: no cover
+        pass
 
     # Example piecewise constant model
     F = np.array([1., 2.])
