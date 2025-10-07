@@ -9,7 +9,7 @@ from typing import Union, Any, cast, override
 
 from pdmp import logger
 from pdmp.forward_model import Model
-from pdmp.project_field import get_gaussian_random_field_projection_from_dict
+from pdmp.project_field import get_gaussian_random_field_projection_from_dict, get_gaussian_random_field_projection_norm_from_dict
 
 small = 1e-12
 large = 1e20
@@ -955,6 +955,9 @@ def get_prior(
         return BetaDistribution.from_dict(config, rng=rng)
     elif config['name'] == 'GaussianRandomField':
         mean, cov = get_gaussian_random_field_projection_from_dict(config)
+        return MultivariateNormal(mean, cov, rng=rng)
+    elif config['name'] == 'GaussianRandomFieldNorm':
+        mean, cov = get_gaussian_random_field_projection_norm_from_dict(config)
         return MultivariateNormal(mean, cov, rng=rng)
     else:
         raise ValueError(f"Prior {config['name']} not recognized.")
