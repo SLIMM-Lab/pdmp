@@ -13,6 +13,7 @@ from pdmp.mcmc import StepSampler
 from pdmp.zigzag import ZigZagSampler
 from pdmp.bouncy_particle import BouncyParticleSampler
 from pdmp.surrogates import SurrogateModel, SURROGATE_REGISTRY
+from pdmp.random_field import get_field  # new import
 
 
 def get_target(config: dict[str, Any],
@@ -41,9 +42,15 @@ def get_target(config: dict[str, Any],
             raise ValueError(
                 "Parameters must include 'prior' and 'likelihood'.")
 
+        field = None
+        model_cfg = config['model']
+        # Optional field specification inside model config
+        if isinstance(model_cfg, dict) and ('field' in model_cfg):
+            field = get_field(model_cfg['field'], rng=rng)
+
         # get the prior distribution and the model
-        prior = get_prior(config['prior'], rng=rng)
-        model = get_model(config['model'])
+        prior = get_prior(config['prior'], rng=rng, field=field)
+        model = get_model(model_cfg, field=field)
         likelihood = get_likelihood(config['likelihood'], model=model, rng=rng)
         return Posterior(prior=prior, likelihood=likelihood, rng=rng)
 

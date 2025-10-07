@@ -12,6 +12,7 @@ from typing import Any
 from pdmp.loader import yaml_to_numpy
 from pdmp.distributions import get_prior, AffineTransformtion, ExponentialTransformation
 from pdmp.forward_model import get_model
+from pdmp.random_field import get_field
 
 
 def parse_args():
@@ -35,12 +36,9 @@ def parse_args():
 def generate_observations(config: dict[str, Any], rng: np.random.Generator):
     """Generate observations.
 
-    Args:
-        config: The configuration.
-        rng: The random number generator.
-
-    Returns:
-        np.ndarray: The observations.
+    Supports both legacy and new RandomField-based configuration. If the model config
+    contains a 'field' entry, that field is instantiated once and shared between the
+    prior (e.g. prior name 'FromField') and the forward model to ensure consistency.
     """
 
     # load the observation configuration
@@ -53,18 +51,27 @@ def generate_observations(config: dict[str, Any], rng: np.random.Generator):
 
     # get prior and model from problem configuration
     if problem_config['name'] == 'BayesianInverse':
-        prior = get_prior(problem_config['prior'], rng=rng)
-        model = get_model(problem_config['model'])
+        model_cfg = problem_config['model']
+        field = None
+        if isinstance(model_cfg, dict) and 'field' in model_cfg:
+            field = get_field(model_cfg['field'], rng=rng)
+        prior = get_prior(problem_config['prior'], rng=rng, field=field)
+        model = get_model(model_cfg, field=field)
         llh_config = problem_config['likelihood']
 
     elif problem_config['name'] == 'Transformed':
-        prior = get_prior(problem_config['distribution']['prior'], rng=rng)
-        model = get_model(problem_config['distribution']['model'])
-        llh_config = problem_config['distribution']['likelihood']
+        dist_cfg = problem_config['distribution']
+        model_cfg = dist_cfg['model']
+        field = None
+        if isinstance(model_cfg, dict) and 'field' in model_cfg:
+            field = get_field(model_cfg['field'], rng=rng)
+        prior = get_prior(dist_cfg['prior'], rng=rng, field=field)
+        model = get_model(model_cfg, field=field)
+        llh_config = dist_cfg['likelihood']
     else:
         raise ValueError("Problem must be BayesianInverse or Transformed.")
 
-    # sample ground truth from prior and write to file
+    # sample ground truth coefficients from prior and write to file
     ground_truth = prior.get_sample()
     np.savetxt(os.path.join('ground_truth.dat'), ground_truth)
 
