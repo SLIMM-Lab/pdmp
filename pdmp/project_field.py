@@ -3,6 +3,7 @@ from typing import Callable, Tuple, Dict, Any
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.integrate as integrate
+import scipy.special as special
 
 from pdmp import logger
 
@@ -21,6 +22,7 @@ class Basis:
         """
         self.n_ = n
         self.support_ = np.zeros((n, 2))
+        self.norms_ = np.zeros((n, n))
 
     def __call__(self, x: np.ndarray, i: int = None) -> np.ndarray:
         """Evaluate the basis functions at given points.
@@ -54,6 +56,14 @@ class Basis:
         """
         pass
 
+    def get_norms(self) -> np.ndarray:
+        """Get the norms of the basis functions, i.e. ||φᵢ|| = sqrt(∫ φᵢ(x)² dx).
+
+        Returns:
+            np.ndarray: The norms of the basis functions.
+        """
+        pass
+
 
 class PiecewiseConstantBasis(Basis):
 
@@ -78,6 +88,8 @@ class PiecewiseConstantBasis(Basis):
 
         self.support_[:, 0] = np.linspace(interval[0], interval[1], n + 1)[:-1]
         self.support_[:, 1] = np.linspace(interval[0], interval[1], n + 1)[1:]
+
+        self.norms_ = np.diag(np.sqrt((interval[1] - interval[0]) / n) * np.ones(n))
 
     def __call__(self, x: np.ndarray, i: int = None) -> np.ndarray:
         """Evaluate the piecewise constant basis functions at given points.
@@ -107,6 +119,49 @@ class PiecewiseConstantBasis(Basis):
             return self.support_
         else:
             return self.support_[i]
+
+    def get_norms(self) -> np.ndarray:
+        """Get the norms of the piecewise constant basis functions.
+
+        Returns:
+            np.ndarray: The norms of the basis functions.
+        """
+        return self.norms_
+
+
+class NormPiecewiseConstantBasis(PiecewiseConstantBasis):
+    def __init__(self, n: int, interval: Tuple[float, float]):
+        """Initialize the Normalized Piecewise Constant Basis class.
+
+        Args:
+            n: The number of basis functions.
+            interval: The interval over which the basis functions are defined.
+        """
+        super().__init__(n, interval)
+        self.norms_ = (interval[1] - interval[0]) / np.sqrt(n) * np.eye(n)
+
+    def __call__(self, x: np.ndarray, i: int = None) -> np.ndarray:
+        """Evaluate the normalized piecewise constant basis functions at given points.
+
+        Args:
+            x: The points at which to evaluate the basis functions.
+            i: The index of the specific basis function to evaluate. If None, evaluate all basis functions. Default is None.
+
+        Returns:
+            np.ndarray: The evaluated basis functions.
+        """
+        if i is None:
+            return np.array([basis(x) for basis in self.basis_]).T / np.diag(self.norms_)
+        else:
+            return self.basis_[i](x) / self.norms_[i,i]
+
+    def get_norms(self) -> np.ndarray:
+        """Get the norms of the normalized piecewise constant basis functions.
+
+        Returns:
+            np.ndarray: The norms of the basis functions.
+        """
+        return self.norms_
 
 
 def squared_exponential_kernel(x: np.ndarray,
@@ -182,6 +237,92 @@ def compute_coefficients(kernel: Callable[
 
     return coefficients_norm
 
+def compute_coefficients_norm(kernel: Callable[
+    [np.ndarray, np.ndarray, float, float], float],
+                         basis: Basis,
+                         interval: Tuple[float, float],
+                         weights: Callable[[np.ndarray], float] = None,
+                         kernel_params: Dict = None) -> np.ndarray:
+    """Compute the coefficients for the given basis functions using the specified kernel.
+
+    Args:
+        kernel: The kernel function to use.
+        basis: The basis functions.
+        interval: The interval over which to compute the coefficients.
+        weights: A function to compute weights. Default is None.
+        kernel_params: Parameters for the kernel function. Default is None.
+
+    Returns:
+        np.ndarray: The computed coefficients.
+    """
+
+    n = basis.get_n()
+
+    if weights is None:
+        weights = lambda x: 1.
+
+    def integrand(x: np.ndarray, y: np.ndarray, p: int, q: int) -> np.ndarray:
+        return kernel(x, y, **kernel_params) * basis(x, p) * basis(
+            y, q) * weights(x) * weights(y)
+
+
+    coefficients = np.zeros((n, n))
+    coefficients_norm = np.zeros((n, n))
+
+    logger.debug("Computing coefficients for basis functions")
+    for i in range(n):
+        for j in range(i, n):
+            logger.debug(f"   {i} and {j}")
+            int_x = (np.max([interval[0], basis.get_support(i)[0]]),
+                     np.min([interval[1], basis.get_support(i)[1]]))
+            int_y = (np.max([interval[0], basis.get_support(j)[0]]),
+                     np.min([interval[1], basis.get_support(j)[1]]))
+            coefficients[i, j], tol = integrate.nquad(integrand, [int_x, int_y],
+                                                      args=(i, j))
+            logger.debug(f"     {coefficients[i, j]:.4}")
+
+    # normalize the coefficients
+    for i in range(n):
+        for j in range(i, n):
+            coefficients_norm[i, j] = coefficients_norm[j, i] = coefficients[i, j]
+
+
+    logger.debug(f"Normalized coefficientes:\n {coefficients_norm}")
+
+    return coefficients_norm
+
+def compute_cell_average_covariance(basis: PiecewiseConstantBasis,
+                                   sigma: float = 1.0,
+                                   ell: float = 1.0,
+                                   return_correlation: bool = True) -> np.ndarray:
+
+    """Compute the covariance matrix for cell-averaged basis functions with a squared exponential kernel.
+    Args:
+        basis: The piecewise constant basis functions.
+        sigma: The standard deviation parameter of the kernel. Default is 1.0.
+        ell: The length scale parameter of the kernel. Default is 1.0.
+        return_correlation: If True, return the correlation matrix instead of the covariance matrix. Default is True.
+    Returns:
+        np.ndarray: The computed covariance or correlation matrix.
+    """
+    n = basis.get_n()
+    cov = np.zeros((n, n))
+    support = basis.get_support()
+    for i in range(n):
+        for j in range(i, n):
+            a, b = support[i]
+            c, d = support[j]
+            term1 = special.erf((b - c) / (np.sqrt(2) * ell))
+            term2 = special.erf((b - d) / (np.sqrt(2) * ell))
+            term3 = special.erf((a - c) / (np.sqrt(2) * ell))
+            term4 = special.erf((a - d) / (np.sqrt(2) * ell))
+            cov[i, j] = cov[j, i] = (sigma**2 * ell * np.sqrt(np.pi / 2) / ((b - a) * (d - c))) * (term1 - term2 - term3 + term4)
+    if return_correlation:
+        stddev = np.sqrt(np.diag(cov))
+        corr = cov / np.outer(stddev, stddev)
+        return corr
+    else:
+        return cov
 
 def monte_carlo_2d(func: Callable[[np.ndarray, np.ndarray], np.ndarray],
                    x_lim: Tuple[float, float],
@@ -228,37 +369,101 @@ def get_gaussian_random_field_projection_from_dict(
 
     return mean, cov
 
+def get_gaussian_random_field_projection_norm_from_dict(
+        config: Dict[str, Any], **kwargs) -> tuple[np.ndarray, np.ndarray]:
+    """Load the projection configuration.
+
+    Args:
+        config: The projection configuration.
+        kwargs: Additional keyword arguments.
+
+    Returns:
+        Callable[[np.ndarray], np.ndarray]: The projection function.
+    """
+
+    kernel_params = config['kernel_params']
+    interval = config.get('interval', (0, 1))
+    d = config['dim']
+    mean = np.ones(d) * config['mean']
+    cov = compute_coefficients_norm(squared_exponential_kernel,
+                               NormPiecewiseConstantBasis(d, interval),
+                               interval,
+                               kernel_params=kernel_params)
+
+    return mean, cov
+
 
 if __name__ == '__main__':
 
     kernel_params = {'sigma': 1., 'l': 0.5}
 
-    n_b = 5
+    n_b = 2
     interval = (0, 1)
     basis = PiecewiseConstantBasis(n_b, interval)
-    coefficients = compute_coefficients(squared_exponential_kernel,
-                                        basis,
-                                        interval,
-                                        kernel_params=kernel_params)
+    basis_2 = NormPiecewiseConstantBasis(n_b, interval)
+
+    print("Computing coefficients numerically...")
+    coefficients_numerical = compute_coefficients(squared_exponential_kernel,
+                                                basis,
+                                                interval,
+                                                kernel_params=kernel_params)
+
+    print("Computing coefficients analytically...")
+    # coefficients_new = compute_coefficients_analytical(basis, interval, **kernel_params)
+    coefficients_new = compute_coefficients_norm(squared_exponential_kernel,
+                                                  basis_2,
+                                                  interval,
+                                                  kernel_params=kernel_params)
+
+    print("\nNumerical coefficients:")
+    print(coefficients_numerical)
+    print("\nAnalytical coefficients:")
+    print(coefficients_new)
+    print("\nDifference (Numerical - Analytical):")
+    print(coefficients_numerical - coefficients_new)
+    print(f"\nMax absolute difference: {np.max(np.abs(coefficients_numerical - coefficients_new)):.8f}")
 
     # Test the basis functions
-    fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+
+    # Plot basis functions
     x_vals = np.linspace(0, 1, 100)
     for i in range(n_b):
-        ax.plot(x_vals, basis(x_vals, i), label=f'basis_{i}')
-    ax.legend()
-    plt.show()
+        axes[0, 0].plot(x_vals, basis(x_vals, i), label=f'basis_{i}')
+    axes[0, 0].legend()
+    axes[0, 0].set_title("Piecewise Constant Basis Functions")
+    axes[0, 0].set_xlabel("x")
+    axes[0, 0].set_ylabel("φᵢ(x)")
 
-    # plot the variance function
+    # Plot variance function for both methods
     Phi = basis(x_vals).T
-    cov = Phi.T @ coefficients @ Phi
+    Phi_2 = basis_2(x_vals).T
+    cov_numerical = Phi.T @ coefficients_numerical @ Phi
+    cov_analytical = Phi_2.T @ coefficients_new @ Phi_2
 
-    fig, ax = plt.subplots(1, 1, figsize=(10, 5))
-    ax.plot(x_vals, np.diag(cov))
+    axes[0, 1].plot(x_vals, np.diag(cov_numerical), label='Numerical', linestyle='--')
+    axes[0, 1].plot(x_vals, np.diag(cov_analytical), label='Analytical', linestyle='-')
+    axes[0, 1].legend()
+    axes[0, 1].set_title("Variance Function Comparison")
+    axes[0, 1].set_xlabel("x")
+    axes[0, 1].set_ylabel("Var(f(x))")
+
+    # Plot coefficient matrices
+    im1 = axes[1, 0].imshow(cov_analytical, vmin=-1, vmax=1, cmap='RdBu_r')
+    axes[1, 0].set_title("Numerical Coefficients")
+    plt.colorbar(im1, ax=axes[1, 0])
+
+    im2 = axes[1, 1].imshow(coefficients_numerical, vmin=-1, vmax=1, cmap='RdBu_r')
+    axes[1, 1].set_title("Analytical Coefficients")
+    plt.colorbar(im2, ax=axes[1, 1])
+
+    plt.tight_layout()
     plt.show()
 
-    # plot full covariance matrix
-    fig, ax = plt.subplots(1, 1, figsize=(10, 5))
-    c = ax.imshow(cov)
-    fig.colorbar(c)
-    plt.show()
+    # # Plot difference matrix
+    # fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+    # diff = coefficients_numerical - coefficients_new
+    # im = ax.imshow(diff, cmap='RdBu_r', vmin=-np.max(np.abs(diff)), vmax=np.max(np.abs(diff)))
+    # ax.set_title(f"Difference Matrix (Max: {np.max(np.abs(diff)):.2e})")
+    # plt.colorbar(im, ax=ax)
+    # plt.show()
