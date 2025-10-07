@@ -99,164 +99,118 @@ class PiecewiseConstantModel(Model):
             x_obs: observed x values
         """
         super().__init__()
-        self.F = sy.symbols('F')  # Symbolic representation of F
         self.F_vals = F  # Actual values of F
         self.n_settings_ = self.F_vals.shape[0]  # Number of settings
         # assert self.n_settings_ == len(x_obs), "Number of settings does not match number of observations"
         self.x_obs_ = x_obs  # Observations
 
         self.n_params = n_params  # Number of parameters
-        self.params = sy.symbols([f'p_{str(i)}' for i in range(n_params)
-                                 ])  # Symbolic parameters
-        self.params_val = np.zeros(n_params)  # Initial parameter values
-        self.x = sy.symbols('x')  # Symbolic variable x
-        self.u = sy.symbols('u', cls=sy.Function)  # Symbolic function u
-        offset = 1.  # Offset for Young's modulus
-
-        # Define Young's modulus as a piecewise function
-        self.E = offset + (self.params[0] - offset) * sy.Heaviside(self.x)
-        for i in range(n_params - 1):
-            self.E += (self.params[i + 1] -
-                       self.params[i]) * sy.Heaviside(self.x -
-                                                      (i + 1) / self.n_params)
-        self.E = self.E.rewrite(sy.Piecewise)
-        logger.debug("Young's modulus:")
-        logger.debug(f"  {self.E}")
-
-        u_i = []  # List to store piecewise functions for u
-        conditions = []  # List to store conditions for piecewise functions
-
-        # Define piecewise functions for u
-        for i in range(self.n_params):
-            u_i.append(sy.S((self.x - (i / self.n_params)) / self.params[i]))
-            conditions.append(sy.S(self.x < (i + 1) / self.n_params))
-            for j in range(i):
-                u_i[i] += (1 / self.n_params) / self.params[j]
-
-        conditions[-1] = sy.S('1')  # Last condition is always true
-        self.u = self.F * sy.Piecewise(*zip(
-            u_i, conditions))  # Define u as a piecewise function
-        self.u_np = sy.lambdify((self.x, self.F, *self.params), self.u,
-                                'numpy')  # Convert u to a numpy function
-
-        # Compute gradient of u with respect to parameters
-        gradient = [sy.diff(self.u, param) for param in self.params]
-        logger.debug("Gradient:")
-        [logger.debug("  " + grad.__str__()) for grad in gradient]
-        self.gradient = [
-            sy.lambdify((self.x, self.F, *self.params), grad, 'numpy')
-            for grad in gradient
-        ]
-
-        # Compute Hessian of u with respect to parameters
-        hessian = [
-            [sy.diff(grad, param) for param in self.params] for grad in gradient
-        ]
-        logger.debug("Hessian:")
-        [[logger.debug("  " + hess.__str__())
-          for hess in hessian_row]
-         for hessian_row in hessian]
-        self.hessian = [[
-            sy.lambdify((self.x, self.F, *self.params), hess, 'numpy')
-            for hess in hessian_row
-        ]
-                        for hessian_row in hessian]
 
     def eval_E(self, params: np.ndarray, x: np.ndarray) -> np.ndarray:
-        """Evaluate Young's modulus at given x values
+        """Evaluate Young's modulus E(x) without sympy.
+
+        For x in ((k-1)/n, k/n] we have E(x) = params[k-1]. For x=0 we assign E(0)=params[0].
 
         Args:
-            params: parameter values
-            x: x values
-
+            params: array of shape (n_params,)
+            x: 1D array of points in [0,1]
         Returns:
-            np.ndarray: Young's modulus evaluated at x
+            1D array of E values with shape (len(x),)
         """
-        E = self.E.subs([*zip(self.params, params)
-                        ])  # Substitute parameter values into E
-        return np.array([E.subs(self.x, x_i) for x_i in x
-                        ])  # Evaluate E at each x value
+        params = np.asarray(params, dtype=float)
+        x = np.asarray(x, dtype=float)
+        n = self.n_params
+        if params.shape[0] != n:
+            raise ValueError(f"params must have length {n}, got {params.shape[0]}")
+        if x.ndim != 1:
+            raise ValueError("x must be a 1D array")
+        if np.any((x < 0.0) | (x > 1.0)):
+            raise ValueError("All x must be within [0, 1]")
+        # Interval index I = ceil(x * n); clip to [1, n]
+        I = np.ceil(x * n).astype(int)
+        np.clip(I, 1, n, out=I)
+        return params[I - 1]
 
-    def eval(self,
-             params: np.ndarray,
-             x: np.ndarray = None,
-             idx: int = None) -> np.ndarray:
-        """Evaluate displacements u at given x locations for setting idx
+    def eval(self, params: np.ndarray, x: np.ndarray = None, idx: int = 0) -> np.ndarray:
+        """Analytic evaluation of u
 
-        Args:
-            params: parameter values
-            x: x values
-            idx: setting index
-
-        Returns:
-            np.ndarray: u evaluated at x
-        """
-        if x is None:
-            x = self.x_obs_  # Use observed x values if none provided
-
-        if idx is None:
-            idx = 0  # Default index is 0
-
-        if len(params) == self.n_params:
-            return self.u_np(x, self.F_vals[idx],
-                             *params)  # Evaluate u with given parameters
-        else:
-            if len(params.shape) == 1:
-                params = params[:, None]  # Reshape parameters if necessary
-            assert params.shape[
-                1] == self.n_params, "Array dimensions do not match"
-            return self.u_np(x, self.F_vals[idx],
-                             *[param[:, None] for param in params.T])
-
-    def eval_grad(self, params: np.ndarray, x: np.ndarray = None, idx: int = 0):
-        """Evaluate gradient of u with respect to parameters
-
-        Args:
-            params: parameter values
-            x: x values
-            idx: setting index
-
-        Returns:
-            np.ndarray: gradient of u with respect to parameters
+        Formula for x in ((I-1)/n, I/n], with I = ceil(x*n), n = number of parameters:
+            u(x) = F * [ (1/n) * sum_{k=1}^{I-1} 1/p_k + (x - (I-1)/n)/p_I ].
         """
         if x is None:
-            x = self.x_obs_  # Use observed x values if none provided
+            x = self.x_obs_
+        x = np.asarray(x, dtype=float)
+        params = np.asarray(params, dtype=float)
+        n = self.n_params
+        if params.shape[0] != n:
+            raise ValueError("params must be a vector of length n_params for analytic evaluation")
+        I = np.ceil(x * n).astype(int)
+        np.clip(I, 1, n, out=I)
+        inv_p = 1.0 / params
+        cumsum_inv = np.concatenate(([0.0], np.cumsum(inv_p)))  # length n+1
+        base_sum = (1.0 / n) * cumsum_inv[I - 1]
+        final_term = (x - (I - 1) / n) / params[I - 1]
+        return self.F_vals[idx] * (base_sum + final_term)
 
-        if idx is None:
-            idx = 0  # Default index is 0
-        return np.array(
-            [[grad(x_i, self.F_vals[idx], *params)
-              for grad in self.gradient]
-             for x_i in x])  # Evaluate gradient
+    def eval_grad(self, params: np.ndarray, x: np.ndarray = None, idx: int = 0) -> np.ndarray:
+        """Analytic gradient w.r.t. parameters.
 
-    def eval_hessian(self,
-                     params: np.ndarray,
-                     x: np.ndarray = None,
-                     idx: int = 0) -> np.ndarray:
-        """Evaluate Hessian of u with respect to parameters
-
-        Args:
-            params: parameter values
-            x: x values
-            idx: setting index
-
-        Returns:
-            np.ndarray: Hessian of u with respect to parameters
+        For x in interval I (1-based):
+            d/d p_k u(x) = -F/n * 1/p_k^2            for k < I
+                           -F * (x - (I-1)/n)/p_I^2  for k = I
+                           0                         for k > I.
+        Returns array shape (len(x), n_params).
         """
         if x is None:
-            x = self.x_obs_  # Use observed x values if none provided
+            x = self.x_obs_
+        x = np.asarray(x, dtype=float)
+        params = np.asarray(params, dtype=float)
+        n = self.n_params
+        if params.shape[0] != n:
+            raise ValueError("params must be a vector of length n_params for analytic gradient")
+        m = x.size
+        I = np.ceil(x * n).astype(int)
+        np.clip(I, 1, n, out=I)
+        inv_p2 = 1.0 / (params**2)
+        base_prefix = -(1.0 / n) * inv_p2
+        G = np.zeros((m, n), dtype=float)
+        Fval = self.F_vals[idx]
+        for row, Ii in enumerate(I):
+            stop = Ii - 1
+            if stop > 0:
+                G[row, :stop] = base_prefix[:stop]
+            G[row, Ii - 1] = -(x[row] - (Ii - 1) / n) / (params[Ii - 1]**2)
+        return Fval * G
 
-        if idx is None:
-            idx = 0  # Default index is 0
+    def eval_hessian(self, params: np.ndarray, x: np.ndarray = None, idx: int = 0) -> np.ndarray:
+        """Analytic Hessian.
 
-        hessian = np.zeros(
-            (len(x), self.n_params, self.n_params))  # Initialize Hessian array
-        for i, x_i in enumerate(x):
-            for j, hessian_row in enumerate(self.hessian):
-                for k, hess in enumerate(hessian_row):
-                    hessian[i, j, k] = hess(x_i, self.F_vals[idx],
-                                            *params)  # Evaluate Hessian
-        return hessian
+        Non-zero only on diagonal. For I = ceil(x*n):
+            d2/d p_k^2 u(x) = F * 2/n * 1/p_k^3                        for k < I
+                               F * 2*(x - (I-1)/n)/p_I^3              for k = I
+            Mixed partials are zero.
+        Returns array shape (len(x), n_params, n_params).
+        """
+        if x is None:
+            x = self.x_obs_
+        x = np.asarray(x, dtype=float)
+        params = np.asarray(params, dtype=float)
+        n = self.n_params
+        if params.shape[0] != n:
+            raise ValueError("params must be a vector of length n_params for analytic Hessian")
+        m = x.size
+        I = np.ceil(x * n).astype(int)
+        np.clip(I, 1, n, out=I)
+        inv_p3 = 1.0 / (params**3)
+        H = np.zeros((m, n, n), dtype=float)
+        Fval = self.F_vals[idx]
+        for row, Ii in enumerate(I):
+            if Ii - 1 > 0:
+                # k < I contributes 2/n * 1/p_k^3
+                H[row, :Ii - 1, :Ii - 1] = np.diag(2.0 / n * inv_p3[:Ii - 1])
+            # k = I
+            H[row, Ii - 1, Ii - 1] = 2.0 * (x[row] - (Ii - 1) / n) * inv_p3[Ii - 1]
+        return Fval * H
 
     @override
     def get_dim_in(self) -> int:
