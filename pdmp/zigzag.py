@@ -134,6 +134,7 @@ class ZigZagSampler(Sampler):
                 )
             self.velocities[0] = v_0
 
+        self._s = None
         # check how events from pdmp should be generated
         if hasattr(self.target, 'get_bounds'):
             pass
@@ -453,6 +454,8 @@ class ZigZagSampler(Sampler):
         if self._thinning:
             self._eval_times.append(self.times[self._iter + 1])
             self._poisson_thinning(j, T)
+        else:
+            self._s = None
 
         dt = self.times[self._iter + 1] - self.times[self._iter]
         self.offset *= np.exp(-self._offset_shrinkage * dt)
