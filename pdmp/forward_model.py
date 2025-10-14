@@ -111,6 +111,25 @@ class PiecewiseConstantModel(Model):
         if self.n_params is None:
             raise ValueError("Either n_params or field must define parameter dimension.")
 
+    def _midpoints(self) -> np.ndarray:
+        """Return midpoints of the n_params equal sub-intervals of [0,1]."""
+        n = self.n_params
+        return (np.arange(n) + 0.5) / n
+
+    def _J_params_eff(self) -> np.ndarray:
+        """Jacobian of effective piecewise constants with respect to model parameters.
+
+        If a GaussianRandomField is attached, params_eff = Φ(mid) @ params, hence J = Φ(mid).
+        Otherwise J is the identity.
+        Shape: (n_eff, n_params) where n_eff == n_params == self.n_params.
+        """
+        n = self.n_params
+        if self.field is None:
+            return np.eye(n)
+        mid = self._midpoints()
+        # design_matrix returns shape (len(mid), dim) == (n, n)
+        return self.field.design_matrix(mid)
+
     def _effective_params(self, params: np.ndarray) -> np.ndarray:
         """Return the piecewise constant parameter vector used by the analytic formula.
 
@@ -121,7 +140,7 @@ class PiecewiseConstantModel(Model):
         if self.field is None:
             return np.asarray(params, dtype=float)
         n = self.n_params
-        midpoints = (np.arange(n) + 0.5) / n
+        midpoints = self._midpoints()
         return self.field.evaluate(params, midpoints)
 
     def eval_E(self, params: np.ndarray, x: np.ndarray) -> np.ndarray:
@@ -173,12 +192,12 @@ class PiecewiseConstantModel(Model):
         return self.F_vals[idx] * (base_sum + final_term)
 
     def eval_grad(self, params: np.ndarray, x: np.ndarray = None, idx: int = 0) -> np.ndarray:
-        """Analytic gradient w.r.t. parameters.
+        """Analytic gradient w.r.t. model parameters (coefficients).
 
-        For x in interval I (1-based):
-            d/d p_k u(x) = -F/n * 1/p_k^2            for k < I
-                           -F * (x - (I-1)/n)/p_I^2  for k = I
-                           0                         for k > I.
+        Internally, the analytic formulas are expressed w.r.t. the effective piecewise-constant
+        values p = params_eff. When a GaussianRandomField is attached, p = Φ(mid) @ a (linear in
+        the coefficients a). Using the chain rule: du/da = (du/dp) @ Φ(mid).
+
         Returns array shape (len(x), n_params).
         """
         if x is None:
@@ -194,23 +213,24 @@ class PiecewiseConstantModel(Model):
         np.clip(I, 1, n, out=I)
         inv_p2 = 1.0 / (params_eff**2)
         base_prefix = -(1.0 / n) * inv_p2
-        G = np.zeros((m, n), dtype=float)
+        # Gradient w.r.t effective params p
+        G_eff = np.zeros((m, n), dtype=float)
         Fval = self.F_vals[idx]
         for row, Ii in enumerate(I):
             stop = Ii - 1
             if stop > 0:
-                G[row, :stop] = base_prefix[:stop]
-            G[row, Ii - 1] = -(x[row] - (Ii - 1) / n) / (params_eff[Ii - 1]**2)
-        # Chain rule: if field basis is piecewise constant, Jacobian is identity; otherwise this is an approximation.
-        return Fval * G
+                G_eff[row, :stop] = base_prefix[:stop]
+            G_eff[row, Ii - 1] = -(x[row] - (Ii - 1) / n) / (params_eff[Ii - 1]**2)
+        G_eff *= Fval
+        # Chain rule to parameters: J = ∂p/∂a = Φ(mid)
+        J = self._J_params_eff()
+        return G_eff @ J
 
     def eval_hessian(self, params: np.ndarray, x: np.ndarray = None, idx: int = 0) -> np.ndarray:
-        """Analytic Hessian.
+        """Analytic Hessian w.r.t. model parameters (coefficients).
 
-        Non-zero only on diagonal. For I = ceil(x*n):
-            d2/d p_k^2 u(x) = F * 2/n * 1/p_k^3                        for k < I
-                               F * 2*(x - (I-1)/n)/p_I^3              for k = I
-            Mixed partials are zero.
+        With p = Φ(mid) @ a linear in a, the Hessian transforms as:
+            H_a = J^T H_p J, where J = ∂p/∂a = Φ(mid).
         Returns array shape (len(x), n_params, n_params).
         """
         if x is None:
@@ -225,14 +245,22 @@ class PiecewiseConstantModel(Model):
         I = np.ceil(x * n).astype(int)
         np.clip(I, 1, n, out=I)
         inv_p3 = 1.0 / (params_eff**3)
-        H = np.zeros((m, n, n), dtype=float)
+        # Hessian w.r.t effective params p
+        H_eff = np.zeros((m, n, n), dtype=float)
         Fval = self.F_vals[idx]
         for row, Ii in enumerate(I):
             if Ii - 1 > 0:
-                H[row, :Ii - 1, :Ii - 1] = np.diag(2.0 / n * inv_p3[:Ii - 1])
-            H[row, Ii - 1, Ii - 1] = 2.0 * (x[row] - (Ii - 1) / n) * inv_p3[Ii - 1]
-        # Chain rule note as above.
-        return Fval * H
+                H_eff[row, :Ii - 1, :Ii - 1] = np.diag(2.0 / n * inv_p3[:Ii - 1])
+            H_eff[row, Ii - 1, Ii - 1] = 2.0 * (x[row] - (Ii - 1) / n) * inv_p3[Ii - 1]
+        H_eff *= Fval
+        # Transform to parameters via J^T H J
+        J = self._J_params_eff()
+        # For each output row, compute J^T H_eff[row] J
+        H = np.zeros((m, n, n), dtype=float)
+        JT = J.T
+        for row in range(m):
+            H[row] = JT @ H_eff[row] @ J
+        return H
 
     @override
     def get_dim_in(self) -> int:
