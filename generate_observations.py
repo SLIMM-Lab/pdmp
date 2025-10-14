@@ -9,7 +9,7 @@ import numpy as np
 
 from typing import Any
 
-from pdmp.loader import yaml_to_numpy
+from pdmp.loader import yaml_to_numpy, get_target
 from pdmp.distributions import get_prior, AffineTransformtion, ExponentialTransformation
 from pdmp.forward_model import get_model
 from pdmp.random_field import get_field
@@ -91,6 +91,12 @@ def generate_observations(config: dict[str, Any], rng: np.random.Generator):
 
     # write observations to file
     np.savetxt(os.path.join('observations.dat'), obs)
+
+    if problem_config['name'] == 'Transformed':
+        # also return the target distribution for reference
+        get_target(problem_config, rng=rng)
+        np.savetxt('M.dat', problem_config['M'])
+        np.savetxt('b.dat', problem_config['b'])
 
 
 def main():
