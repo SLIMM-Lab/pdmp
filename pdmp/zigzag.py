@@ -6,7 +6,8 @@ import yaml
 import matplotlib.pyplot as plt
 import numpy as np
 
-from typing import cast, Any, Union, override
+from typing import cast, Any, Union
+from typing_extensions import override
 
 from tqdm import tqdm
 

@@ -4,10 +4,7 @@ channels:
   - defaults
   - pytorch
 dependencies:
-  - python=3.12
-  - jupyter
-  - jupyterlab
-  - jupyterlab_vim
+  - python=3.10
   - matplotlib
   - numpy>=2.0
   - scipy
@@ -21,5 +18,7 @@ dependencies:
   - gpytorch
   - arviz
   - yapf
+  - pyyaml
+  - typing-extensions
   - pip:
     - geomloss

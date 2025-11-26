@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from typing import override
+from typing_extensions import override
 
 from pdmp.project_field import compute_coefficients, squared_exponential_kernel, PiecewiseConstantBasis
 from pdmp import logger
