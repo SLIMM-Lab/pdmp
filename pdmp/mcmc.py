@@ -6,12 +6,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 
-from typing import Tuple, override
+from typing import Tuple
+from typing_extensions import override
 from tqdm import tqdm
 
 from pdmp.sampler import Sampler, register_sampler
 from pdmp.distributions import Distribution, MultivariateNormal
 from pdmp import logger
+
 
 
 class StepSampler(Sampler):

@@ -10,7 +10,8 @@ from torch.autograd import grad
 
 import numpy as np
 
-from typing import override, Optional
+from typing import Optional
+from typing_extensions import override
 from scipy.stats import qmc
 from typing import cast
 from tqdm import tqdm

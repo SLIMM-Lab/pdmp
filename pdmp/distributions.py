@@ -5,11 +5,13 @@ from scipy.optimize import minimize
 
 from datetime import datetime
 from timeit import timeit
-from typing import Union, Any, cast, override
+from typing import Union, Any, cast
+from typing_extensions import override
 
 from pdmp import logger
 from pdmp.forward_model import Model
 from pdmp.project_field import get_gaussian_random_field_projection_from_dict, get_gaussian_random_field_projection_norm_from_dict
+
 
 small = 1e-12
 large = 1e20

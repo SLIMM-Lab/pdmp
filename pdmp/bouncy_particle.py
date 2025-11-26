@@ -4,7 +4,8 @@ import sys
 
 import numpy as np
 
-from typing import cast, override
+from typing import cast
+from typing_extensions import override
 
 from tqdm import tqdm
 
