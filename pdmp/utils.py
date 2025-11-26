@@ -473,8 +473,8 @@ def compute_ess_zigzag(
     else:
         return ess, autocorrelation, mean_pi, var_pi
 
-def sample_uniform_along_path(positions: np.ndarray, velocities: np.ndarray,
-                              times: np.ndarray, t_k: float, N: int) -> np.ndarray:
+def sample_equidistant_along_path(positions: np.ndarray, velocities: np.ndarray,
+                                  times: np.ndarray, t_k: float, N: int) -> np.ndarray:
     """N samples uniformly spaced along the path corresponting to interval [0,t_k].
 
     Args:
@@ -516,7 +516,7 @@ def compute_ess_zigzag_from_samples(t: np.ndarray,
     if n_samples is None:
         n_samples = int(x.shape[0] * 10)
 
-    samples = sample_uniform_along_path(x, v, t, t[-1], n_samples)
+    samples = sample_equidistant_along_path(x, v, t, t[-1], n_samples)
 
     dataset = arviz.from_dict(posterior={"param": samples[None, :, :]})
     ess = arviz.ess(dataset).to_array().values.flatten()
