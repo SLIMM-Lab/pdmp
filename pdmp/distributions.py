@@ -17,6 +17,82 @@ small = 1e-12
 large = 1e20
 
 
+def _safe_cholesky(
+    A: np.ndarray,
+    *,
+    jitter0: float = 1e-12,
+    max_tries: int = 8,
+    symmetrize: bool = True,
+    check_finite: bool = False,
+    name: str = "matrix",
+) -> tuple[np.ndarray, float]:
+    """Compute a numerically robust Cholesky factor.
+
+    This is mainly to stabilize Cholesky factorizations that arise from
+    discretized random-field covariances / curvature matrices that can become
+    nearly singular for fine meshes.
+
+    Strategy:
+      1) Optional symmetrization: (A + A.T)/2
+      2) Try Cholesky(A + jitter * I) with increasing jitter
+      3) Fallback: eigenvalue clipping (project to SPD-ish)
+
+    Returns:
+        L: lower-triangular Cholesky factor
+        jitter: final diagonal jitter added (may be 0)
+    """
+    A = np.asarray(A, dtype=float)
+    if A.ndim != 2 or A.shape[0] != A.shape[1]:
+        raise ValueError(f"_safe_cholesky expects a square 2D array, got shape {A.shape}")
+
+    if symmetrize:
+        A = 0.5 * (A + A.T)
+
+    n = A.shape[0]
+    I = np.eye(n)
+
+    # scale jitter by typical diagonal magnitude to make it dimensionless/robust
+    diag = np.diag(A)
+    diag_scale = float(np.mean(diag)) if diag.size else 1.0
+    diag_scale = max(abs(diag_scale), 1.0)
+
+    last_err: Exception | None = None
+    for k in range(max_tries):
+        jitter = (jitter0 * (10.0 ** k)) * diag_scale
+        try:
+            L = sp.linalg.cholesky(
+                A + jitter * I,
+                lower=True,
+                check_finite=check_finite,
+                overwrite_a=False,
+            )
+            if jitter > 0:
+                logger.debug(f"Cholesky stabilized for {name} with jitter={jitter:.3e}")
+            return L, float(jitter)
+        except Exception as e:  # LinAlgError (and friends)
+            last_err = e
+
+    # Fallback: eigenvalue clipping
+    w, V = np.linalg.eigh(A)
+    floor = float(jitter0 * diag_scale)
+    w_clipped = np.maximum(w, floor)
+    A_spd = (V * w_clipped) @ V.T
+    A_spd = 0.5 * (A_spd + A_spd.T)
+
+    try:
+        L = sp.linalg.cholesky(A_spd, lower=True, check_finite=check_finite)
+        logger.warning(
+            f"Cholesky failed for {name} after jitter attempts; used eigenvalue clipping "
+            f"with floor={floor:.3e}. Original error: {last_err}"
+        )
+        return L, float(floor)
+    except Exception as e:
+        raise np.linalg.LinAlgError(
+            f"Cholesky failed for {name} even after jitter and eigenvalue clipping. "
+            f"Last errors: {last_err} / {e}"
+        )
+
+
 class Distribution:
     """Base class for probability distributions."""
 
@@ -180,6 +256,56 @@ class JointDistribution(Distribution):
         # batch of points
         return np.array([self.hessian_log_density(xi) for xi in x])
 
+def stable_cholesky_and_inv(cov: np.ndarray, *, jitter0: float = 1e-12, max_tries: int = 8):
+    """
+    Compute a numerically stable Cholesky factor and inverse using diagonal jitter.
+
+    - Tries Cholesky(cov + jitter * I) with increasing jitter.
+    - If that still fails, falls back to eigenvalue clipping (SPD projection).
+
+    Returns:
+        L: lower-triangular Cholesky factor
+        invC: (regularized) inverse computed via cho_solve
+        jitter: final jitter added (0 if none)
+    """
+    cov = np.asarray(cov, dtype=float)
+
+    # Symmetrize to reduce numerical asymmetry from assembly/roundoff
+    cov = 0.5 * (cov + cov.T)
+
+    n = cov.shape[0]
+    I = np.eye(n)
+
+    # Scale jitter by typical diagonal magnitude (dimensionless robustness)
+    diag_scale = float(np.mean(np.diag(cov))) if n > 0 else 1.0
+    diag_scale = max(diag_scale, 1.0)
+
+    jitter = 0.0
+    for k in range(max_tries):
+        jitter = (jitter0 * (10.0 ** k)) * diag_scale
+        try:
+            L = np.linalg.cholesky(cov + jitter * I)
+            invC = sp.linalg.cho_solve((L, True), I, check_finite=False)
+            return L, invC, jitter
+        except np.linalg.LinAlgError:
+            pass
+
+    # Fallback: eigenvalue clipping (nearest SPD-ish)
+    w, V = np.linalg.eigh(cov)
+    # Floor eigenvalues relative to scale
+    floor = jitter0 * diag_scale
+    w_clipped = np.maximum(w, floor)
+    cov_spd = (V * w_clipped) @ V.T
+    cov_spd = 0.5 * (cov_spd + cov_spd.T)
+
+    L = np.linalg.cholesky(cov_spd)
+    invC = sp.linalg.cho_solve((L, True), I, check_finite=False)
+    return L, invC, float(max(0.0, floor))
+
+
+# Usage in your class:
+# self.cov_L, self.inv_C, self._jitter = stable_cholesky_and_inv(self._cov)
+
 class MultivariateNormal(Distribution):
     """Multivariate normal distribution."""
 
@@ -197,16 +323,45 @@ class MultivariateNormal(Distribution):
 
     def __init__(self,
                  mean: np.ndarray,
-                 cov: np.ndarray,
+                 cov: np.ndarray = None,
+                 prec: np.ndarray = None,
                  rng: np.random.Generator = None,
                  seed: int = None):
         super().__init__(rng=rng, seed=seed)
+
         self._mean = np.atleast_1d(mean)
         self._dim = len(self._mean)
-        self._cov = np.atleast_2d(cov)
-        self.cov_L = np.linalg.cholesky(self._cov)
-        self.inv_C = sp.linalg.cho_solve((self.cov_L, True), np.eye(self._dim))
-        self.log_det = np.log(self.cov_L.diagonal()).sum()
+
+        if (cov is None) == (prec is None):
+            raise ValueError("Exactly one of 'cov' or 'prec' must be provided.")
+
+        if cov is not None:
+            # Covariance given: use numerically stable Cholesky + inverse.
+            self._cov = np.atleast_2d(cov)
+            if self._cov.shape != (self._dim, self._dim):
+                raise ValueError("Shape mismatch between mean and cov.")
+            self.cov_L, self.inv_C, self._jitter = stable_cholesky_and_inv(self._cov)
+        else:
+            # Precision given: avoid forming inv(prec) explicitly.
+            prec = np.atleast_2d(prec)
+            if prec.shape != (self._dim, self._dim):
+                raise ValueError("Shape mismatch between mean and prec.")
+            # Symmetrize for numerical robustness
+            prec = 0.5 * (prec + prec.T)
+            # Cholesky factor of precision: P = R^T R  (upper-triangular R)
+            R = np.linalg.cholesky(prec)
+            # Covariance C = P^{-1} = R^{-1} (R^{-1})^T
+            self.cov_L = sp.linalg.solve_triangular(
+                R, np.eye(self._dim), lower=False, check_finite=False
+            )
+            # Inverse covariance is just the precision itself
+            self.inv_C = prec
+            self._jitter = 0.0
+            # Lazily construct covariance matrix for interface compatibility
+            self._cov = self.cov_L @ self.cov_L.T
+
+        # log|C| where C = cov; since cov_L is Cholesky factor, |C| = (prod diag(L))^2
+        self.log_det = 2.0 * np.log(self.cov_L.diagonal()).sum()
         self.constant = -0.5 * np.log(2.0 * np.pi) * self._dim
 
     @classmethod
@@ -214,9 +369,17 @@ class MultivariateNormal(Distribution):
                   params: dict[str, np.ndarray],
                   rng: np.random.Generator = None,
                   seed: int = None):
-        if 'mean' not in params or 'cov' not in params:
-            raise ValueError("Parameters must include 'mean' and 'cov'.")
-        return cls(mean=params['mean'], cov=params['cov'], rng=rng, seed=seed)
+        if 'mean' not in params:
+            raise ValueError("Parameters must include 'mean'.")
+        if ('cov' in params) == ('prec' in params):
+            raise ValueError("Parameters must include exactly one of 'cov' or 'prec'.")
+        return cls(
+            mean=params['mean'],
+            cov=params.get('cov', None),
+            prec=params.get('prec', None),
+            rng=rng,
+            seed=seed,
+        )
 
     @property
     def dim(self) -> int:
@@ -227,7 +390,8 @@ class MultivariateNormal(Distribution):
         return self._mean
 
     @property
-    def cov(self):
+    def cov(self) -> np.ndarray:
+        # Always return a full covariance matrix; kept for backwards compatibility.
         return self._cov
 
     @override
@@ -237,31 +401,40 @@ class MultivariateNormal(Distribution):
             return self.cov_L @ z + self._mean
         else:
             z = self.rng.standard_normal(size=(n, self._dim))
-            return z @ self.cov_L + self._mean
+            return z @ self.cov_L.T + self._mean
 
     @override
     def log_density(self, x: np.ndarray) -> np.ndarray:
         diff = x - self._mean
         if diff.ndim == 1:
             if self._dim == 1:
-                return self.constant - self.log_det - 0.5 * np.abs(
-                    diff / self.cov_L[0, 0])**2
+                return self.constant - 0.5 * self.log_det - 0.5 * np.abs(
+                    diff / self.cov_L[0, 0]
+                ) ** 2
             else:
-                return self.constant - self.log_det - 0.5 * np.linalg.norm(
-                    np.linalg.solve(self.cov_L, diff))**2
+                y = sp.linalg.solve_triangular(
+                    self.cov_L, diff, lower=True, check_finite=False
+                )
+                return self.constant - 0.5 * self.log_det - 0.5 * np.dot(y, y)
         else:
-            return (self.constant - self.log_det - 0.5 * np.linalg.norm(
-                np.linalg.solve(self.cov_L, diff.T), axis=0) ** 2).T
+            # batch of points
+            y = sp.linalg.solve_triangular(
+                self.cov_L, diff.T, lower=True, check_finite=False
+            )
+            quad = np.sum(y * y, axis=0)
+            return (self.constant - 0.5 * self.log_det - 0.5 * quad).T
 
     @override
     def grad_log_density(self, x: np.ndarray) -> np.ndarray:
         diff = x - self._mean
         return -sp.linalg.solve_triangular(
-            self.cov_L.transpose(),
+            self.cov_L.T,
             sp.linalg.solve_triangular(
-                self.cov_L, diff, lower=True, check_finite=False),
+                self.cov_L, diff, lower=True, check_finite=False
+            ),
             lower=False,
-            check_finite=False)
+            check_finite=False,
+        )
 
     @override
     def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
@@ -1234,7 +1407,7 @@ class TransformedDistribution(Distribution):
                 M = find_curvature(base_distribution, mean=b)
                 params['M'] = M
 
-            C = np.linalg.cholesky(M)
+            C, _ = _safe_cholesky(M, name="AffineTransformtion(M) for TransformedDistribution")
 
             self._transformation = AffineTransformtion(C, b)
         else:
@@ -1359,7 +1532,7 @@ class TransformedLikelihood(Likelihood):
                 M = find_curvature(likelihood, mean=b)
                 params['M'] = M
 
-            C = np.linalg.cholesky(M)
+            C, _ = _safe_cholesky(M, name="AffineTransformtion(M) for TransformedLikelihood")
 
             self._transformation = AffineTransformtion(C, b)
         else:
