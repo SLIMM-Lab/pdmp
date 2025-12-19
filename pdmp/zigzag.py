@@ -580,17 +580,18 @@ class ZigZagSampler(Sampler):
         np.savetxt(os.path.join(folder, 'velocities.dat'),
                    self.velocities,
                    fmt='%d')
-        np.savetxt(os.path.join(folder, 'times_all.dat'),
-                   self._times_all,
-                   fmt=f'%.{precision}e')
-        np.savetxt(os.path.join(folder, 'offset_history.dat'),
-                   self._offset_history,
-                   fmt=f'%.{precision}e')
+        if self._thinning:
+            np.savetxt(os.path.join(folder, 'times_all.dat'),
+                       self._times_all,
+                       fmt=f'%.{precision}e')
+            np.savetxt(os.path.join(folder, 'offset_history.dat'),
+                       self._offset_history,
+                       fmt=f'%.{precision}e')
 
-        self._eval_times.sort()
-        np.savetxt(os.path.join(folder, 'eval_times.dat'),
-                   np.array(self._eval_times),
-                   fmt=f'%.{precision}e')
+            self._eval_times.sort()
+            np.savetxt(os.path.join(folder, 'eval_times.dat'),
+                       np.array(self._eval_times),
+                       fmt=f'%.{precision}e')
 
     @property
     def acceptance_rate(self) -> float:
