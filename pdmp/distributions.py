@@ -1023,17 +1023,41 @@ class GaussianLikelihood(Likelihood):
     def grad_log_density(self,
                          params: np.ndarray,
                          idx: int = None) -> np.ndarray:
+        """Gradient of log-likelihood w.r.t. parameters.
+
+        Enhancement: if the underlying model exposes a `linearize(params, idx)` method
+        returning (outputs, vjp_fun) where vjp_fun maps a vector of shape (d,) to the
+        parameter gradient (p,), we use a single reverse-mode pass instead of forming
+        the full Jacobian. If only an `eval_vjp(params, idx, v)` method is provided,
+        we call that (may re-run the forward internally). Otherwise we fall back to
+        forming the Jacobian via `eval_grad` and doing a matrix product.
+        """
+
+        def _grad_single(i: int) -> np.ndarray:
+            # Prefer single forward + VJP closure
+            if hasattr(self._model, 'linearize'):
+                m, vjp_fun = self._model.linearize(params, idx=i)
+                v = self._dists[i].grad_log_density(m)  # shape (d,)
+                g = vjp_fun(v)  # shape (p,)
+                return np.asarray(g, dtype=float)
+            # Compute forward output once
+            m = self._model.eval(params, idx=i)
+            v = self._dists[i].grad_log_density(m)
+            # If model supplies a direct J^T v path
+            if hasattr(self._model, 'eval_vjp'):
+                g = self._model.eval_vjp(params, idx=i, v=v)
+                return np.asarray(g, dtype=float)
+            # Fallback: form full Jacobian
+            J = self._model.eval_grad(params, idx=i)  # shape (d, p)
+            return np.asarray(v @ J, dtype=float)
+
         if idx is None:
-            grad = np.zeros(self._n_params_)
+            grad = np.zeros(self._n_params_, dtype=float)
             for i in range(self.n_obs):
-                m = self._model.eval(params, idx=i)
-                grad_m = self._model.eval_grad(params, idx=i)
-                grad += self._dists[i].grad_log_density(m) @ grad_m
+                grad += _grad_single(i)
             return grad
         else:
-            m = self._model.eval(params, idx=idx)
-            grad_m = self._model.eval_grad(params, idx=idx)
-            return self._dists[idx].grad_log_density(m) @ grad_m
+            return _grad_single(idx)
 
     @override
     def hessian_log_density(self,
