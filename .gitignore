@@ -56,5 +56,8 @@ venv.bak/
 # figures and other results
 *figures
 ZigZag-Sampling-Tutorial
-examples/data
-examples/figures
+examples/jax-fem/data
+examples/jax-fem/figures
+
+# jax-fem related dirs
+*data

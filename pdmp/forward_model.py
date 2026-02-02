@@ -423,7 +423,7 @@ def get_model(config: dict, field=None):
 
     Args:
         config: configuration dictionary
-        field: Optional GaussianRandomField to inject into model (if supported)
+        field: Optional random field (GaussianRandomField or JaxRandomField) to inject into model
 
     Returns:
         Model: model
@@ -432,6 +432,8 @@ def get_model(config: dict, field=None):
         return PiecewiseConstantModel.from_dict(config, field=field)
     elif config['name'] == 'Linear':
         return LinearModel.from_dict(config)
+    elif config['name'] == 'JaxFem':
+        return JaxFemModel.from_dict(config, field=field)
     else:
         raise ValueError(f"Model {config['name']} not recognized.")
 
@@ -604,29 +606,41 @@ def evaluate_sensor_displacements(sol, interpolants):
 
 
 class JaxFemModel(Model):
-    """Dummy JAX-based FEM model wrapper.
+    """JAX-based FEM model wrapper with support for random fields.
 
-    This is a placeholder illustrating the interface required for efficient
-    likelihood gradient computation via VJP (Jacobian-vector product).
+    This model supports efficient likelihood gradient computation via VJP
+    (Jacobian-vector product) and can work with JAX-compatible random fields
+    to represent spatially-varying material properties.
 
-    The real implementation should:
-      - Perform a single forward FEM solve in `linearize` using jax.vjp.
-      - Return observed displacement components (shape (d,)) from `eval`.
-      - Support J^T v via the closure returned from `linearize` or via `eval_vjp`.
-      - Optionally provide full Jacobian via `eval_grad` and Hessian via `eval_hessian`.
+    The model:
+      - Performs FEM solves using JAX for automatic differentiation
+      - Returns observed displacement components from sensors
+      - Supports J^T v via `linearize` and `eval_vjp`
+      - Provides full Jacobian via `eval_grad` and Hessian via `eval_hessian`
+      - Can use a random field to map coefficients to material properties
 
     Parameters
     ----------
+    field : JaxRandomField, optional
+        Random field mapping coefficients to material properties.
+        If provided, determines n_params from field.dim.
     """
     def __init__(self, d_x: float, d_y: float, d_z: float, ele_type: str = 'HEX8', nu: float = 0.3, h: float = 0.5,
-                 d_u: float = -0.1, traction=None, obs_loc: np.ndarray = None, n_params: int = 1, d_obs: int = 1):
+                 d_u: float = -0.1, traction=None, obs_loc: np.ndarray = None, n_params: int = 1, d_obs: int = 1,
+                 field=None):
         super().__init__()
 
         if traction is None:
             traction = [0., .015, 0.]
         self._h = h
         self._obs_loc = obs_loc
-        self._n_params = n_params
+
+        # Store field and determine parameter dimension
+        self.field = field
+        if self.field is not None:
+            self._n_params = int(self.field.dim)
+        else:
+            self._n_params = n_params
 
         import logging
         logging.disable(logging.INFO)
@@ -748,9 +762,35 @@ class JaxFemModel(Model):
         This function is purely functional and suitable for jax.vjp, jacrev, etc.
         It performs a FEM solve via `self.fwd_pred` and then extracts the
         concatenated sensor displacements.
+
+        If a random field is attached, params are coefficients that get mapped
+        to a spatially-varying material property field. Otherwise, params is
+        broadcast directly as a constant field.
         """
-        # Broadcast scalar/global params to per-cell/quadrature field
-        param_field = params * jnp.ones((self.problem.fe.num_cells, self.problem.fe.num_quads))
+        # Map parameters to material property field
+        if self.field is None:
+            # Simple broadcast: scalar/global params to per-cell/quadrature field
+            param_field = params * jnp.ones((self.problem.fe.num_cells, self.problem.fe.num_quads))
+        else:
+            # Use random field to evaluate at cell centers or quadrature points
+            # For now, we'll use a simple approach: evaluate field at a dummy location
+            # and broadcast (for constant field), or evaluate at actual spatial locations
+            # Get cell center coordinates for evaluation
+            cells = self.problem.fe.cells
+            points = self.problem.fe.points
+
+            # Compute cell centers: average of node coordinates for each cell
+            # cells shape: (num_cells, nodes_per_cell)
+            # points shape: (num_nodes, spatial_dim)
+            cell_coords = points[cells]  # (num_cells, nodes_per_cell, spatial_dim)
+            cell_centers = jnp.mean(cell_coords, axis=1)  # (num_cells, spatial_dim)
+
+            # Evaluate field at cell centers
+            field_at_centers = self.field.evaluate(params, cell_centers)  # (num_cells,)
+
+            # Broadcast to quadrature points within each cell
+            param_field = jnp.repeat(field_at_centers[:, None], self.problem.fe.num_quads, axis=1)
+
         sol_list = self.fwd_pred([param_field])
         sensor_readings = evaluate_sensor_displacements(sol_list[0], self.sensor_interpolants)
         u_list = [jnp.ravel(reading["u"]) for reading in sensor_readings]
@@ -891,6 +931,47 @@ class JaxFemModel(Model):
             hess[i] = 0.5 * (hess[i] + hess[i].T)
 
         return hess
+
+    @classmethod
+    def from_dict(cls, config: dict, field=None):
+        """Create a JaxFemModel from a dictionary configuration.
+
+        Args:
+            config (dict): configuration dictionary with keys like 'd_x', 'd_y', 'd_z',
+                          'ele_type', 'nu', 'h', etc.
+            field (JaxRandomField, optional): JAX-compatible random field for spatially-varying properties
+
+        Returns:
+            JaxFemModel: JAX FEM model instance
+        """
+        # Extract configuration with defaults
+        d_x = float(config.get('d_x', 1.0))
+        d_y = float(config.get('d_y', 1.0))
+        d_z = float(config.get('d_z', 2.5))
+        ele_type = config.get('ele_type', 'HEX8')
+        nu = float(config.get('nu', 0.3))
+        h = float(config.get('h', 0.5))
+        d_u = float(config.get('d_u', -0.1))
+        traction = config.get('traction', None)
+        obs_loc = config.get('obs_loc', None)
+        if obs_loc is not None:
+            obs_loc = np.array(obs_loc)
+
+        # Determine n_params from field if available
+        if field is not None:
+            n_params = field.dim
+        else:
+            n_params = int(config.get('n_params', 1))
+
+        d_obs = int(config.get('d_obs', 1))
+
+        return cls(
+            d_x=d_x, d_y=d_y, d_z=d_z,
+            ele_type=ele_type, nu=nu, h=h, d_u=d_u,
+            traction=traction, obs_loc=obs_loc,
+            n_params=n_params, d_obs=d_obs,
+            field=field
+        )
 
 if __name__ == '__main__':
 
