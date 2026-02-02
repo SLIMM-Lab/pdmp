@@ -13,7 +13,7 @@ from pdmp.mcmc import StepSampler
 from pdmp.zigzag import ZigZagSampler
 from pdmp.bouncy_particle import BouncyParticleSampler
 from pdmp.surrogates import SurrogateModel, SURROGATE_REGISTRY
-from pdmp.random_field import get_field  # new import
+from pdmp.random_field import get_field, get_jax_field  # support both NumPy and JAX fields
 
 
 def get_target(config: dict[str, Any],
@@ -44,9 +44,15 @@ def get_target(config: dict[str, Any],
 
         field = None
         model_cfg = config['model']
-        # Optional field specification inside model config
+        # Optional field specification inside model config todo: generalize
         if isinstance(model_cfg, dict) and ('field' in model_cfg):
-            field = get_field(model_cfg['field'], rng=rng)
+            field_cfg = model_cfg['field']
+            field_name = field_cfg.get('name', '')
+            # Use JAX field factory for JAX-compatible fields, otherwise NumPy
+            if field_name.startswith('Jax'):
+                field = get_jax_field(field_cfg, rng=rng)
+            else:
+                field = get_field(field_cfg, rng=rng)
 
         # get the prior distribution and the model
         prior = get_prior(config['prior'], rng=rng, field=field)
