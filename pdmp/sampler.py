@@ -60,11 +60,11 @@ class Sampler:
         """Run the sampler."""
         raise NotImplementedError
 
-    def write_data(self, folder: str, precision: int = 6):
+    def write_data(self, folder: str = '.', precision: int = 6):
         """Write the sampler data to a file.
 
         Args:
-            folder: The folder to write the data to.
+            folder: The folder to write the data to. Defaults to the current folder.
             precision: The precision of the data. Defaults to 6.
         """
         raise NotImplementedError
