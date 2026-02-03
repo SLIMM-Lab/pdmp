@@ -2,6 +2,7 @@ import os.path
 import sys
 import warnings
 import copy
+from abc import abstractmethod, ABC
 
 import torch
 import torch.nn as nn
@@ -302,8 +303,8 @@ class NeuralNetwork(SurrogateModel):
                                                    **kwargs)
 
         # init all data
-        self._x_data = None
-        self._y_data = None
+        self._x_data = torch.empty(0, target.dim, dtype=dtype)
+        self._y_data = torch.empty(0, dtype=dtype)
         self._x_data_new = []
         self._y_data_new = []
         self._n_data_buffer = 0
@@ -560,29 +561,41 @@ class NeuralNetwork(SurrogateModel):
 class ExactGPModel(ExactGP):
     """Exact Gaussian process model based on GPyTorch."""
 
-    def __init__(self, train_x: torch.tensor, train_y: torch.tensor,
-                 likelihood: _GaussianLikelihoodBase, ard_num_dims: int):
+    def __init__(self, likelihood: _GaussianLikelihoodBase, ard_num_dims: int,
+                 train_x: torch.Tensor = None, train_y: torch.Tensor = None):
         """Initialize the exact Gaussian process model.
 
         Args:
-            train_x: The training input data.
-            train_y: The training output data.
             likelihood: The likelihood function.
             ard_num_dims: The number of dimensions for the ARD kernel.
+            train_x: The training input data.
+            train_y: The training output data.
         """
 
         super(ExactGPModel, self).__init__(train_x, train_y, likelihood)
         self._mean_module = ConstantMean()
         self._covar_module = ScaleKernel(RBFKernel(ard_num_dims=ard_num_dims))
 
-    def forward(self, x: torch.tensor) -> gpyMultivariateNormal:
+    def forward(self, x: torch.Tensor) -> gpyMultivariateNormal:
         mean_x = self._mean_module(x)
         covar_x = self._covar_module(x)
         return gpyMultivariateNormal(mean_x, covar_x)
 
 
-class GaussianProcessBase(SurrogateModel):
+class GaussianProcessBase(SurrogateModel, ABC):
     """Base class for Gaussian process surrogate models."""
+
+    @property
+    @abstractmethod
+    def _model(self) -> gpytorch.models.ExactGP:
+        """The Gaussian process model."""
+        ...
+
+    @property
+    @abstractmethod
+    def _likelihood(self) -> gpytorch.likelihoods._GaussianLikelihoodBase:
+        """The likelihood function."""
+        ...
 
     def __init__(self,
                  target: Distribution,
@@ -624,8 +637,8 @@ class GaussianProcessBase(SurrogateModel):
         self._rng = rng
 
         # init all data
-        self._x_data: torch.tensor = None
-        self._y_data: torch.tensor = None
+        self._x_data = torch.empty(0, target.dim, dtype=dtype)
+        self._y_data = torch.empty(0, dtype=dtype)
         self._x_data_new = []
         self._y_data_new = []
         self._n_data_buffer = 0
@@ -648,11 +661,6 @@ class GaussianProcessBase(SurrogateModel):
             'tolerance_grad': tolerance_grad,
             'tolerance_change': tolerance_change
         }
-
-        # these will be overwritten in derived classes
-        self._model: Optional[gpytorch.models.ExactGP] = None
-        self._likelihood: Optional[
-            gpytorch.likelihoods._GaussianLikelihoodBase] = None
 
         if eval_strategy == 'mean':
             self._eval = self._eval_mean
@@ -811,6 +819,7 @@ class GaussianProcessBase(SurrogateModel):
                     for i in range(lbfgs_steps):
 
                         loss = optimizer.step(closure)
+                        assert isinstance(loss, torch.Tensor)
                         train_losses.append(loss.item())
 
                         # print current hyperparams and loss
@@ -1009,9 +1018,11 @@ class GaussianProcess(GaussianProcessBase):
         super().__init__(target, rng, *args, n_samples=n_samples, **kwargs)
 
         # define likelihood, get model, and set optimizer
-        self._likelihood = GaussianLikelihood()
-        self._model = ExactGPModel(None, None, self._likelihood,
-                                   target.dim)
+        self.__likelihood = GaussianLikelihood()
+        self.__model = ExactGPModel(self.__likelihood, target.dim)
+
+        self._x_data = torch.empty(0, target.dim, dtype=dtype)
+        self._y_data = torch.empty(0, dtype=dtype)
 
         # train model unless specified otherwise
         if train_on_init:
@@ -1028,6 +1039,14 @@ class GaussianProcess(GaussianProcessBase):
             self.train(**self._training_params)
 
         logger.info(f'{self.__class__.__name__} surrogate model initialized.')
+
+    @property
+    def _model(self) -> gpytorch.models.ExactGP:
+        return self.__model
+
+    @property
+    def _likelihood(self) -> gpytorch.likelihoods._GaussianLikelihoodBase:
+        return self.__likelihood
 
     @override
     def _add_data_on(self,
@@ -1152,15 +1171,15 @@ class GaussianProcess(GaussianProcessBase):
 class DerivativeGPModel(ExactGP):
     """Gaussian process model based on GPyTorch that also observes gradients."""
 
-    def __init__(self, train_x: torch.tensor, train_y: torch.tensor,
-                 likelihood: _GaussianLikelihoodBase, ard_num_dims: int):
+    def __init__(self, likelihood: _GaussianLikelihoodBase, ard_num_dims: int,
+                 train_x: torch.Tensor = None, train_y: torch.Tensor = None):
         """Initialize the Gaussian process model.
 
         Args:
-            train_x: The training input data.
-            train_y: The training output data.
             likelihood: The likelihood function.
             ard_num_dims: The number of dimensions for the ARD kernel.
+            train_x: The training input data.
+            train_y: The training output data.
         """
 
         super().__init__(train_x, train_y, likelihood)
@@ -1169,7 +1188,7 @@ class DerivativeGPModel(ExactGP):
             RBFKernelGrad(ard_num_dims=ard_num_dims))
 
     @override
-    def forward(self, x: torch.tensor) -> MultitaskMultivariateNormal:
+    def forward(self, x: torch.Tensor) -> MultitaskMultivariateNormal:
         mean_x = self._mean_module(x)
         covar_x = self._covar_module(x)
         return MultitaskMultivariateNormal(mean_x, covar_x)
@@ -1198,10 +1217,10 @@ class DerivativeGaussianProcess(GaussianProcessBase):
         super().__init__(target, rng, *args, n_samples=n_samples, **kwargs)
 
         # define likelihood, get model, and set optimizer
-        self._likelihood = MultitaskGaussianLikelihood(
-            num_tasks=target.dim + 1)
-        self._model = DerivativeGPModel(None, None, self._likelihood,
-                                        target.dim)
+        self.__likelihood = MultitaskGaussianLikelihood(num_tasks=target.dim + 1)
+        self.__model = DerivativeGPModel(self.__likelihood, target.dim)
+
+        self._y_data = torch.empty(0, target.dim + 1, dtype=dtype)
 
         # train model unless specified otherwise
         if train_on_init:
@@ -1224,6 +1243,14 @@ class DerivativeGaussianProcess(GaussianProcessBase):
             self.train(**self._training_params)
 
         logger.info(f'{self.__class__.__name__} surrogate model initialized.')
+
+    @property
+    def _model(self) -> gpytorch.models.ExactGP:
+        return self.__model
+
+    @property
+    def _likelihood(self) -> gpytorch.likelihoods._GaussianLikelihoodBase:
+        return self.__likelihood
 
     @override
     def _add_data_on(self,
