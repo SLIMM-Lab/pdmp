@@ -331,7 +331,7 @@ class NeuralNetwork(SurrogateModel):
         if train_on_init:
             samples = self._laplace.get_samples(n_samples)
             self._x_data = torch.tensor(samples, dtype=dtype)
-            self._y_data = torch.zeros(n_samples)
+            self._y_data = torch.zeros(n_samples, dtype=dtype)
 
             for i in range(n_samples):
                 self._y_data[i] = torch.tensor(
@@ -1017,7 +1017,7 @@ class GaussianProcess(GaussianProcessBase):
         if train_on_init:
             samples = self._laplace.get_samples(n_samples)
             self._x_data = torch.tensor(samples, dtype=dtype)
-            self._y_data = torch.zeros(n_samples)
+            self._y_data = torch.zeros(n_samples, dtype=dtype)
 
             for i in range(n_samples):
                 self._y_data[i] = torch.tensor(
@@ -1120,6 +1120,7 @@ class GaussianProcess(GaussianProcessBase):
                              inputs=x_tensor,
                              grad_outputs=torch.ones_like(y_tensor),
                              create_graph=True)[0].squeeze().detach().numpy()
+            gradients = np.atleast_1d(gradients)
 
         if idx is None:
             return gradients + self._laplace.grad(x)
@@ -1140,6 +1141,7 @@ class GaussianProcess(GaussianProcessBase):
                              inputs=x_tensor,
                              grad_outputs=torch.ones_like(y_tensor),
                              create_graph=True)[0].squeeze().detach().numpy()
+            gradients = np.atleast_1d(gradients)
 
         if idx is None:
             return gradients + self._laplace.grad(x)
@@ -1315,6 +1317,7 @@ class DerivativeGaussianProcess(GaussianProcessBase):
               gpytorch.settings.fast_computations(False, False, False)):
             gradient = self._model(
                 x_tensor).mean[:, 1:].squeeze().detach().numpy()
+            gradient = np.atleast_1d(gradient)
 
         if idx is None:
             return gradient + self._laplace.grad(x)
@@ -1334,6 +1337,7 @@ class DerivativeGaussianProcess(GaussianProcessBase):
             y = self._model(x_tensor)
             gradient = y.mean[:, 1:].squeeze().detach().numpy(
             ) + y.variance[:, 1:].sqrt().squeeze().detach().numpy()
+            gradient = np.atleast_1d(gradient)
 
         if idx is None:
             return gradient + self._laplace.grad(x)
