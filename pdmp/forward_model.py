@@ -772,24 +772,19 @@ class JaxFemModel(Model):
             # Simple broadcast: scalar/global params to per-cell/quadrature field
             param_field = params * jnp.ones((self.problem.fe.num_cells, self.problem.fe.num_quads))
         else:
-            # Use random field to evaluate at cell centers or quadrature points
-            # For now, we'll use a simple approach: evaluate field at a dummy location
-            # and broadcast (for constant field), or evaluate at actual spatial locations
-            # Get cell center coordinates for evaluation
-            cells = self.problem.fe.cells
-            points = self.problem.fe.points
+            # Evaluate random field at physical quadrature points
+            # physical_quad_points shape: (num_cells, num_quads, spatial_dim)
+            physical_quad_points = self.problem.physical_quad_points
 
-            # Compute cell centers: average of node coordinates for each cell
-            # cells shape: (num_cells, nodes_per_cell)
-            # points shape: (num_nodes, spatial_dim)
-            cell_coords = points[cells]  # (num_cells, nodes_per_cell, spatial_dim)
-            cell_centers = jnp.mean(cell_coords, axis=1)  # (num_cells, spatial_dim)
+            # Flatten to evaluate all quadrature points at once
+            # Shape: (num_cells * num_quads, spatial_dim)
+            quad_coords_flat = physical_quad_points.reshape(-1, physical_quad_points.shape[-1])
 
-            # Evaluate field at cell centers
-            field_at_centers = self.field.evaluate(params, cell_centers)  # (num_cells,)
+            # Evaluate field at all quadrature points
+            field_values_flat = self.field.evaluate(params, quad_coords_flat)  # (num_cells * num_quads,)
 
-            # Broadcast to quadrature points within each cell
-            param_field = jnp.repeat(field_at_centers[:, None], self.problem.fe.num_quads, axis=1)
+            # Reshape back to (num_cells, num_quads)
+            param_field = field_values_flat.reshape(self.problem.fe.num_cells, self.problem.fe.num_quads)
 
         sol_list = self.fwd_pred([param_field])
         sensor_readings = evaluate_sensor_displacements(sol_list[0], self.sensor_interpolants)
