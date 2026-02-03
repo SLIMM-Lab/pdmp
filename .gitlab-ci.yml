@@ -9,6 +9,9 @@ test:
   stage: test
   script:
     - mamba env create -p /tmp/env -f environment.yml
+    - git clone https://github.com/deepmodeling/jax-fem.git /tmp/jax-fem
+    - cd /tmp/jax-fem && git checkout c3fbcb3 && cd -
+    - mamba run -p /tmp/env pip install /tmp/jax-fem
     - mamba run -p /tmp/env pytest --cov=pdmp
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
