@@ -121,7 +121,7 @@ class StepSampler(Sampler):
             "The step method must be implemented in a subclass.")
 
     @override
-    def write_data(self, folder: str, precision: int = 6):
+    def write_data(self, folder: str = '.', precision: int = 6):
         """Write the sampler data to a file.
 
         Args:
@@ -247,7 +247,7 @@ class RandomWalkMetropolisSampler(StepSampler):
             f"Total acceptance rate: {self._n_accept / self._n_samples}")
 
     @override
-    def write_data(self, folder: str, precision: int = 6):
+    def write_data(self, folder: str = '.', precision: int = 6):
         """Write the sampler data to a file.
         Args:
             folder: The folder to write the data to.
@@ -935,7 +935,7 @@ class NaiveNUTS(StepSampler):
         # logger.info(f"Acceptance rate: {}")
 
     @override
-    def write_data(self, folder: str, precision: int = 6):
+    def write_data(self, folder: str = '.', precision: int = 6):
         super().write_data(folder, precision)
         np.savetxt(os.path.join(folder, 'n_evals.dat'),
                    np.cumsum(self._n_evals),

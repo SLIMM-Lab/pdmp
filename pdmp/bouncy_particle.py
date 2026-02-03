@@ -477,7 +477,7 @@ class BouncyParticleSampler(Sampler):
         self._shutdown()
 
     @override
-    def write_data(self, folder: str, precision: int = 6):
+    def write_data(self, folder: str = '.', precision: int = 6):
 
         if not os.path.exists(folder):
             os.makedirs(folder)
