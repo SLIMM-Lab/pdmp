@@ -8,7 +8,8 @@ stages: [test]
 test:
   stage: test
   before_script:
-    - apt-get update && apt-get install -y libglu1-mesa libgl1-mesa-glx
+    - apt-get update && apt-get install -y libglu1-mesa libgl1-mesa-glx libxft2 libxrender1 libxcursor1 libxinerama1
+
 
   script:
     - mamba env create -p /tmp/env -f environment.yml
