@@ -474,19 +474,22 @@ def compute_ess_zigzag(
         return ess, autocorrelation, mean_pi, var_pi
 
 def sample_equidistant_along_path(positions: np.ndarray, velocities: np.ndarray,
-                                  times: np.ndarray, t_k: float, N: int) -> np.ndarray:
+                                  times: np.ndarray, t_k: float = None, N: int = 1000) -> np.ndarray:
     """N samples uniformly spaced along the path corresponting to interval [0,t_k].
 
     Args:
         positions: 2D array of positions at the skeleton times.
         velocities: 2D array of velocities (one per segment).
         times: 1D array of skeleton time points.
-        t_k: The end time for sampling.
-        N: Number of samples to draw.
+        t_k: The end time for sampling. If None, uses the last time in `times`.
+        N: Number of samples to draw. Default is 1000.
 
     Returns:
         x: 2D array of sampled positions, shape (N, d), where d is the dimension of the positions.
     """
+    if t_k is None:
+        t_k = times[-1]
+
     u = np.linspace(0, t_k, N)  # N uniform times
     x = np.empty((N, positions.shape[1]))
     seg_idx = np.searchsorted(times, u, side="right") - 1
