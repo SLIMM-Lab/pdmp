@@ -7,6 +7,9 @@ stages: [test]
 
 test:
   stage: test
+  before_script:
+    - apt-get update && apt-get install -y libglu1-mesa libgl1-mesa-glx
+
   script:
     - mamba env create -p /tmp/env -f environment.yml
     - git clone https://github.com/deepmodeling/jax-fem.git /tmp/jax-fem
