@@ -65,6 +65,137 @@ class Basis:
         pass
 
 
+class ConstantBasis(Basis):
+    """A single constant basis function that equals 1 everywhere in the domain.
+
+    This class supports arbitrary spatial dimensions (1D, 2D, 3D, etc.).
+    The field value is spatially uniform but uncertain.
+
+    For 1D: domain is a tuple (a, b)
+    For 2D+: domain is an array [[a1, b1], [a2, b2], ...] of shape (spatial_dim, 2)
+    """
+
+    def __init__(self, domain: Any):
+        """Initialize the ConstantBasis class.
+
+        Args:
+            domain: Domain specification:
+                    - 1D: tuple (a, b) representing interval [a, b]
+                    - 2D+: array-like of shape (spatial_dim, 2) where each row is [lower, upper] for that dimension
+
+        Examples:
+            # 1D interval [0, 1]
+            ConstantBasis((0.0, 1.0))
+
+            # 2D rectangle [0, 1] × [0, 2]
+            ConstantBasis([[0.0, 1.0], [0.0, 2.0]])
+
+            # 3D box [0, 1] × [0, 1] × [0, 1]
+            ConstantBasis([[0.0, 1.0], [0.0, 1.0], [0.0, 1.0]])
+        """
+        super().__init__(n=1)
+
+        # Handle 1D tuple input for backward compatibility
+        if isinstance(domain, tuple) and len(domain) == 2:
+            self.domain_ = np.array([[domain[0], domain[1]]])
+            self.spatial_dim_ = 1
+        else:
+            self.domain_ = np.array(domain)
+            if self.domain_.ndim == 1:
+                # Handle 1D array input [a, b]
+                self.domain_ = self.domain_.reshape(1, 2)
+                self.spatial_dim_ = 1
+            else:
+                self.spatial_dim_ = self.domain_.shape[0]
+
+        if self.domain_.shape[1] != 2:
+            raise ValueError(f"Domain must have shape (spatial_dim, 2), got {self.domain_.shape}")
+
+        # Support (stored as 1D interval for compatibility with base class)
+        # For multi-dim, this is a simplified representation
+        self.support_[0, 0] = self.domain_[0, 0]
+        self.support_[0, 1] = self.domain_[0, 1]
+
+        # Norm: ||φ||² = ∫ φ(x)² dx = volume of domain
+        # So ||φ|| = sqrt(volume)
+        lengths = self.domain_[:, 1] - self.domain_[:, 0]
+        volume = np.prod(lengths)
+        self.norms_ = np.array([[np.sqrt(volume)]])
+
+    def __call__(self, x: np.ndarray, i: int = None) -> np.ndarray:
+        """Evaluate the constant basis function at given points.
+
+        Args:
+            x: The points at which to evaluate the basis function.
+               - 1D: shape (n_points,) or (n_points, 1)
+               - 2D+: shape (n_points, spatial_dim)
+            i: The index of the specific basis function to evaluate.
+               Since there's only one basis function, this should be 0 or None.
+
+        Returns:
+            np.ndarray: Array of ones:
+                - If i is None: shape (n_points, 1)
+                - If i == 0: shape (n_points,)
+        """
+        x = np.atleast_1d(x)
+
+        # Determine number of points
+        if x.ndim == 1:
+            n_points = x.shape[0]
+            # For 1D, this is fine
+            if self.spatial_dim_ != 1:
+                raise ValueError(f"Expected {self.spatial_dim_}D points, got 1D array")
+        else:
+            n_points = x.shape[0]
+            # Check spatial dimension matches
+            if x.shape[1] != self.spatial_dim_:
+                raise ValueError(f"Expected points with spatial_dim={self.spatial_dim_}, got shape {x.shape}")
+
+        if i is None:
+            # Return shape (n_points, 1) - one basis function
+            return np.ones((n_points, 1))
+        elif i == 0:
+            # Return shape (n_points,) - the single basis function values
+            return np.ones(n_points)
+        else:
+            raise ValueError(f"ConstantBasis only has 1 basis function (index 0), got index {i}")
+
+    def get_support(self, i: int = None) -> np.ndarray:
+        """Get the support of the constant basis function.
+
+        Args:
+            i: The index of the specific basis function to get the support for.
+               If None, get the support for all basis functions.
+
+        Returns:
+            np.ndarray: The support of the basis function.
+        """
+        if i is None:
+            return self.support_
+        elif i == 0:
+            return self.support_[0]
+        else:
+            raise ValueError(f"ConstantBasis only has 1 basis function (index 0), got index {i}")
+
+    def get_norms(self) -> np.ndarray:
+        """Get the norm of the constant basis function.
+
+        Returns:
+            np.ndarray: The norm of the basis function, shape (1, 1).
+        """
+        return self.norms_
+
+    @property
+    def spatial_dim(self) -> int:
+        """Return the spatial dimension of the domain."""
+        return self.spatial_dim_
+
+    @property
+    def domain(self) -> np.ndarray:
+        """Return the domain bounds, shape (spatial_dim, 2)."""
+        return self.domain_
+
+
 class PiecewiseConstantBasis(Basis):
 
     def __init__(self, n: int, interval: Tuple[float, float]):
