@@ -1157,7 +1157,7 @@ def get_prior(
     elif config['name'] == 'FromField':
         if field is None:
             raise ValueError("Prior 'FromField' requires a field instance.")
-        return field.coefficient_distribution(rng=rng)
+        return field.coefficient_distribution
     # this one is here for legacy reasons
     elif config['name'] == 'GaussianRandomField':
         mean, cov = get_gaussian_random_field_projection_from_dict(config)
