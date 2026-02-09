@@ -219,7 +219,7 @@ class JointDistribution(Distribution):
     @override
     def log_density(self, x: np.ndarray) -> np.ndarray:
         if x.ndim == 1:
-            total = 0.0
+            total = np.array(0.0)
             idx = 0
             for dist, d in zip(self.distributions, self._dims):
                 total += dist.log_density(x[idx:idx + d])
