@@ -5,6 +5,7 @@ import numpy as np
 import jax.numpy as jnp
 from pdmp.random_field import JaxConstantField, get_jax_field
 from pdmp.forward_model import JaxFemModel
+from pdmp.distributions import MultivariateNormal
 
 def test_jax_constant_field():
     """Test the JaxConstantField implementation."""
@@ -15,7 +16,8 @@ def test_jax_constant_field():
     # Create a constant field
     mean = 10.
     std = 1.5
-    field = JaxConstantField(mean=mean, std=std)
+    field_dist = MultivariateNormal(mean=np.array([mean]), cov=np.array([[std**2]]))
+    field = JaxConstantField(distribution=field_dist)
 
     print(f"Field dimension: {field.dim}")
     assert field.dim == 1, "JaxConstantField should have dimension 1"
@@ -32,7 +34,7 @@ def test_jax_constant_field():
     assert jnp.allclose(values, 15.), "All values should equal the coefficient"
 
     # Test coefficient distribution
-    dist = field.coefficient_distribution()
+    dist = field.coefficient_distribution
     print(f"Prior mean: {dist.mean}")
     print(f"Prior covariance: {dist.cov}")
     assert np.allclose(dist.mean, [mean]), "Mean should match"
@@ -74,7 +76,8 @@ def test_jax_fem_model_with_field():
     print("=" * 60)
 
     # Create a simple constant field for Young's modulus
-    field = JaxConstantField(mean=10., std=2.)
+    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field = JaxConstantField(field_dist)
 
     # Create a small FEM model
     model = JaxFemModel(

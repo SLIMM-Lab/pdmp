@@ -424,16 +424,19 @@ class JaxConstantField:
     follows a Normal distribution.
 
     Attributes:
-        mean: Mean of the single parameter
-        std: Standard deviation of the single parameter
+        distribution: MultivariateNormal distribution over the single parameter
     """
-    mean: float
-    std: float
+    distribution: MultivariateNormal  # Distribution over the single parameter
 
     @property
     def dim(self) -> int:
         """Single parameter."""
         return 1
+
+    @property
+    def coefficient_distribution(self) -> MultivariateNormal:
+        """Return coefficient distribution."""
+        return self.distribution
 
     def evaluate(self, coeffs: jnp.ndarray, x: jnp.ndarray) -> jnp.ndarray:
         """Evaluate constant field.
@@ -461,12 +464,6 @@ class JaxConstantField:
         # Return constant value broadcast to all points
         return jnp.full(n_points, coeffs[0])
 
-    def coefficient_distribution(self, rng: Optional[np.random.Generator] = None) -> MultivariateNormal:
-        """Return Normal(mean, std^2) distribution."""
-        mean_vec = np.array([self.mean])
-        cov_mat = np.array([[self.std**2]])
-        return MultivariateNormal(mean_vec, cov_mat, rng=rng)
-
     @classmethod
     def from_dict(cls, config: Dict[str, Any], *, rng: Optional[np.random.Generator] = None) -> "JaxConstantField":
         """Construct from configuration dictionary.
@@ -480,7 +477,8 @@ class JaxConstantField:
             raise ValueError("JaxConstantField config must have name 'JaxConstantField'.")
         mean = float(config.get('mean', 0.0))
         std = float(config.get('std', 1.0))
-        return cls(mean=mean, std=std)
+        distribution = MultivariateNormal(np.array([mean]), np.array([[std**2]]), rng=rng)
+        return cls(distribution=distribution)
 
 
 def get_jax_field(config: Dict[str, Any], rng: Optional[np.random.Generator] = None) \

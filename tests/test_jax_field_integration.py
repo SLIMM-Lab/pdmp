@@ -5,11 +5,13 @@ import numpy as np
 import yaml
 import tempfile
 import os
+
 from pdmp.loader import get_target
 from pdmp import logger
 from pdmp.random_field import JaxConstantField
 from pdmp.forward_model import JaxFemModel
 from pdmp.utils import grad_fd
+from pdmp.distributions import MultivariateNormal
 
 
 def test_full_integration():
@@ -26,7 +28,9 @@ def test_full_integration():
     theta_true = np.array([1.2e6])
 
     # Create a simple model to generate observations
-    field_temp = JaxConstantField(mean=1.0e6, std=2.0e5)
+    mean = 1.0e6
+    std = 2.0e5
+    field_temp = JaxConstantField(MultivariateNormal(mean=np.array([mean]), cov=np.array([[std**2]])))
     model_temp = JaxFemModel(d_x=1.0, d_y=1.0, d_z=2.5, h=0.5, nu=0.3, field=field_temp)
     y_obs = model_temp.eval(theta_true)
 
@@ -164,7 +168,7 @@ def test_gradient_correctness():
 
     # Generate observations
     print("Generating synthetic observations...")
-    field_temp = JaxConstantField(mean=3.0, std=0.25)
+    field_temp = JaxConstantField(MultivariateNormal(mean=np.array([3.0]), cov=np.array([[0.25**2]])))
     model_temp = JaxFemModel(d_x=1.0, d_y=1.0, d_z=2.5, h=0.5, nu=0.3, field=field_temp)
     theta_true = np.array([3.1])
     y_obs = model_temp.eval(theta_true)
