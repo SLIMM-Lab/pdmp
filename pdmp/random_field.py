@@ -249,7 +249,7 @@ class JaxRandomFieldBase:
         # Parse basis
         basis_config = config.get('basis', {})
         basis_type = basis_config.get('type', 'PiecewiseConstant')
-        basis_dim = int(basis_config['dim'])
+        basis_dim = int(basis_config.get('dim', 1))
         basis_interval = tuple(basis_config.get('interval', (0.0, 1.0)))
 
         if basis_type == 'PiecewiseConstant':
@@ -420,6 +420,103 @@ class JaxGaussianRandomField:
 
 
 @dataclass
+class JaxExponentialRecoveryField:
+    """JAX-compatible field with exponential recovery profile.
+
+    F(x) = F_inf * (1 - (1 - rho) * exp(-x/l))
+
+    Parameters to infer: [rho, l]
+    Fixed parameter: F_inf
+
+    The field varies along the first spatial dimension and is constant along others.
+    """
+    f_infinity: float
+    idx: int  # index of spatial dimension for recovery (default 0)
+    coefficient_dist: Distribution
+
+    @property
+    def dim(self) -> int:
+        """Two parameters: rho and l."""
+        return 2
+
+    @property
+    def coefficient_distribution(self) -> Distribution:
+        return self.coefficient_dist
+
+    def evaluate(self, coeffs: jnp.ndarray, x: jnp.ndarray) -> jnp.ndarray:
+        """Evaluate field.
+
+        Args:
+            coeffs: [rho, l]
+            x: coordinates
+
+        Returns:
+            Field values.
+        """
+        # coeffs[0] -> rho
+        # coeffs[1] -> l
+        rho = coeffs[0]
+        l_scale = coeffs[1]
+
+        # Ensure x is JAX array
+        x = jnp.atleast_1d(x)
+
+        if x.ndim > 1:
+            # Assume first dimension defines the variation
+            x_val = x[:, self.idx]
+        else:
+            x_val = x
+
+        # F(x) = F_inf * (1 - (1 - rho) * exp(-x/l))
+        # Note: if l is 0 or negative, this might blow up physically,
+        # but mathematically it evaluates. Distribution should constrain l > 0.
+
+        return self.f_infinity * (1.0 - (1.0 - rho) * jnp.exp(-x_val / l_scale))
+
+    @classmethod
+    def from_dict(cls, config: Dict[str, Any], *, rng: Optional[np.random.Generator] = None) -> "JaxExponentialRecoveryField":
+        """Construct from config.
+
+        Expected keys:
+            name: 'JaxExponentialRecoveryField'
+            f_infinity: float
+            idx: index of spatial dimension for recovery (default 0)
+            coefficient_distribution: distribution config
+        """
+        if config.get('name') != 'JaxExponentialRecoveryField':
+            raise ValueError("Config name must be 'JaxExponentialRecoveryField'")
+
+        f_infinity = float(config.get('f_infinity', 1.0))
+        idx = int(config.get('idx', 0))
+
+        dist_config = config.get('coefficient_distribution', {})
+        # Load distribution using some factory or manual parsing?
+        # JaxRandomFieldBase uses manual parsing for MultivariateNormal but
+        # here we might want more general distributions from distributions.py
+        # For now, let's support MultivariateNormal as in JaxRandomFieldBase
+
+        dist_name = dist_config.get('name', 'MultivariateNormal')
+        if dist_name == 'MultivariateNormal':
+            mean_cfg = dist_config.get('mean', [0.5, 1.0]) # default rho=0.5, l=1.0
+            cov_cfg = dist_config.get('cov', [[0.1, 0],[0, 0.1]])
+
+            mean = np.array(mean_cfg)
+            if mean.shape != (2,):
+                raise ValueError("Mean must be length 2 for rho and l")
+
+            cov = np.array(cov_cfg)
+            if cov.shape != (2, 2):
+                raise ValueError("Covariance must be 2x2")
+
+            dist = MultivariateNormal(mean, cov, rng=rng)
+        else:
+             # Basic support for now
+             raise ValueError(f"Unsupported distribution {dist_name}")
+
+        return cls(f_infinity=f_infinity, idx=idx, coefficient_dist=dist)
+
+
+@dataclass
 class JaxConstantField:
     """JAX-compatible constant random field.
 
@@ -486,20 +583,21 @@ class JaxConstantField:
 
 
 def get_jax_field(config: Dict[str, Any], rng: Optional[np.random.Generator] = None) \
-        -> JaxConstantField | JaxGaussianRandomField | JaxRandomFieldBase:
+        -> JaxConstantField | JaxGaussianRandomField | JaxRandomFieldBase | JaxExponentialRecoveryField:
     """Factory for JAX-compatible random field objects.
 
     Supported field types:
         - JaxConstantField: Single constant parameter
         - JaxGaussianRandomField: Gaussian field with kernel-based covariance
         - JaxRandomField: Generic field with arbitrary coefficient distribution
+        - JaxExponentialRecoveryField: Exponential recovery profile F(x) = F_inf(1 - (1-rho)exp(-x/l))
 
     Args:
         config: configuration dictionary with 'name' key specifying field type
         rng: optional random generator
 
     Returns:
-        JaxRandomField instance (JaxConstantField, JaxGaussianRandomField, or JaxRandomFieldBase)
+        JaxRandomField instance
 
     Examples:
         Constant field:
@@ -529,6 +627,8 @@ def get_jax_field(config: Dict[str, Any], rng: Optional[np.random.Generator] = N
         return JaxGaussianRandomField.from_dict(config, rng=rng)
     elif name == 'JaxRandomField':
         return JaxRandomFieldBase.from_dict(config, rng=rng)
+    elif name == 'JaxExponentialRecoveryField':
+        return JaxExponentialRecoveryField.from_dict(config, rng=rng)
     else:
         raise ValueError(f"Unknown JAX field type: {name}. "
-                       "Supported types: 'JaxConstantField', 'JaxGaussianRandomField', 'JaxRandomField'")
+                       "Supported types: 'JaxConstantField', 'JaxGaussianRandomField', 'JaxRandomField', 'JaxExponentialRecoveryField'")
