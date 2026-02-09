@@ -310,11 +310,17 @@ class JaxGaussianRandomField:
     mean: np.ndarray
     cov: np.ndarray
     kernel_params: Dict[str, float]
+    distribution: MultivariateNormal
 
     @property
     def dim(self) -> int:
         """Number of parameters/coefficients."""
         return int(self.mean.shape[0])
+
+    @property
+    def coefficient_distribution(self) -> MultivariateNormal:
+        """Return Gaussian prior over coefficients."""
+        return self.distribution
 
     def evaluate(self, coeffs: jnp.ndarray, x: jnp.ndarray) -> jnp.ndarray:
         """Evaluate field at spatial locations x given coefficients.
@@ -347,10 +353,6 @@ class JaxGaussianRandomField:
         # Convert to JAX array and multiply with coefficients
         phi_jax = jnp.array(phi)
         return phi_jax @ coeffs  # (n_points,)
-
-    def coefficient_distribution(self, rng: Optional[np.random.Generator] = None) -> MultivariateNormal:
-        """Return Gaussian prior over coefficients."""
-        return MultivariateNormal(self.mean, self.cov, rng=rng)
 
     @classmethod
     def from_dict(cls, config: Dict[str, Any], *, rng: Optional[np.random.Generator] = None) -> "JaxGaussianRandomField":
@@ -412,7 +414,9 @@ class JaxGaussianRandomField:
             if mean.shape != (dim,):
                 raise ValueError("mean must be scalar or length equal to dim")
 
-        return cls(basis=basis, mean=mean, cov=cov, kernel_params=kernel_params)
+        distribution = MultivariateNormal(mean, cov, rng=rng)
+
+        return cls(basis=basis, mean=mean, cov=cov, kernel_params=kernel_params, distribution=distribution)
 
 
 @dataclass
