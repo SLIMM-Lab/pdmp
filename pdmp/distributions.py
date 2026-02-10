@@ -1351,7 +1351,107 @@ class ExponentialTransformation(Transformation):
         return np.zeros((xi.shape[0], xi.shape[0]))
 
 
-class AffineTransformtion(Transformation):
+class SigmoidTransformation(Transformation):
+    """Implements sigmoid transformation x = a + (b - a) * sigmoid(ξ).
+
+    This transformation maps from unbounded space ξ ∈ ℝ^d to bounded space x ∈ [a, b]^d.
+
+    Args:
+        a: Lower bound (scalar or array).
+        b: Upper bound (scalar or array).
+    """
+
+    def __init__(self, a: Union[float, np.ndarray] = 0.0, b: Union[float, np.ndarray] = 1.0):
+        self._a = np.atleast_1d(np.asarray(a, dtype=float))
+        self._b = np.atleast_1d(np.asarray(b, dtype=float))
+        self._range = self._b - self._a
+
+        if np.any(self._range <= 0):
+            raise ValueError("Upper bound b must be greater than lower bound a")
+
+    @staticmethod
+    def _sigmoid(xi: np.ndarray) -> np.ndarray:
+        """Numerically stable sigmoid function."""
+        # Clip to avoid overflow
+        xi_clipped = np.clip(xi, -500, 500)
+        return np.where(
+            xi_clipped >= 0,
+            1 / (1 + np.exp(-xi_clipped)),
+            np.exp(xi_clipped) / (1 + np.exp(xi_clipped))
+        )
+
+    @override
+    def transform(self, xi: np.ndarray) -> np.ndarray:
+        """Transform from unbounded to bounded: x = a + (b - a) * sigmoid(ξ)."""
+        return self._a + self._range * self._sigmoid(xi)
+
+    @override
+    def inverse_transform(self, x: np.ndarray) -> np.ndarray:
+        """Transform from bounded to unbounded: ξ = logit((x - a) / (b - a))."""
+        # Normalize to [0, 1]
+        z = (x - self._a) / self._range
+        # Clip to avoid log(0) or log(negative)
+        z = np.clip(z, small, 1 - small)
+        # Logit transformation
+        return np.log(z / (1 - z))
+
+    @override
+    def jacobian(self, xi: np.ndarray) -> np.ndarray:
+        """Jacobian matrix (diagonal for element-wise transformation)."""
+        sig = self._sigmoid(xi)
+        diag_elements = self._range * sig * (1 - sig)
+        return np.diag(diag_elements.flatten())
+
+    @override
+    def inv_jacobian(self, xi: np.ndarray) -> np.ndarray:
+        """Inverse Jacobian matrix."""
+        sig = self._sigmoid(xi)
+        diag_elements = 1.0 / (self._range * sig * (1 - sig))
+        return np.diag(diag_elements.flatten())
+
+    @override
+    def log_det_jacobian(self, xi: np.ndarray) -> float:
+        """Log determinant of Jacobian."""
+        sig = self._sigmoid(xi)
+        diag_elements = self._range * sig * (1 - sig)
+        return np.sum(np.log(np.abs(diag_elements)))
+
+    @override
+    def grad_log_det_jacobian(self, xi: np.ndarray) -> np.ndarray:
+        """Gradient of log determinant of Jacobian.
+
+        For sigmoid, d/dξ log|J| = d/dξ log(σ(ξ)(1-σ(ξ))) = 1 - 2σ(ξ).
+        """
+        sig = self._sigmoid(xi)
+        return 1 - 2 * sig
+
+    @override
+    def hessian(self, xi: np.ndarray) -> np.ndarray:
+        """Hessian tensor of the transformation (3-tensor for element-wise case)."""
+        d = xi.shape[0]
+        H = np.zeros((d, d, d))
+        sig = self._sigmoid(xi)
+        # For element-wise sigmoid: d²x_i/dξ_i² = (b-a) * σ(ξ_i) * (1 - σ(ξ_i)) * (1 - 2σ(ξ_i))
+        idx = np.arange(d)
+        H[idx, idx, idx] = self._range.flatten() * sig * (1 - sig) * (1 - 2 * sig)
+        return H
+
+    @override
+    def hessian_log_det_jacobian(self, xi: np.ndarray) -> np.ndarray:
+        """Hessian of log determinant of Jacobian.
+
+        For sigmoid, d²/dξ² log|J| = -2σ'(ξ) = -2σ(ξ)(1-σ(ξ)).
+        """
+        d = xi.shape[0]
+        H = np.zeros((d, d))
+        sig = self._sigmoid(xi)
+        # Diagonal elements only (element-wise transformation)
+        idx = np.arange(d)
+        H[idx, idx] = -2 * sig * (1 - sig)
+        return H
+
+
+class AffineTransformation(Transformation):
     """Implements affine transformation x = A @ xi + b."""
 
     def __init__(self, M: np.ndarray, b: np.ndarray):
@@ -1396,7 +1496,8 @@ class AffineTransformtion(Transformation):
 
 EXPONENTIAL = 'Exponential'
 AFFINE = 'Affine'
-TRANSFORMATIONS = [EXPONENTIAL, AFFINE]
+SIGMOID = 'Sigmoid'
+TRANSFORMATIONS = [EXPONENTIAL, AFFINE, SIGMOID]
 
 
 class TransformedDistribution(Distribution):
@@ -1431,9 +1532,13 @@ class TransformedDistribution(Distribution):
                 M = find_curvature(base_distribution, mean=b)
                 params['M'] = M
 
-            C, _ = _safe_cholesky(M, name="AffineTransformtion(M) for TransformedDistribution")
+            C, _ = _safe_cholesky(M, name="AffineTransformation(M) for TransformedDistribution")
 
-            self._transformation = AffineTransformtion(C, b)
+            self._transformation = AffineTransformation(C, b)
+        elif params['transformation'] == SIGMOID:
+            a = params.get('a', 0.0)
+            b = params.get('b', 1.0)
+            self._transformation = SigmoidTransformation(a, b)
         else:
             raise NotImplementedError(
                 f"Transformation {params['transformation']} not recognized.\n"
@@ -1556,9 +1661,13 @@ class TransformedLikelihood(Likelihood):
                 M = find_curvature(likelihood, mean=b)
                 params['M'] = M
 
-            C, _ = _safe_cholesky(M, name="AffineTransformtion(M) for TransformedLikelihood")
+            C, _ = _safe_cholesky(M, name="AffineTransformation(M) for TransformedLikelihood")
 
-            self._transformation = AffineTransformtion(C, b)
+            self._transformation = AffineTransformation(C, b)
+        elif params['transformation'] == SIGMOID:
+            a = params.get('a', 0.0)
+            b = params.get('b', 1.0)
+            self._transformation = SigmoidTransformation(a, b)
         else:
             raise NotImplementedError(
                 f"Transformation {params['transformation']} not recognized.\n"
