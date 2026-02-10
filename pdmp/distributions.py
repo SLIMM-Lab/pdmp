@@ -1506,10 +1506,228 @@ class AffineTransformation(Transformation):
         return np.zeros((xi.shape[0], xi.shape[0]))
 
 
+class CompositeTransformation(Transformation):
+    """Applies different transformations to different subsets of variables.
+
+    This is useful when working with joint distributions where each component
+    may require a different transformation (e.g., exponential for positive parameters,
+    sigmoid for bounded parameters, etc.).
+
+    Args:
+        transformations: List of Transformation objects to apply.
+        indices: List of index arrays/slices specifying which dimensions each
+                 transformation applies to. Must partition all dimensions.
+                 If None, assumes transformations correspond to contiguous blocks
+                 with dimensions inferred from the first transform call.
+
+    Example:
+        >>> # Apply sigmoid to first 2 dims, exponential to next 3
+        >>> trans = CompositeTransformation(
+        ...     [SigmoidTransformation(0, 1), ExponentialTransformation()],
+        ...     [np.array([0, 1]), np.array([2, 3, 4])]
+        ... )
+    """
+
+    def __init__(
+        self,
+        transformations: list[Transformation],
+        indices: list[np.ndarray | slice] | None = None
+    ):
+        self._transformations = transformations
+        self._n_transforms = len(transformations)
+
+        if indices is not None:
+            # Convert slices to arrays for consistent handling
+            self._indices = []
+            for idx in indices:
+                if isinstance(idx, slice):
+                    # We'll need to know the dimension to convert slice to array
+                    # Store as is for now, convert on first call
+                    self._indices.append(idx)
+                else:
+                    self._indices.append(np.asarray(idx, dtype=int))
+
+            # Validate that indices are disjoint and cover all dimensions
+            all_indices = []
+            for idx in self._indices:
+                if isinstance(idx, slice):
+                    continue  # Will validate on first call
+                all_indices.extend(idx.tolist())
+
+            if not isinstance(self._indices[0], slice):
+                if len(all_indices) != len(set(all_indices)):
+                    raise ValueError("Indices must be disjoint (non-overlapping)")
+                # Note: We don't check completeness here as dimension is unknown
+        else:
+            self._indices = None
+
+        self._dims = None  # Will be inferred on first call
+        self._total_dim = None
+
+    def _initialize_indices(self, xi: np.ndarray) -> None:
+        """Initialize indices if not provided, based on input dimension."""
+        if self._dims is not None:
+            return  # Already initialized
+
+        self._total_dim = xi.shape[0] if xi.ndim == 1 else xi.shape[1]
+
+        if self._indices is None:
+            # Infer contiguous blocks - need dimensions from transformations
+            # This is tricky without knowing dimensions a priori
+            # For now, assume equal split
+            raise ValueError(
+                "Must provide indices when creating CompositeTransformation. "
+                "Cannot infer dimensions automatically."
+            )
+
+        # Convert any slices to arrays now that we know total dimension
+        converted_indices = []
+        for idx in self._indices:
+            if isinstance(idx, slice):
+                converted_indices.append(
+                    np.arange(*idx.indices(self._total_dim), dtype=int)
+                )
+            else:
+                converted_indices.append(idx)
+        self._indices = converted_indices
+
+        # Store dimensions for each transformation
+        self._dims = [len(idx) for idx in self._indices]
+
+        # Validate completeness
+        all_indices = np.concatenate(self._indices)
+        if len(all_indices) != self._total_dim:
+            raise ValueError(
+                f"Indices must cover all {self._total_dim} dimensions, "
+                f"but only cover {len(all_indices)}"
+            )
+        if not np.array_equal(np.sort(all_indices), np.arange(self._total_dim)):
+            raise ValueError(
+                f"Indices must be a partition of [0, {self._total_dim})"
+            )
+
+    @override
+    def transform(self, xi: np.ndarray) -> np.ndarray:
+        """Apply transformations to respective subsets."""
+        self._initialize_indices(xi)
+
+        x = np.zeros_like(xi)
+        for trans, idx in zip(self._transformations, self._indices):
+            if xi.ndim == 1:
+                x[idx] = trans.transform(xi[idx])
+            else:
+                x[:, idx] = trans.transform(xi[:, idx])
+        return x
+
+    @override
+    def inverse_transform(self, x: np.ndarray) -> np.ndarray:
+        """Apply inverse transformations to respective subsets."""
+        self._initialize_indices(x)
+
+        xi = np.zeros_like(x)
+        for trans, idx in zip(self._transformations, self._indices):
+            if x.ndim == 1:
+                xi[idx] = trans.inverse_transform(x[idx])
+            else:
+                xi[:, idx] = trans.inverse_transform(x[:, idx])
+        return xi
+
+    @override
+    def jacobian(self, xi: np.ndarray) -> np.ndarray:
+        """Block-diagonal Jacobian matrix."""
+        self._initialize_indices(xi)
+
+        d = self._total_dim
+        J = np.zeros((d, d))
+
+        for trans, idx in zip(self._transformations, self._indices):
+            xi_subset = xi[idx] if xi.ndim == 1 else xi[:, idx]
+            J_subset = trans.jacobian(xi_subset)
+            # Place in block-diagonal structure using np.ix_ for fancy indexing
+            J[np.ix_(idx, idx)] = J_subset
+
+        return J
+
+    @override
+    def inv_jacobian(self, xi: np.ndarray) -> np.ndarray:
+        """Block-diagonal inverse Jacobian matrix."""
+        self._initialize_indices(xi)
+
+        d = self._total_dim
+        J_inv = np.zeros((d, d))
+
+        for trans, idx in zip(self._transformations, self._indices):
+            xi_subset = xi[idx] if xi.ndim == 1 else xi[:, idx]
+            J_inv_subset = trans.inv_jacobian(xi_subset)
+            J_inv[np.ix_(idx, idx)] = J_inv_subset
+
+        return J_inv
+
+    @override
+    def log_det_jacobian(self, xi: np.ndarray) -> float:
+        """Sum of log determinants (block-diagonal structure)."""
+        self._initialize_indices(xi)
+
+        log_det = 0.0
+        for trans, idx in zip(self._transformations, self._indices):
+            xi_subset = xi[idx] if xi.ndim == 1 else xi[:, idx]
+            log_det += trans.log_det_jacobian(xi_subset)
+
+        return log_det
+
+    @override
+    def grad_log_det_jacobian(self, xi: np.ndarray) -> np.ndarray:
+        """Gradient of log determinant."""
+        self._initialize_indices(xi)
+
+        grad = np.zeros_like(xi)
+        for trans, idx in zip(self._transformations, self._indices):
+            xi_subset = xi[idx] if xi.ndim == 1 else xi[:, idx]
+            grad_subset = trans.grad_log_det_jacobian(xi_subset)
+            if xi.ndim == 1:
+                grad[idx] = grad_subset
+            else:
+                grad[:, idx] = grad_subset
+
+        return grad
+
+    @override
+    def hessian(self, xi: np.ndarray) -> np.ndarray:
+        """Block-diagonal Hessian tensor."""
+        self._initialize_indices(xi)
+
+        d = self._total_dim
+        H = np.zeros((d, d, d))
+
+        for trans, idx in zip(self._transformations, self._indices):
+            xi_subset = xi[idx] if xi.ndim == 1 else xi[:, idx]
+            H_subset = trans.hessian(xi_subset)
+            # Place in block structure
+            H[np.ix_(idx, idx, idx)] = H_subset
+
+        return H
+
+    @override
+    def hessian_log_det_jacobian(self, xi: np.ndarray) -> np.ndarray:
+        """Block-diagonal Hessian of log determinant."""
+        self._initialize_indices(xi)
+
+        d = self._total_dim
+        H = np.zeros((d, d))
+
+        for trans, idx in zip(self._transformations, self._indices):
+            xi_subset = xi[idx] if xi.ndim == 1 else xi[:, idx]
+            H_subset = trans.hessian_log_det_jacobian(xi_subset)
+            H[np.ix_(idx, idx)] = H_subset
+
+        return H
+
+
 EXPONENTIAL = 'Exponential'
 AFFINE = 'Affine'
 SIGMOID = 'Sigmoid'
-TRANSFORMATIONS = [EXPONENTIAL, AFFINE, SIGMOID]
+COMPOSITE = 'Composite'
+TRANSFORMATIONS = [EXPONENTIAL, AFFINE, SIGMOID, COMPOSITE]
 
 
 class TransformedDistribution(Distribution):
@@ -1551,6 +1769,81 @@ class TransformedDistribution(Distribution):
             a = params.get('a', 0.0)
             b = params.get('b', 1.0)
             self._transformation = SigmoidTransformation(a, b)
+        elif params['transformation'] == COMPOSITE:
+            # Get list of transformation specs and indices
+            transform_specs = params.get('transformations', None)
+            indices = params.get('indices', None)
+
+            if transform_specs is None:
+                raise ValueError(
+                    "COMPOSITE transformation requires 'transformations' parameter"
+                )
+
+            # If base distribution is JointDistribution and indices not provided,
+            # automatically create indices based on child dimensions
+            if indices is None and isinstance(base_distribution, JointDistribution):
+                indices = []
+                offset = 0
+                for dist in base_distribution.distributions:
+                    dim = dist.dim
+                    indices.append(np.arange(offset, offset + dim))
+                    offset += dim
+                logger.info(
+                    f"Automatically created indices for JointDistribution: "
+                    f"dims = {[len(idx) for idx in indices]}"
+                )
+
+            if indices is None:
+                raise ValueError(
+                    "COMPOSITE transformation requires 'indices' parameter "
+                    "(or base_distribution must be JointDistribution)"
+                )
+
+            # Build transformation objects from specs
+            transformations = []
+            for spec in transform_specs:
+                if isinstance(spec, Transformation):
+                    # Already a transformation object
+                    transformations.append(spec)
+                elif isinstance(spec, dict):
+                    # Dictionary specification
+                    trans_type = spec.get('type', spec.get('transformation'))
+                    if trans_type == EXPONENTIAL:
+                        transformations.append(ExponentialTransformation())
+                    elif trans_type == AFFINE:
+                        M = spec.get('M')
+                        b = spec.get('b')
+                        if M is None or b is None:
+                            raise ValueError(
+                                "AFFINE transformation in COMPOSITE requires 'M' and 'b'"
+                            )
+                        transformations.append(AffineTransformation(M, b))
+                    elif trans_type == SIGMOID:
+                        a = spec.get('a', 0.0)
+                        b = spec.get('b', 1.0)
+                        transformations.append(SigmoidTransformation(a, b))
+                    else:
+                        raise ValueError(f"Unknown transformation type: {trans_type}")
+                elif isinstance(spec, str):
+                    # String specification for simple transformations
+                    if spec == EXPONENTIAL:
+                        transformations.append(ExponentialTransformation())
+                    elif spec == SIGMOID:
+                        a = params.get('a', 0.0)
+                        b = params.get('b', 1.0)
+                        transformations.append(SigmoidTransformation(a, b))
+                    else:
+                        raise ValueError(
+                            f"String specification '{spec}' not supported for COMPOSITE. "
+                            f"Use dict or Transformation object for {spec}."
+                        )
+                else:
+                    raise ValueError(
+                        f"Invalid transformation specification: {spec}. "
+                        f"Expected Transformation, dict, or str."
+                    )
+
+            self._transformation = CompositeTransformation(transformations, indices)
         else:
             raise NotImplementedError(
                 f"Transformation {params['transformation']} not recognized.\n"
