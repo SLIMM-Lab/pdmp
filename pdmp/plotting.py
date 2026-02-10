@@ -1,11 +1,11 @@
-from typing import Union, cast
+from typing import Union
 
 import matplotlib.colors
 import numpy as np
 import seaborn as sns
 from matplotlib import pyplot as plt
 
-from pdmp.distributions import Distribution, Transformation, AffineTransformtion
+from pdmp.distributions import Distribution, Transformation
 from pdmp.surrogates import SurrogateModel
 
 

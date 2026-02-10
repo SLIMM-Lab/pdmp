@@ -1,13 +1,11 @@
-import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import multivariate_normal, wishart, lognorm
 from scipy.optimize import minimize
 
 from pdmp.distributions import (MultivariateNormal, CubicDistribution,
                                 GaussianLikelihood, TemperedLikelihood,
-                                FlatLikelihood, Posterior, AffineTransformtion,
-                                ExponentialTransformation,
-                                TransformedDistribution, TransformedLikelihood)
+                                FlatLikelihood, Posterior, ExponentialTransformation,
+                                TransformedDistribution)
 from pdmp.utils import grad_fd, hessian_fd
 from pdmp.forward_model import LinearModel
 
