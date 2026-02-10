@@ -250,7 +250,7 @@ def test_transformation():
 
     for i in range(len(x)):
         xi = t.inverse_transform(x[i])
-        y[i] = normal.log_density(xi)[0] - np.log(t.log_det_jacobian(x[i]))
+        y[i] = normal.log_density(xi) - np.log(t.log_det_jacobian(x[i]))
         y_sp[i] = lognorm.logpdf(x[i],
                                  s=np.sqrt(cov[0, 0]),
                                  scale=np.exp(mean[0]))
