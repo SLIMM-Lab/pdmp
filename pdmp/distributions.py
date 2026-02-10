@@ -144,14 +144,18 @@ class Distribution:
             f"Cannot sample directly from {self.__class__.__name__}. Use MCMC instead"
         )
 
-    def log_density(self, x: np.ndarray) -> np.ndarray:
-        """Get the log density of the distribution at a point.
+    def log_density(self, x: np.ndarray) -> Union[float, np.ndarray]:
+        """Get the log density of the distribution at a point or batch of points.
 
         Args:
-            x: The point at which to evaluate the log density.
+            x: The point(s) at which to evaluate the log density.
+               - If 1D array: single point, returns float
+               - If 2D array: batch of points, returns 1D array
 
         Returns:
-            np.ndarray: The log density of the distribution at the point.
+            Union[float, np.ndarray]: The log density value(s).
+                - float: for single point (x.ndim == 1)
+                - np.ndarray: for batch of points (x.ndim == 2)
         """
         raise NotImplementedError
 
@@ -217,9 +221,10 @@ class JointDistribution(Distribution):
             return np.hstack(rows)
 
     @override
-    def log_density(self, x: np.ndarray) -> np.ndarray:
+    def log_density(self, x: np.ndarray) -> Union[float, np.ndarray]:
         if x.ndim == 1:
-            total = np.array(0.0)
+            # Single point: all child distributions now return float for single points
+            total = 0.0
             idx = 0
             for dist, d in zip(self.distributions, self._dims):
                 total += dist.log_density(x[idx:idx + d])
@@ -404,20 +409,23 @@ class MultivariateNormal(Distribution):
             return z @ self.cov_L.T + self._mean
 
     @override
-    def log_density(self, x: np.ndarray) -> np.ndarray:
+    def log_density(self, x: np.ndarray) -> Union[float, np.ndarray]:
         diff = x - self._mean
         if diff.ndim == 1:
+            # Single point: always return scalar (float)
             if self._dim == 1:
-                return self.constant - 0.5 * self.log_det - 0.5 * np.abs(
+                result = self.constant - 0.5 * self.log_det - 0.5 * np.abs(
                     diff / self.cov_L[0, 0]
                 ) ** 2
+                # Ensure we get a scalar even if result is 1D array
+                return float(np.asarray(result).flat[0]) if hasattr(result, 'flat') else float(result)
             else:
                 y = sp.linalg.solve_triangular(
                     self.cov_L, diff, lower=True, check_finite=False
                 )
-                return self.constant - 0.5 * self.log_det - 0.5 * np.dot(y, y)
+                return float(self.constant - 0.5 * self.log_det - 0.5 * np.dot(y, y))
         else:
-            # batch of points
+            # batch of points: return 1D array
             y = sp.linalg.solve_triangular(
                 self.cov_L, diff.T, lower=True, check_finite=False
             )
@@ -518,7 +526,7 @@ class GaussianMixture(Distribution):
         return cov
 
     @override
-    def log_density(self, x: np.ndarray) -> np.ndarray:
+    def log_density(self, x: np.ndarray) -> Union[float, np.ndarray]:
         log_p = 0.
         for i in range(self.n_components):
             log_p += self.weights[i] * np.exp(self.dists[i].log_density(x))
@@ -597,7 +605,7 @@ class BananaDistribution(Distribution):
         return self._gaussian.dim
 
     @override
-    def log_density(self, x: np.ndarray) -> np.ndarray:
+    def log_density(self, x: np.ndarray) -> Union[float, np.ndarray]:
         return self._gaussian.log_density(self.transform(x))
 
     @override
@@ -661,7 +669,7 @@ class MultivariateLogNormal(Distribution):
         return self._dim
 
     @override
-    def log_density(self, x: np.ndarray) -> np.ndarray:
+    def log_density(self, x: np.ndarray) -> Union[float, np.ndarray]:
         x[np.where(x < 0)] = small
         diff = np.log(x) - self.mean_normal_
         return self.constant_ - self.logDet_ - np.sum(np.log(
@@ -725,7 +733,7 @@ class GammaDistribution(Distribution):
         return samples.reshape(n, 1)
 
     @override
-    def log_density(self, x: np.ndarray) -> np.ndarray:
+    def log_density(self, x: np.ndarray) -> Union[float, np.ndarray]:
         xv = np.atleast_1d(x).astype(float)
         # clamp to small positive
         xv[xv <= 0] = small
@@ -794,7 +802,7 @@ class BetaDistribution(Distribution):
         return samples.reshape(n, 1)
 
     @override
-    def log_density(self, x: np.ndarray) -> np.ndarray:
+    def log_density(self, x: np.ndarray) -> Union[float, np.ndarray]:
         xv = np.atleast_1d(x).astype(float)
         xv[xv <= 0] = small
         xv[xv >= 1] = 1 - small
@@ -873,7 +881,7 @@ class CubicDistribution(Distribution):
         return self._normal.mean
 
     @override
-    def log_density(self, x: np.ndarray) -> np.ndarray:
+    def log_density(self, x: np.ndarray) -> Union[float, np.ndarray]:
         d = x - self._normal.mean
         return (np.sum(
             (1 - 2 * (d > 0)) * self._a / 3 * self.cubic_diag * d ** 3) +
@@ -903,15 +911,19 @@ class Likelihood(Distribution):
         super().__init__(rng=rng, seed=seed)
 
     @override
-    def log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
+    def log_density(self, params: np.ndarray, idx: int = None) -> Union[float, np.ndarray]:
         """Get the log density of the likelihood of the observation given by idx.
 
         Args:
             params: The parameters to evaluate the log density.
-            idx: The index of the observation. Default is None.
+                   - If 1D array: single parameter set, returns float
+                   - If 2D array: batch of parameter sets, returns 1D array (future)
+            idx: The index of the observation. Default is None (all observations).
 
         Returns:
-            np.ndarray: The log density of the likelihood of the observation given by idx.
+            Union[float, np.ndarray]: The log density of the likelihood.
+                - float: for single parameter set (params.ndim == 1)
+                - np.ndarray: for batch of parameter sets (params.ndim == 2, future support)
         """
         raise NotImplementedError
 
@@ -964,7 +976,7 @@ class TemperedLikelihood(Likelihood):
         return self._likelihood.n_obs
 
     @override
-    def log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
+    def log_density(self, params: np.ndarray, idx: int = None) -> Union[float, np.ndarray]:
         return self._beta * self._likelihood.log_density(params, idx=idx)
 
     @override
@@ -1008,7 +1020,7 @@ class GaussianLikelihood(Likelihood):
         return self._dim
 
     @override
-    def log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
+    def log_density(self, params: np.ndarray, idx: int = None) -> Union[float, np.ndarray]:
         if idx is None:
             log_p = 0.
             for i in range(self.n_obs):
@@ -1100,8 +1112,8 @@ class FlatLikelihood(Likelihood):
         return self._dim
 
     @override
-    def log_density(self, params: np.ndarray, idx: int = None) -> np.ndarray:
-        return np.array([0.0])
+    def log_density(self, params: np.ndarray, idx: int = None) -> Union[float, np.ndarray]:
+        return 0.0
 
     @override
     def grad_log_density(self,
@@ -1190,7 +1202,7 @@ class Posterior(Distribution):
         return self._likelihood.n_obs
 
     @override
-    def log_density(self, params: np.ndarray) -> np.ndarray:
+    def log_density(self, params: np.ndarray) -> Union[float, np.ndarray]:
         return self._likelihood.log_density(params) + self.prior.log_density(
             params)
 
@@ -1563,14 +1575,16 @@ class TransformedDistribution(Distribution):
         return self._base_distribution.dim
 
     @override
-    def log_density(self, xi: np.ndarray) -> np.ndarray:
+    def log_density(self, xi: np.ndarray) -> Union[float, np.ndarray]:
         """Computes log p(xi).
 
         Args:
-            xi: The input to the transformation.
+            xi: The input to the transformation (single point or batch).
 
         Returns:
-            np.ndarray: The log density of the transformed distribution.
+            Union[float, np.ndarray]: The log density of the transformed distribution.
+                - float: for single point (xi.ndim == 1)
+                - np.ndarray: for batch of points (xi.ndim == 2)
         """
         x = self._transformation.transform(xi)
         return self._base_distribution.log_density(
@@ -1683,7 +1697,7 @@ class TransformedLikelihood(Likelihood):
         return self._likelihood.dim
 
     @override
-    def log_density(self, xi: np.ndarray, idx: int = None) -> np.ndarray:
+    def log_density(self, xi: np.ndarray, idx: int = None) -> Union[float, np.ndarray]:
         """Computes log p(xi).
 
         Args:
@@ -1691,7 +1705,9 @@ class TransformedLikelihood(Likelihood):
             idx: The index of the observation to evaluate.
 
         Returns:
-            np.ndarray: The log density of the transformed distribution.
+            Union[float, np.ndarray]: The log density of the transformed likelihood.
+                - float: for single parameter set (xi.ndim == 1)
+                - np.ndarray: for batch of parameter sets (xi.ndim == 2, future support)
         """
         x = self._transformation.transform(xi)
         return self._likelihood.log_density(x, idx=idx)
