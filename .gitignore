@@ -59,5 +59,11 @@ ZigZag-Sampling-Tutorial
 examples/jax-fem/data
 examples/jax-fem/figures
 
-# jax-fem related dirs
+# output dirs dirs
 *data
+*_data
+*figures
+
+# inverse example
+examples/inverse_problem/constant_field/model_params
+examples/inverse_problem/constant_field/observations.dat
