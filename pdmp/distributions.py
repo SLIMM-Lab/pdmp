@@ -1480,6 +1480,152 @@ class SigmoidTransformation(Transformation):
         return H
 
 
+class LogitTransformation(Transformation):
+    """Implements logit transformation ξ = logit((x - a) / (b - a)).
+
+    This transformation maps from bounded space x ∈ [a, b]^d to unbounded space ξ ∈ ℝ^d.
+    This is the inverse of the sigmoid transformation.
+
+    Args:
+        a: Lower bound (scalar or array).
+        b: Upper bound (scalar or array).
+    """
+
+    def __init__(self, a: Union[float, np.ndarray] = 0.0, b: Union[float, np.ndarray] = 1.0):
+        self._a = np.atleast_1d(np.asarray(a, dtype=float))
+        self._b = np.atleast_1d(np.asarray(b, dtype=float))
+        self._range = self._b - self._a
+
+        if np.any(self._range <= 0):
+            raise ValueError("Upper bound b must be greater than lower bound a")
+
+    @staticmethod
+    def _sigmoid(xi: np.ndarray) -> np.ndarray:
+        """Numerically stable sigmoid function."""
+        # Clip to avoid overflow
+        xi_clipped = np.clip(xi, -500, 500)
+        return np.where(
+            xi_clipped >= 0,
+            1 / (1 + np.exp(-xi_clipped)),
+            np.exp(xi_clipped) / (1 + np.exp(xi_clipped))
+        )
+
+    @override
+    def transform(self, x: np.ndarray) -> np.ndarray:
+        """Transform from bounded to unbounded: ξ = logit((x - a) / (b - a))."""
+        # Normalize to [0, 1]
+        z = (x - self._a) / self._range
+        # Clip to avoid log(0) or log(negative)
+        z = np.clip(z, small, 1 - small)
+        # Logit transformation
+        return np.log(z / (1 - z))
+
+    @override
+    def inverse_transform(self, xi: np.ndarray) -> np.ndarray:
+        """Transform from unbounded to bounded: x = a + (b - a) * sigmoid(ξ)."""
+        return self._a + self._range * self._sigmoid(xi)
+
+    @override
+    def jacobian(self, x: np.ndarray) -> np.ndarray:
+        """Jacobian matrix (diagonal for element-wise transformation).
+
+        For logit: dξ/dx = 1 / (dx/dξ) = 1 / ((b-a) * σ(ξ) * (1-σ(ξ)))
+        But we need it as function of x, so:
+        dξ/dx = 1 / ((x-a) * (b-x))  * (b-a)
+        """
+        z = (x - self._a) / self._range
+        z = np.clip(z, small, 1 - small)
+        # dξ/dx = (b-a) / ((x-a) * (b-x))
+        diag_elements = self._range / (z * (1 - z)) / self._range
+        # Simplifies to: 1 / (z * (1-z) * (b-a))
+        diag_elements = 1.0 / (self._range * z * (1 - z))
+        return np.diag(diag_elements.flatten())
+
+    @override
+    def inv_jacobian(self, x: np.ndarray) -> np.ndarray:
+        """Inverse Jacobian matrix.
+
+        This is the Jacobian of the inverse transform (sigmoid).
+        """
+        z = (x - self._a) / self._range
+        z = np.clip(z, small, 1 - small)
+        diag_elements = self._range * z * (1 - z)
+        return np.diag(diag_elements.flatten())
+
+    @override
+    def log_det_jacobian(self, x: np.ndarray) -> float:
+        """Log determinant of Jacobian."""
+        z = (x - self._a) / self._range
+        z = np.clip(z, small, 1 - small)
+        # log|dξ/dx| = -log((b-a) * z * (1-z))
+        diag_elements = 1.0 / (self._range * z * (1 - z))
+        return np.sum(np.log(np.abs(diag_elements)))
+
+    @override
+    def grad_log_det_jacobian(self, x: np.ndarray) -> np.ndarray:
+        """Gradient of log determinant of Jacobian.
+
+        d/dx log|J| = d/dx log(1 / ((b-a) * z * (1-z)))
+                    = d/dx (-log(z) - log(1-z) - log(b-a))
+                    = -1/z * 1/(b-a) + 1/(1-z) * 1/(b-a)
+                    = (1/(1-z) - 1/z) / (b-a)
+                    = (z - (1-z)) / (z * (1-z) * (b-a))
+                    = (2z - 1) / (z * (1-z) * (b-a))
+        """
+        z = (x - self._a) / self._range
+        z = np.clip(z, small, 1 - small)
+        return (2 * z - 1) / (self._range * z * (1 - z))
+
+    @override
+    def hessian(self, x: np.ndarray) -> np.ndarray:
+        """Hessian tensor of the transformation (3-tensor for element-wise case).
+
+        For logit: d²ξ/dx² = d/dx (1 / ((b-a) * z * (1-z)))
+        where z = (x-a)/(b-a), so dz/dx = 1/(b-a)
+
+        d²ξ/dx² = d/dz (1/(z(1-z))) * 1/(b-a)
+                = (-(1-z) - (-z)) / (z²(1-z)²) * 1/(b-a)
+                = (2z - 1) / (z²(1-z)²) * 1/(b-a)
+        """
+        d = x.shape[0]
+        H = np.zeros((d, d, d))
+        z = (x - self._a) / self._range
+        z = np.clip(z, small, 1 - small)
+        # For element-wise logit
+        idx = np.arange(d)
+        H[idx, idx, idx] = (2 * z - 1) / (self._range.flatten() * z**2 * (1 - z)**2)
+        return H
+
+    @override
+    def hessian_log_det_jacobian(self, x: np.ndarray) -> np.ndarray:
+        """Hessian of log determinant of Jacobian.
+
+        d²/dx² log|J| = d/dx ((2z - 1) / ((b-a) * z * (1-z)))
+
+        Let f(z) = (2z-1) / (z(1-z)), then df/dz needs to be computed.
+        Using quotient rule:
+        df/dz = (2 * z(1-z) - (2z-1)(1-2z)) / (z²(1-z)²)
+              = (2z - 2z² - 2z + 4z² - 1 + 2z) / (z²(1-z)²)
+              = (2z² + 2z - 1) / (z²(1-z)²)
+
+        Then d²/dx² = df/dz * (dz/dx)²
+                    = (2z² + 2z - 1) / (z²(1-z)²) * 1/(b-a)²
+
+        Actually, let me recalculate more carefully:
+        log|J| = -log(z) - log(1-z) - log(b-a)
+        d/dx = (-1/z + 1/(1-z)) / (b-a)
+        d²/dx² = (1/z² + 1/(1-z)²) / (b-a)²
+        """
+        d = x.shape[0]
+        H = np.zeros((d, d))
+        z = (x - self._a) / self._range
+        z = np.clip(z, small, 1 - small)
+        # Diagonal elements only (element-wise transformation)
+        idx = np.arange(d)
+        H[idx, idx] = (1 / z**2 + 1 / (1 - z)**2) / self._range.flatten()**2
+        return H
+
+
 class AffineTransformation(Transformation):
     """Implements affine transformation x = A @ xi + b."""
 
@@ -1743,8 +1889,9 @@ class CompositeTransformation(Transformation):
 EXPONENTIAL = 'Exponential'
 AFFINE = 'Affine'
 SIGMOID = 'Sigmoid'
+LOGIT = 'Logit'
 COMPOSITE = 'Composite'
-TRANSFORMATIONS = [EXPONENTIAL, AFFINE, SIGMOID, COMPOSITE]
+TRANSFORMATIONS = [EXPONENTIAL, AFFINE, SIGMOID, LOGIT, COMPOSITE]
 
 
 class TransformedDistribution(Distribution):
@@ -1786,6 +1933,10 @@ class TransformedDistribution(Distribution):
             a = params.get('a', 0.0)
             b = params.get('b', 1.0)
             self._transformation = SigmoidTransformation(a, b)
+        elif params['transformation'] == LOGIT:
+            a = params.get('a', 0.0)
+            b = params.get('b', 1.0)
+            self._transformation = LogitTransformation(a, b)
         elif params['transformation'] == COMPOSITE:
             # Get list of transformation specs and indices
             transform_specs = params.get('transformations', None)
@@ -1839,6 +1990,10 @@ class TransformedDistribution(Distribution):
                         a = spec.get('a', 0.0)
                         b = spec.get('b', 1.0)
                         transformations.append(SigmoidTransformation(a, b))
+                    elif trans_type == LOGIT:
+                        a = spec.get('a', 0.0)
+                        b = spec.get('b', 1.0)
+                        transformations.append(LogitTransformation(a, b))
                     else:
                         raise ValueError(f"Unknown transformation type: {trans_type}")
                 elif isinstance(spec, str):
@@ -1849,6 +2004,10 @@ class TransformedDistribution(Distribution):
                         a = params.get('a', 0.0)
                         b = params.get('b', 1.0)
                         transformations.append(SigmoidTransformation(a, b))
+                    elif spec == LOGIT:
+                        a = params.get('a', 0.0)
+                        b = params.get('b', 1.0)
+                        transformations.append(LogitTransformation(a, b))
                     else:
                         raise ValueError(
                             f"String specification '{spec}' not supported for COMPOSITE. "
