@@ -2151,6 +2151,78 @@ class TransformedLikelihood(Likelihood):
             a = params.get('a', 0.0)
             b = params.get('b', 1.0)
             self._transformation = SigmoidTransformation(a, b)
+        elif params['transformation'] == LOGIT:
+            a = params.get('a', 0.0)
+            b = params.get('b', 1.0)
+            self._transformation = LogitTransformation(a, b)
+        elif params['transformation'] == COMPOSITE:
+            # Get list of transformation specs and indices
+            transform_specs = params.get('transformations', None)
+            indices = params.get('indices', None)
+
+            if transform_specs is None:
+                raise ValueError(
+                    "COMPOSITE transformation requires 'transformations' parameter"
+                )
+
+            if indices is None:
+                raise ValueError(
+                    "COMPOSITE transformation requires 'indices' parameter"
+                )
+
+            # Build transformation objects from specs
+            transformations = []
+            for spec in transform_specs:
+                if isinstance(spec, Transformation):
+                    # Already a transformation object
+                    transformations.append(spec)
+                elif isinstance(spec, dict):
+                    # Dictionary specification
+                    trans_type = spec.get('type', spec.get('transformation'))
+                    if trans_type == EXPONENTIAL:
+                        transformations.append(ExponentialTransformation())
+                    elif trans_type == AFFINE:
+                        M = spec.get('M')
+                        b = spec.get('b')
+                        if M is None or b is None:
+                            raise ValueError(
+                                "AFFINE transformation in COMPOSITE requires 'M' and 'b'"
+                            )
+                        transformations.append(AffineTransformation(M, b))
+                    elif trans_type == SIGMOID:
+                        a = spec.get('a', 0.0)
+                        b = spec.get('b', 1.0)
+                        transformations.append(SigmoidTransformation(a, b))
+                    elif trans_type == LOGIT:
+                        a = spec.get('a', 0.0)
+                        b = spec.get('b', 1.0)
+                        transformations.append(LogitTransformation(a, b))
+                    else:
+                        raise ValueError(f"Unknown transformation type: {trans_type}")
+                elif isinstance(spec, str):
+                    # String specification for simple transformations
+                    if spec == EXPONENTIAL:
+                        transformations.append(ExponentialTransformation())
+                    elif spec == SIGMOID:
+                        a = params.get('a', 0.0)
+                        b = params.get('b', 1.0)
+                        transformations.append(SigmoidTransformation(a, b))
+                    elif spec == LOGIT:
+                        a = params.get('a', 0.0)
+                        b = params.get('b', 1.0)
+                        transformations.append(LogitTransformation(a, b))
+                    else:
+                        raise ValueError(
+                            f"String specification '{spec}' not supported for COMPOSITE. "
+                            f"Use dict or Transformation object for {spec}."
+                        )
+                else:
+                    raise ValueError(
+                        f"Invalid transformation specification: {spec}. "
+                        f"Expected Transformation, dict, or str."
+                    )
+
+            self._transformation = CompositeTransformation(transformations, indices)
         else:
             raise NotImplementedError(
                 f"Transformation {params['transformation']} not recognized.\n"
