@@ -1856,8 +1856,8 @@ class TransformedDistribution(Distribution):
         Returns:
             np.ndarray: A sample from the transformed distribution.
         """
-        x_sample = self._base_distribution.get_sample(n=n)
-        return self._transformation.inverse_transform(x_sample)
+        base_sample = self._base_distribution.get_sample(n=n)
+        return self._transformation.inverse_transform(base_sample)
 
     @property
     def dim(self) -> int:
