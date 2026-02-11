@@ -435,18 +435,35 @@ class MultivariateNormal(Distribution):
     @override
     def grad_log_density(self, x: np.ndarray) -> np.ndarray:
         diff = x - self._mean
-        return -sp.linalg.solve_triangular(
-            self.cov_L.T,
-            sp.linalg.solve_triangular(
-                self.cov_L, diff, lower=True, check_finite=False
-            ),
-            lower=False,
-            check_finite=False,
-        )
+        if diff.ndim == 1:
+            # Single point
+            return -sp.linalg.solve_triangular(
+                self.cov_L.T,
+                sp.linalg.solve_triangular(
+                    self.cov_L, diff, lower=True, check_finite=False
+                ),
+                lower=False,
+                check_finite=False,
+            )
+        else:
+            # Batch of points: solve for all columns at once
+            y = sp.linalg.solve_triangular(
+                self.cov_L, diff.T, lower=True, check_finite=False
+            )
+            return -sp.linalg.solve_triangular(
+                self.cov_L.T, y, lower=False, check_finite=False
+            ).T
 
     @override
     def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
-        return -self.inv_C
+        if x.ndim == 1:
+            # Single point: return the Hessian matrix
+            return -self.inv_C
+        else:
+            # Batch of points: return array of Hessian matrices
+            # Since Hessian is constant for Gaussian, just repeat it
+            n_points = x.shape[0]
+            return np.tile(-self.inv_C, (n_points, 1, 1))
 
 
 class GaussianMixture(Distribution):
