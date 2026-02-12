@@ -20,6 +20,7 @@ import os
 import argparse
 from scipy.stats import gaussian_kde
 from typing import Dict, Any
+import seaborn as sns
 
 from pdmp.distributions import LOGIT, EXPONENTIAL, COMPOSITE
 from pdmp.loader import get_target, get_sampler, get_surrogate
@@ -35,6 +36,7 @@ from pdmp.utils import central_moment_from_skeleton, sample_equidistant_along_pa
 DATA_DIR = "./data"
 SAMPLES_DIR = "./samples"
 FIG_DIR = "./figures"
+# FIG_DIR = "/home/leon/Nextcloud/Documents/documentation/itz/figures/fem_model/exp_recov"
 
 # True parameter values for generating observations
 # rho in (0, 1), l > 0 (e.g., 0.5 to 2.0)
@@ -42,14 +44,17 @@ TRUE_RHO = 0.7
 TRUE_L = 1.2
 
 # Noise level for observations
-SIGMA_OBS = 0.01
+SIGMA_OBS = 0.005
 
 # Sampling parameters (start with coarse for testing)
-N_GRID_RHO = 30  # Grid points for rho
-N_GRID_L = 30    # Grid points for l
+N_GRID_RHO = 50  # Grid points for rho
+N_GRID_L = 50    # Grid points for l
 N_RWM_SAMPLES = 50  # RWM samples
 T_MAX_ZZS = 10.0     # ZigZag max time
 
+# for testing
+N_GRID_RHO = 10  # Grid points for rho
+N_GRID_L = 10    # Grid points for l
 # ============================================================================
 # Enable/Disable Samplers (set to False to skip sampling)
 # ============================================================================
@@ -180,7 +185,7 @@ def evaluate_posterior_grid(target, rng: np.random.Generator, force: bool = Fals
     # Grid in transformed space
     # rho in [0, 1] -> xi_rho in [-inf, inf], focus on [-3, 3] (covers ~0.05 to 0.95)
     # l in (0, inf) -> xi_l in [-inf, inf], focus on [-1, 1.5] (covers ~0.37 to 4.48)
-    xi_rho_min, xi_rho_max = 0.5, 0.9
+    xi_rho_min, xi_rho_max = 0.57, 0.87
     xi_l_min, xi_l_max = -0.25, 2.25
 
     xi_rho_vals = np.linspace(xi_rho_min, xi_rho_max, N_GRID_RHO)
@@ -329,9 +334,9 @@ def run_zigzag_sampling(target, rng: np.random.Generator, force: bool = False):
 def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
                       rwm_samples, zzs_samples,
                       xi_rho_true, xi_l_true):
-    """Plot 2D posterior with samples."""
+    """Plot 2D posterior with samples - creates separate PDF figures."""
     print("=" * 70)
-    print("Creating 2D posterior plot...")
+    print("Creating 2D posterior plots...")
     print("=" * 70)
 
     # Convert transformed space to original space for labeling
@@ -342,36 +347,79 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
     log_post_norm = log_post_grid - np.max(log_post_grid)
     post_norm = np.exp(log_post_norm)
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    # Define colormap (using rocket colormap as in plot_pdf_contours)
+    cmap = sns.color_palette('rocket', as_cmap=True)
 
+    os.makedirs(FIG_DIR, exist_ok=True)
+
+    # ========================================================================
     # Plot 1: Transformed space (xi_rho, xi_l)
-    ax1 = axes[0]
-    contour = ax1.contourf(xi_rho_grid, xi_l_grid, post_norm, levels=20, cmap='viridis')
-    ax1.contour(xi_rho_grid, xi_l_grid, post_norm, levels=10, colors='white',
-                linewidths=0.5, alpha=0.3)
+    # ========================================================================
+
+    # Determine plot limits
+    xi_rho_min, xi_rho_max = xi_rho_grid.min(), xi_rho_grid.max()
+    xi_l_min, xi_l_max = xi_l_grid.min(), xi_l_grid.max()
+
+    fig1, ax1 = get_2d_despined_figure(
+        plot_limits=([xi_rho_min, xi_rho_max], [xi_l_min, xi_l_max]),
+        figsize=(4., 4.),
+        axes_label=(r'\xi_\rho', r'\xi_l'),
+        equal_axes=False,
+        keep_ticks=True
+    )
+
+    # Plot contours with the same style as plot_pdf_contours
+    ax1.contour(xi_rho_grid, xi_l_grid, post_norm, levels=20,
+                zorder=1, alpha=0.6, cmap=cmap)
 
     # Plot samples
     ax1.scatter(rwm_samples[::5, 0], rwm_samples[::5, 1], c='red', s=10, alpha=0.5,
-                label='RWM samples')
+                label='RWM', zorder=2)
     ax1.scatter(zzs_samples[::5, 0], zzs_samples[::5, 1], c='cyan', s=10, alpha=0.5,
-                label='ZZS samples')
+                label='ZZS', zorder=2)
 
     # True value
-    ax1.scatter([xi_rho_true], [xi_l_true], c='white', s=100, marker='*',
-                edgecolors='black', linewidths=1.5, label='True value', zorder=10)
+    ax1.scatter([xi_rho_true], [xi_l_true], c='black', s=100, marker='*',
+                edgecolors='white', linewidths=1.5, label='True', zorder=10)
 
-    ax1.set_xlabel(r'$\xi_\rho$ (transformed rho)', fontsize=12)
-    ax1.set_ylabel(r'$\xi_l$ (transformed l)', fontsize=12)
-    ax1.set_title('Posterior in Transformed Space', fontsize=14, fontweight='bold')
-    ax1.legend(loc='upper right')
-    ax1.grid(True, alpha=0.3)
-    plt.colorbar(contour, ax=ax1, label='Normalized Posterior')
+    ax1.legend(loc='upper right', frameon=False)
 
+    # Save
+    fig_path = os.path.join(FIG_DIR, 'posterior_2d_transformed.pdf')
+    fig1.savefig(fig_path, bbox_inches='tight')
+    print(f"  ✓ Saved figure: {fig_path}")
+    plt.close(fig1)
+
+    # ========================================================================
     # Plot 2: Original space (rho, l)
-    ax2 = axes[1]
-    contour2 = ax2.contourf(rho_grid, l_grid, post_norm, levels=20, cmap='viridis')
-    ax2.contour(rho_grid, l_grid, post_norm, levels=10, colors='white',
-                linewidths=0.5, alpha=0.3)
+    # ========================================================================
+
+    # Apply change of variables formula
+    # log p(rho, l) = log p(xi_rho, xi_l) - log|det J|
+    # For logit: log|dxi/drho| = log(1/(rho(1-rho)))
+    # For exponential: log|dxi/dl| = log(1/l)
+    log_jacobian = np.log(1.0 / (rho_grid * (1.0 - rho_grid))) + np.log(1.0 / l_grid)
+    log_post_original = log_post_grid - log_jacobian
+
+    # Normalize for plotting
+    log_post_original_norm = log_post_original - np.nanmax(log_post_original)
+    post_original_norm = np.exp(log_post_original_norm)
+
+    # Determine plot limits
+    rho_min, rho_max = rho_grid.min(), rho_grid.max()
+    l_min, l_max = l_grid.min(), l_grid.max()
+
+    fig2, ax2 = get_2d_despined_figure(
+        plot_limits=([rho_min, rho_max], [l_min, l_max]),
+        figsize=(4., 4.),
+        axes_label=(r'\rho', r'l'),
+        equal_axes=False,
+        keep_ticks=True
+    )
+
+    # Plot contours
+    ax2.contour(rho_grid, l_grid, post_original_norm, levels=20,
+                zorder=1, alpha=0.6, cmap=cmap)
 
     # Convert samples to original space
     rwm_rho = 1.0 / (1.0 + np.exp(-rwm_samples[:, 0]))
@@ -379,31 +427,26 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
     zzs_rho = 1.0 / (1.0 + np.exp(-zzs_samples[:, 0]))
     zzs_l = np.exp(zzs_samples[:, 1])
 
-    ax2.scatter(rwm_rho[::5], rwm_l[::5], c='red', s=10, alpha=0.5, label='RWM samples')
-    ax2.scatter(zzs_rho[::5], zzs_l[::5], c='cyan', s=10, alpha=0.5, label='ZZS samples')
-    ax2.scatter([TRUE_RHO], [TRUE_L], c='white', s=100, marker='*',
-                edgecolors='black', linewidths=1.5, label='True value', zorder=10)
+    ax2.scatter(rwm_rho[::5], rwm_l[::5], c='red', s=10, alpha=0.5,
+                label='RWM', zorder=2)
+    ax2.scatter(zzs_rho[::5], zzs_l[::5], c='cyan', s=10, alpha=0.5,
+                label='ZZS', zorder=2)
+    ax2.scatter([TRUE_RHO], [TRUE_L], c='black', s=100, marker='*',
+                edgecolors='white', linewidths=1.5, label='True', zorder=10)
 
-    ax2.set_xlabel(r'$\rho$', fontsize=12)
-    ax2.set_ylabel(r'$l$', fontsize=12)
-    ax2.set_title('Posterior in Original Space', fontsize=14, fontweight='bold')
-    ax2.legend(loc='upper right')
-    ax2.grid(True, alpha=0.3)
-    plt.colorbar(contour2, ax=ax2, label='Normalized Posterior')
-
-    plt.tight_layout()
+    ax2.legend(loc='upper right', frameon=False)
 
     # Save
-    os.makedirs(FIG_DIR, exist_ok=True)
-    fig_path = os.path.join(FIG_DIR, 'posterior_2d.png')
-    plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+    fig_path = os.path.join(FIG_DIR, 'posterior_2d_original.pdf')
+    fig2.savefig(fig_path, bbox_inches='tight')
     print(f"  ✓ Saved figure: {fig_path}")
+    plt.close(fig2)
 
-    return fig
+    return None
 
 
 def plot_marginals(rwm_samples, zzs_samples, xi_rho_true, xi_l_true):
-    """Plot marginal distributions."""
+    """Plot marginal distributions - creates separate PDF figures."""
     print("=" * 70)
     print("Creating marginal plots...")
     print("=" * 70)
@@ -414,86 +457,103 @@ def plot_marginals(rwm_samples, zzs_samples, xi_rho_true, xi_l_true):
     zzs_rho = 1.0 / (1.0 + np.exp(-zzs_samples[:, 0]))
     zzs_l = np.exp(zzs_samples[:, 1])
 
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    os.makedirs(FIG_DIR, exist_ok=True)
 
-    # Marginal for rho
-    ax1 = axes[0, 0]
+    # ========================================================================
+    # Marginal histogram for rho
+    # ========================================================================
+    fig1, ax1 = plt.subplots(1, 1, figsize=(4., 3.))
     ax1.hist(rwm_rho, bins=30, alpha=0.5, density=True, label='RWM', color='red')
     ax1.hist(zzs_rho, bins=30, alpha=0.5, density=True, label='ZZS', color='cyan')
-    ax1.axvline(TRUE_RHO, color='black', linestyle='--', linewidth=2, label='True value')
-    ax1.set_xlabel(r'$\rho$', fontsize=12)
-    ax1.set_ylabel('Density', fontsize=12)
-    ax1.set_title(r'Marginal Distribution of $\rho$', fontsize=12, fontweight='bold')
-    ax1.legend()
-    ax1.grid(True, alpha=0.3)
+    ax1.axvline(TRUE_RHO, color='black', linestyle='--', linewidth=2, label='True')
+    ax1.set_xlabel(r'$\rho$')
+    ax1.set_ylabel('Density')
+    ax1.legend(frameon=False)
+    sns.despine()
 
-    # Marginal for l
-    ax2 = axes[0, 1]
+    fig_path = os.path.join(FIG_DIR, 'marginal_rho_hist.pdf')
+    fig1.savefig(fig_path, bbox_inches='tight')
+    print(f"  ✓ Saved figure: {fig_path}")
+    plt.close(fig1)
+
+    # ========================================================================
+    # Marginal histogram for l
+    # ========================================================================
+    fig2, ax2 = plt.subplots(1, 1, figsize=(4., 3.))
     ax2.hist(rwm_l, bins=30, alpha=0.5, density=True, label='RWM', color='red')
     ax2.hist(zzs_l, bins=30, alpha=0.5, density=True, label='ZZS', color='cyan')
-    ax2.axvline(TRUE_L, color='black', linestyle='--', linewidth=2, label='True value')
-    ax2.set_xlabel(r'$l$', fontsize=12)
-    ax2.set_ylabel('Density', fontsize=12)
-    ax2.set_title(r'Marginal Distribution of $l$', fontsize=12, fontweight='bold')
-    ax2.legend()
-    ax2.grid(True, alpha=0.3)
+    ax2.axvline(TRUE_L, color='black', linestyle='--', linewidth=2, label='True')
+    ax2.set_xlabel(r'$l$')
+    ax2.set_ylabel('Density')
+    ax2.legend(frameon=False)
+    sns.despine()
 
+    fig_path = os.path.join(FIG_DIR, 'marginal_l_hist.pdf')
+    fig2.savefig(fig_path, bbox_inches='tight')
+    print(f"  ✓ Saved figure: {fig_path}")
+    plt.close(fig2)
+
+    # ========================================================================
     # KDE for rho
-    ax3 = axes[1, 0]
+    # ========================================================================
+    fig3, ax3 = plt.subplots(1, 1, figsize=(4., 3.))
     rho_grid = np.linspace(0, 1, 200)
     try:
         kde_rwm_rho = gaussian_kde(rwm_rho)
-        ax3.plot(rho_grid, kde_rwm_rho(rho_grid), label='RWM (KDE)', color='red', linewidth=2)
+        ax3.plot(rho_grid, kde_rwm_rho(rho_grid), label='RWM', color='red', linewidth=2)
     except:
         pass
     try:
         kde_zzs_rho = gaussian_kde(zzs_rho)
-        ax3.plot(rho_grid, kde_zzs_rho(rho_grid), label='ZZS (KDE)', color='cyan', linewidth=2)
+        ax3.plot(rho_grid, kde_zzs_rho(rho_grid), label='ZZS', color='cyan', linewidth=2)
     except:
         pass
-    ax3.axvline(TRUE_RHO, color='black', linestyle='--', linewidth=2, label='True value')
-    ax3.set_xlabel(r'$\rho$', fontsize=12)
-    ax3.set_ylabel('Density', fontsize=12)
-    ax3.set_title(r'KDE of $\rho$', fontsize=12, fontweight='bold')
-    ax3.legend()
-    ax3.grid(True, alpha=0.3)
+    ax3.axvline(TRUE_RHO, color='black', linestyle='--', linewidth=2, label='True')
+    ax3.set_xlabel(r'$\rho$')
+    ax3.set_ylabel('Density')
+    ax3.legend(frameon=False)
+    sns.despine()
 
+    fig_path = os.path.join(FIG_DIR, 'marginal_rho_kde.pdf')
+    fig3.savefig(fig_path, bbox_inches='tight')
+    print(f"  ✓ Saved figure: {fig_path}")
+    plt.close(fig3)
+
+    # ========================================================================
     # KDE for l
-    ax4 = axes[1, 1]
+    # ========================================================================
+    fig4, ax4 = plt.subplots(1, 1, figsize=(4., 3.))
     l_grid = np.linspace(0.5, 2.5, 200)
     try:
         kde_rwm_l = gaussian_kde(rwm_l)
-        ax4.plot(l_grid, kde_rwm_l(l_grid), label='RWM (KDE)', color='red', linewidth=2)
+        ax4.plot(l_grid, kde_rwm_l(l_grid), label='RWM', color='red', linewidth=2)
     except:
         pass
     try:
         kde_zzs_l = gaussian_kde(zzs_l)
-        ax4.plot(l_grid, kde_zzs_l(l_grid), label='ZZS (KDE)', color='cyan', linewidth=2)
+        ax4.plot(l_grid, kde_zzs_l(l_grid), label='ZZS', color='cyan', linewidth=2)
     except:
         pass
-    ax4.axvline(TRUE_L, color='black', linestyle='--', linewidth=2, label='True value')
-    ax4.set_xlabel(r'$l$', fontsize=12)
-    ax4.set_ylabel('Density', fontsize=12)
-    ax4.set_title(r'KDE of $l$', fontsize=12, fontweight='bold')
-    ax4.legend()
-    ax4.grid(True, alpha=0.3)
+    ax4.axvline(TRUE_L, color='black', linestyle='--', linewidth=2, label='True')
+    ax4.set_xlabel(r'$l$')
+    ax4.set_ylabel('Density')
+    ax4.legend(frameon=False)
+    sns.despine()
 
-    plt.tight_layout()
-
-    # Save
-    fig_path = os.path.join(FIG_DIR, 'marginals.png')
-    plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+    fig_path = os.path.join(FIG_DIR, 'marginal_l_kde.pdf')
+    fig4.savefig(fig_path, bbox_inches='tight')
     print(f"  ✓ Saved figure: {fig_path}")
+    plt.close(fig4)
 
-    return fig
+    return None
 
 
 def plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
                                   rwm_samples, zzs_samples,
                                   xi_rho_true, xi_l_true):
-    """Plot 2D posterior grid without requiring both samplers."""
+    """Plot 2D posterior grid without requiring both samplers - creates separate PDF figures."""
     print("=" * 70)
-    print("Creating 2D posterior plot (grid only)...")
+    print("Creating 2D posterior plots (grid only)...")
     print("=" * 70)
 
     # Convert transformed space to original space for labeling
@@ -504,69 +564,107 @@ def plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
     log_post_norm = log_post_grid - np.max(log_post_grid)
     post_norm = np.exp(log_post_norm)
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    # Define colormap (using rocket colormap as in plot_pdf_contours)
+    cmap = sns.color_palette('rocket', as_cmap=True)
 
+    os.makedirs(FIG_DIR, exist_ok=True)
+
+    # ========================================================================
     # Plot 1: Transformed space (xi_rho, xi_l)
-    ax1 = axes[0]
-    contour = ax1.contourf(xi_rho_grid, xi_l_grid, post_norm, levels=20, cmap='viridis')
-    ax1.contour(xi_rho_grid, xi_l_grid, post_norm, levels=10, colors='white',
-                linewidths=0.5, alpha=0.3)
+    # ========================================================================
+
+    # Determine plot limits
+    xi_rho_min, xi_rho_max = xi_rho_grid.min(), xi_rho_grid.max()
+    xi_l_min, xi_l_max = xi_l_grid.min(), xi_l_grid.max()
+
+    fig1, ax1 = get_2d_despined_figure(
+        plot_limits=([xi_rho_min, xi_rho_max], [xi_l_min, xi_l_max]),
+        figsize=(4., 4.),
+        axes_label=(r'\xi_\rho', r'\xi_l'),
+        equal_axes=False,
+        keep_ticks=True
+    )
+
+    # Plot contours with the same style as plot_pdf_contours
+    ax1.contour(xi_rho_grid, xi_l_grid, post_norm, levels=20,
+                zorder=1, alpha=0.6, cmap=cmap)
 
     # Plot samples if available
     if rwm_samples is not None:
         ax1.scatter(rwm_samples[::5, 0], rwm_samples[::5, 1], c='red', s=10, alpha=0.5,
-                    label='RWM samples')
+                    label='RWM', zorder=2)
     if zzs_samples is not None:
         ax1.scatter(zzs_samples[::5, 0], zzs_samples[::5, 1], c='cyan', s=10, alpha=0.5,
-                    label='ZZS samples')
+                    label='ZZS', zorder=2)
 
     # True value
-    ax1.scatter([xi_rho_true], [xi_l_true], c='white', s=100, marker='*',
-                edgecolors='black', linewidths=1.5, label='True value', zorder=10)
+    ax1.scatter([xi_rho_true], [xi_l_true], c='black', s=100, marker='*',
+                edgecolors='white', linewidths=1.5, label='True', zorder=10)
 
-    ax1.set_xlabel(r'$\xi_\rho$ (transformed rho)', fontsize=12)
-    ax1.set_ylabel(r'$\xi_l$ (transformed l)', fontsize=12)
-    ax1.set_title('Posterior in Transformed Space', fontsize=14, fontweight='bold')
-    ax1.legend(loc='upper right')
-    ax1.grid(True, alpha=0.3)
-    plt.colorbar(contour, ax=ax1, label='Normalized Posterior')
+    ax1.legend(loc='upper right', frameon=False)
 
+    # Save
+    fig_path = os.path.join(FIG_DIR, 'posterior_2d_transformed.pdf')
+    fig1.savefig(fig_path, bbox_inches='tight')
+    print(f"  ✓ Saved figure: {fig_path}")
+    plt.close(fig1)
+
+    # ========================================================================
     # Plot 2: Original space (rho, l)
-    ax2 = axes[1]
-    contour2 = ax2.contourf(rho_grid, l_grid, post_norm, levels=20, cmap='viridis')
-    ax2.contour(rho_grid, l_grid, post_norm, levels=10, colors='white',
-                linewidths=0.5, alpha=0.3)
+    # ========================================================================
+
+    # Apply change of variables formula
+    # log p(rho, l) = log p(xi_rho, xi_l) - log|det J|
+    # For logit: log|dxi/drho| = log(1/(rho(1-rho)))
+    # For exponential: log|dxi/dl| = log(1/l)
+    log_jacobian = np.log(1.0 / (rho_grid * (1.0 - rho_grid))) + np.log(1.0 / l_grid)
+    log_post_original = log_post_grid - log_jacobian
+
+    # Normalize for plotting
+    log_post_original_norm = log_post_original - np.nanmax(log_post_original)
+    post_original_norm = np.exp(log_post_original_norm)
+
+    # Determine plot limits
+    rho_min, rho_max = rho_grid.min(), rho_grid.max()
+    l_min, l_max = l_grid.min(), l_grid.max()
+
+    fig2, ax2 = get_2d_despined_figure(
+        plot_limits=([rho_min, rho_max], [l_min, l_max]),
+        figsize=(4., 4.),
+        axes_label=(r'\rho', r'l'),
+        equal_axes=False,
+        keep_ticks=True
+    )
+
+    # Plot contours
+    ax2.contour(rho_grid, l_grid, post_original_norm, levels=20,
+                zorder=1, alpha=0.6, cmap=cmap)
 
     # Convert samples to original space if available
     if rwm_samples is not None:
         rwm_rho = 1.0 / (1.0 + np.exp(-rwm_samples[:, 0]))
         rwm_l = np.exp(rwm_samples[:, 1])
-        ax2.scatter(rwm_rho[::5], rwm_l[::5], c='red', s=10, alpha=0.5, label='RWM samples')
+        ax2.scatter(rwm_rho[::5], rwm_l[::5], c='red', s=10, alpha=0.5,
+                    label='RWM', zorder=2)
 
     if zzs_samples is not None:
         zzs_rho = 1.0 / (1.0 + np.exp(-zzs_samples[:, 0]))
         zzs_l = np.exp(zzs_samples[:, 1])
-        ax2.scatter(zzs_rho[::5], zzs_l[::5], c='cyan', s=10, alpha=0.5, label='ZZS samples')
+        ax2.scatter(zzs_rho[::5], zzs_l[::5], c='cyan', s=10, alpha=0.5,
+                    label='ZZS', zorder=2)
 
-    ax2.scatter([TRUE_RHO], [TRUE_L], c='white', s=100, marker='*',
-                edgecolors='black', linewidths=1.5, label='True value', zorder=10)
+    ax2.scatter([TRUE_RHO], [TRUE_L], c='black', s=100, marker='*',
+                edgecolors='white', linewidths=1.5, label='True', zorder=10)
 
-    ax2.set_xlabel(r'$\rho$', fontsize=12)
-    ax2.set_ylabel(r'$l$', fontsize=12)
-    ax2.set_title('Posterior in Original Space', fontsize=14, fontweight='bold')
-    ax2.legend(loc='upper right')
-    ax2.grid(True, alpha=0.3)
-    plt.colorbar(contour2, ax=ax2, label='Normalized Posterior')
-
-    plt.tight_layout()
+    ax2.legend(loc='upper right', frameon=False)
 
     # Save
-    os.makedirs(FIG_DIR, exist_ok=True)
-    fig_path = os.path.join(FIG_DIR, 'posterior_2d.png')
-    plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+    fig_path = os.path.join(FIG_DIR, 'posterior_2d_original.pdf')
+    fig2.savefig(fig_path, bbox_inches='tight')
     print(f"  ✓ Saved figure: {fig_path}")
+    plt.close(fig2)
 
-    return fig
+    return None
 
 
 def print_summary_statistics(rwm_samples, zzs_samples):
@@ -620,6 +718,15 @@ def main():
 
     # Get configuration
     config = get_config()
+
+    # # write config to yaml file for record-keeping
+    # from pdmp.loader import numpy_to_yaml
+    # import yaml
+    # os.makedirs(DATA_DIR, exist_ok=True)
+    # config_path = os.path.join(DATA_DIR, "config.yaml")
+    # with open(config_path, 'w') as f:
+    #     yaml.dump(numpy_to_yaml(config), f)
+    # print(f"✓ Configuration saved to: {config_path}")
 
     # Generate or load observations
     generate_observations(config, rng, force=args.force or args.force_obs)
