@@ -63,7 +63,12 @@ examples/jax-fem/figures
 *data
 *_data
 *figures
+*.log
 
 # inverse example
 examples/inverse_problem/constant_field/model_params
 examples/inverse_problem/constant_field/observations.dat
+examples/inverse_problem/exponential_recovery_field/GRID_MODE_GUIDE.md
+examples/inverse_problem/exponential_recovery_field/QUICK_REFERENCE.md
+examples/inverse_problem/exponential_recovery_field/SETUP_COMPLETE.md
+examples/inverse_problem/exponential_recovery_field/samples

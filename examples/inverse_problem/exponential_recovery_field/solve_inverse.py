@@ -1,0 +1,709 @@
+#!/usr/bin/env python3
+"""Inverse problem with ExponentialRecoveryField and transformed likelihood.
+
+This script:
+1. Generates synthetic observations (or loads existing ones)
+2. Sets up an inverse problem with:
+   - ExponentialRecoveryField with parameters [rho, l]
+   - Transformed likelihood with LOGIT for rho and EXPONENTIAL for l
+3. Evaluates and plots the 2D unnormalized posterior
+4. Samples using Random Walk Metropolis (RWM)
+5. Samples using ZigZag Sampler (ZZS)
+6. Stores all results to disk for quick re-plotting
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend
+import os
+import argparse
+from scipy.stats import gaussian_kde
+from typing import Dict, Any
+
+from pdmp.distributions import LOGIT, EXPONENTIAL, COMPOSITE
+from pdmp.loader import get_target, get_sampler, get_surrogate
+from pdmp.plotting_utils import get_2d_despined_figure
+from pdmp.forward_model import JaxFemModel
+from pdmp.utils import central_moment_from_skeleton, sample_equidistant_along_path
+
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+DATA_DIR = "./data"
+SAMPLES_DIR = "./samples"
+FIG_DIR = "./figures"
+
+# True parameter values for generating observations
+# rho in (0, 1), l > 0 (e.g., 0.5 to 2.0)
+TRUE_RHO = 0.7
+TRUE_L = 1.2
+
+# Noise level for observations
+SIGMA_OBS = 0.01
+
+# Sampling parameters (start with coarse for testing)
+N_GRID_RHO = 30  # Grid points for rho
+N_GRID_L = 30    # Grid points for l
+N_RWM_SAMPLES = 50  # RWM samples
+T_MAX_ZZS = 10.0     # ZigZag max time
+
+# ============================================================================
+# Enable/Disable Samplers (set to False to skip sampling)
+# ============================================================================
+RUN_RWM = False      # Set to True to run Random Walk Metropolis
+RUN_ZIGZAG = False   # Set to True to run ZigZag sampler
+
+# File names
+OBS_FILE = os.path.join(DATA_DIR, "observations.dat")
+GRID_FILE = os.path.join(DATA_DIR, "posterior_grid.npz")
+RWM_FILE = os.path.join(SAMPLES_DIR, "rwm_samples.npy")
+ZZS_FILE = os.path.join(SAMPLES_DIR, "zzs_samples.npz")
+
+
+# ============================================================================
+# Configuration Dictionaries
+# ============================================================================
+
+def get_config():
+    """Get problem configuration."""
+    config = {
+        'name': 'BayesianInverse',
+        'model': {
+            'name': 'JaxFem',
+            'd_x': 1.0,
+            'd_y': 1.0,
+            'd_z': 2.5,
+            'h': 0.25,
+            'nu': 0.3,
+            'field': {
+                'name': 'JaxExponentialRecoveryField',
+                'f_infinity': 1.0,
+                'idx': 0,  # Recovery along x-direction
+                'coefficient_distribution': {
+                    'name': 'MultivariateNormal',
+                    'mean': [0.5, 1.0],  # [rho, l]
+                    'cov': [[0.1, 0.0], [0.0, 0.2]]
+                }
+            }
+        },
+        'prior': {
+            'name': 'FromField'
+        },
+        'likelihood': {
+            'name': 'TransformedLikelihood',
+            'transformation': COMPOSITE,
+            'transformations': [
+                {'type': LOGIT, 'a': 0.0, 'b': 1.0},  # For rho (bounded to [0, 1])
+                EXPONENTIAL,  # For l (positive)
+            ],
+            'indices': [np.array([0]), np.array([1])],
+            'likelihood': {
+                'name': 'GaussianLikelihood',
+                'sigma': SIGMA_OBS,
+                'observation_file': OBS_FILE
+            }
+        }
+    }
+    return config
+
+
+# ============================================================================
+# Data Generation
+# ============================================================================
+
+def generate_observations(config: Dict[str, Any], rng: np.random.Generator, force: bool = False):
+    """Generate synthetic observations from true parameters."""
+    if os.path.exists(OBS_FILE) and not force:
+        print(f"✓ Observations already exist: {OBS_FILE}")
+        return
+
+    print("=" * 70)
+    print("Generating synthetic observations...")
+    print("=" * 70)
+
+    # Create field and model using the same approach as the loader
+    from pdmp.random_field import get_jax_field
+    from pdmp.forward_model import get_model
+
+    # Get the field first
+    field_cfg = config['model']['field']
+    field = get_jax_field(field_cfg, rng=rng)
+    print(f"  Field created: dim={field.dim}")
+
+    # Create model WITH the field
+    model = get_model(config['model'], field=field)
+
+    print(f"  Model input dim: {model.get_dim_in()}")
+    print(f"  Model output dim: {model.get_dim_out()}")
+
+    # Verify field is attached
+    if model.field is None:
+        raise RuntimeError("Field was not properly attached to model!")
+    print(f"  ✓ Field properly attached to model")
+
+    # True parameters in original space [rho, l]
+    theta_true_original = np.array([TRUE_RHO, TRUE_L])
+
+    print(f"  True parameters: rho={TRUE_RHO}, l={TRUE_L}")
+
+    # Generate observations (model works directly with field coefficients [rho, l])
+    y_obs = model.eval(theta_true_original).copy()  # Make a writable copy
+    y_obs += rng.standard_normal(model.get_dim_out()) * SIGMA_OBS
+
+    # Save observations
+    os.makedirs(DATA_DIR, exist_ok=True)
+    np.savetxt(OBS_FILE, y_obs.reshape(1, -1))
+
+    print(f"  ✓ Created observation file: {OBS_FILE}")
+    print(f"  Observations shape: {y_obs.shape}")
+    print(f"  Observations range: [{y_obs.min():.6f}, {y_obs.max():.6f}]")
+
+
+# ============================================================================
+# Posterior Evaluation
+# ============================================================================
+
+def evaluate_posterior_grid(target, rng: np.random.Generator, force: bool = False):
+    """Evaluate log-posterior on a 2D grid."""
+    if os.path.exists(GRID_FILE) and not force:
+        print(f"✓ Loading posterior grid from: {GRID_FILE}")
+        data = np.load(GRID_FILE)
+        return data['xi_rho_grid'], data['xi_l_grid'], data['log_post_grid']
+
+    print("=" * 70)
+    print("Evaluating posterior on 2D grid...")
+    print("=" * 70)
+
+    # Grid in transformed space
+    # rho in [0, 1] -> xi_rho in [-inf, inf], focus on [-3, 3] (covers ~0.05 to 0.95)
+    # l in (0, inf) -> xi_l in [-inf, inf], focus on [-1, 1.5] (covers ~0.37 to 4.48)
+    xi_rho_min, xi_rho_max = 0.5, 0.9
+    xi_l_min, xi_l_max = -0.25, 2.25
+
+    xi_rho_vals = np.linspace(xi_rho_min, xi_rho_max, N_GRID_RHO)
+    xi_l_vals = np.linspace(xi_l_min, xi_l_max, N_GRID_L)
+    xi_rho_grid, xi_l_grid = np.meshgrid(xi_rho_vals, xi_l_vals)
+
+    # Evaluate log-posterior
+    log_post_grid = np.zeros_like(xi_rho_grid)
+
+    print(f"  Grid size: {N_GRID_RHO} × {N_GRID_L} = {N_GRID_RHO * N_GRID_L} points")
+    print(f"  xi_rho range: [{xi_rho_min}, {xi_rho_max}]")
+    print(f"  xi_l range: [{xi_l_min}, {xi_l_max}]")
+
+    for i in range(N_GRID_RHO):
+        for j in range(N_GRID_L):
+            xi = np.array([xi_rho_grid[j, i], xi_l_grid[j, i]])
+            try:
+                log_post_grid[j, i] = target.log_density(xi)
+            except Exception as e:
+                print(f"    Warning: Error at ({xi[0]:.2f}, {xi[1]:.2f}): {e}")
+                log_post_grid[j, i] = -np.inf
+
+        if (i + 1) % 5 == 0:
+            print(f"  Progress: {i + 1}/{N_GRID_RHO}")
+
+    # Save grid
+    os.makedirs(DATA_DIR, exist_ok=True)
+    np.savez(GRID_FILE, xi_rho_grid=xi_rho_grid, xi_l_grid=xi_l_grid,
+             log_post_grid=log_post_grid)
+
+    print(f"  ✓ Saved posterior grid to: {GRID_FILE}")
+    print(f"  Log-posterior range: [{np.max(log_post_grid[np.isfinite(log_post_grid)]):.2f}, "
+          f"{np.min(log_post_grid[np.isfinite(log_post_grid)]):.2f}]")
+
+    return xi_rho_grid, xi_l_grid, log_post_grid
+
+
+# ============================================================================
+# Sampling with RWM
+# ============================================================================
+
+def run_rwm_sampling(target, rng: np.random.Generator, force: bool = False):
+    """Run Random Walk Metropolis sampling."""
+    if os.path.exists(RWM_FILE) and not force:
+        print(f"✓ Loading RWM samples from: {RWM_FILE}")
+        return np.load(RWM_FILE)
+
+    print("=" * 70)
+    print("Running Random Walk Metropolis sampling...")
+    print("=" * 70)
+
+    # Initial point: prior mean in transformed space
+    # rho=0.5 -> xi_rho=0, l=1.0 -> xi_l=0
+    x_0 = np.array([0.0, 0.0])
+
+    rwm_config = {
+        'name': 'RandomWalkMetropolis',
+        'sigma': 0.15,  # Step size
+        'x_0': x_0,
+        'n_samples': N_RWM_SAMPLES
+    }
+
+    print(f"  Number of samples: {N_RWM_SAMPLES}")
+    print(f"  Initial point: {x_0}")
+    print(f"  Step size: {rwm_config['sigma']}")
+
+    sampler = get_sampler(rwm_config, target=target, rng=rng)
+    sampler.run()
+    samples = sampler.chain
+
+    # Save samples
+    os.makedirs(SAMPLES_DIR, exist_ok=True)
+    np.save(RWM_FILE, samples)
+
+    print(f"  ✓ Saved RWM samples to: {RWM_FILE}")
+    print(f"  Samples shape: {samples.shape}")
+    print(f"  Acceptance rate: {sampler._n_accept / sampler._n_samples:.3f}")
+
+    return samples
+
+
+# ============================================================================
+# Sampling with ZigZag
+# ============================================================================
+
+def run_zigzag_sampling(target, rng: np.random.Generator, force: bool = False):
+    """Run ZigZag sampling."""
+    if os.path.exists(ZZS_FILE) and not force:
+        print(f"✓ Loading ZigZag samples from: {ZZS_FILE}")
+        data = np.load(ZZS_FILE)
+        return data['positions'], data['velocities'], data['times'], data['samples']
+
+    print("=" * 70)
+    print("Running ZigZag sampling...")
+    print("=" * 70)
+
+    # Initial point
+    x_0 = np.array([0.0, 0.0])
+
+    # Surrogate (Laplace approximation at mode)
+    surrogate_config = {
+        'name': 'Laplace',
+        # 'mean': [0.0, 0.0],
+        # 'cov': [[1.0, 0.0], [0.0, 1.0]]
+    }
+
+    zig_zag_config = {
+        'name': 'ZigZag',
+        't_max': T_MAX_ZZS,
+        'dt': 0.01,
+        'offset_shrinkage': 0.01,
+        'x_0': x_0
+    }
+
+    print(f"  Max time: {T_MAX_ZZS}")
+    print(f"  Time step: {zig_zag_config['dt']}")
+    print(f"  Initial point: {x_0}")
+
+    surrogate = get_surrogate(surrogate_config, target=target, rng=rng)
+    zig_zag = get_sampler(zig_zag_config, target=target, rng=rng, surrogate=surrogate)
+    zig_zag.run()
+
+    pos = zig_zag.positions
+    vel = zig_zag.velocities
+    times = zig_zag.times
+
+    # Sample equidistantly along path
+    n_samples_zzs = 500
+    samples_zzs = sample_equidistant_along_path(pos, vel, times, N=n_samples_zzs)
+
+    # Save
+    os.makedirs(SAMPLES_DIR, exist_ok=True)
+    np.savez(ZZS_FILE, positions=pos, velocities=vel, times=times, samples=samples_zzs)
+
+    print(f"  ✓ Saved ZigZag samples to: {ZZS_FILE}")
+    print(f"  Skeleton points: {len(times)}")
+    print(f"  Equidistant samples: {n_samples_zzs}")
+
+    return pos, vel, times, samples_zzs
+
+
+# ============================================================================
+# Plotting
+# ============================================================================
+
+def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
+                      rwm_samples, zzs_samples,
+                      xi_rho_true, xi_l_true):
+    """Plot 2D posterior with samples."""
+    print("=" * 70)
+    print("Creating 2D posterior plot...")
+    print("=" * 70)
+
+    # Convert transformed space to original space for labeling
+    rho_grid = 1.0 / (1.0 + np.exp(-xi_rho_grid))
+    l_grid = np.exp(xi_l_grid)
+
+    # Normalize log-posterior for plotting
+    log_post_norm = log_post_grid - np.max(log_post_grid)
+    post_norm = np.exp(log_post_norm)
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+
+    # Plot 1: Transformed space (xi_rho, xi_l)
+    ax1 = axes[0]
+    contour = ax1.contourf(xi_rho_grid, xi_l_grid, post_norm, levels=20, cmap='viridis')
+    ax1.contour(xi_rho_grid, xi_l_grid, post_norm, levels=10, colors='white',
+                linewidths=0.5, alpha=0.3)
+
+    # Plot samples
+    ax1.scatter(rwm_samples[::5, 0], rwm_samples[::5, 1], c='red', s=10, alpha=0.5,
+                label='RWM samples')
+    ax1.scatter(zzs_samples[::5, 0], zzs_samples[::5, 1], c='cyan', s=10, alpha=0.5,
+                label='ZZS samples')
+
+    # True value
+    ax1.scatter([xi_rho_true], [xi_l_true], c='white', s=100, marker='*',
+                edgecolors='black', linewidths=1.5, label='True value', zorder=10)
+
+    ax1.set_xlabel(r'$\xi_\rho$ (transformed rho)', fontsize=12)
+    ax1.set_ylabel(r'$\xi_l$ (transformed l)', fontsize=12)
+    ax1.set_title('Posterior in Transformed Space', fontsize=14, fontweight='bold')
+    ax1.legend(loc='upper right')
+    ax1.grid(True, alpha=0.3)
+    plt.colorbar(contour, ax=ax1, label='Normalized Posterior')
+
+    # Plot 2: Original space (rho, l)
+    ax2 = axes[1]
+    contour2 = ax2.contourf(rho_grid, l_grid, post_norm, levels=20, cmap='viridis')
+    ax2.contour(rho_grid, l_grid, post_norm, levels=10, colors='white',
+                linewidths=0.5, alpha=0.3)
+
+    # Convert samples to original space
+    rwm_rho = 1.0 / (1.0 + np.exp(-rwm_samples[:, 0]))
+    rwm_l = np.exp(rwm_samples[:, 1])
+    zzs_rho = 1.0 / (1.0 + np.exp(-zzs_samples[:, 0]))
+    zzs_l = np.exp(zzs_samples[:, 1])
+
+    ax2.scatter(rwm_rho[::5], rwm_l[::5], c='red', s=10, alpha=0.5, label='RWM samples')
+    ax2.scatter(zzs_rho[::5], zzs_l[::5], c='cyan', s=10, alpha=0.5, label='ZZS samples')
+    ax2.scatter([TRUE_RHO], [TRUE_L], c='white', s=100, marker='*',
+                edgecolors='black', linewidths=1.5, label='True value', zorder=10)
+
+    ax2.set_xlabel(r'$\rho$', fontsize=12)
+    ax2.set_ylabel(r'$l$', fontsize=12)
+    ax2.set_title('Posterior in Original Space', fontsize=14, fontweight='bold')
+    ax2.legend(loc='upper right')
+    ax2.grid(True, alpha=0.3)
+    plt.colorbar(contour2, ax=ax2, label='Normalized Posterior')
+
+    plt.tight_layout()
+
+    # Save
+    os.makedirs(FIG_DIR, exist_ok=True)
+    fig_path = os.path.join(FIG_DIR, 'posterior_2d.png')
+    plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+    print(f"  ✓ Saved figure: {fig_path}")
+
+    return fig
+
+
+def plot_marginals(rwm_samples, zzs_samples, xi_rho_true, xi_l_true):
+    """Plot marginal distributions."""
+    print("=" * 70)
+    print("Creating marginal plots...")
+    print("=" * 70)
+
+    # Convert to original space
+    rwm_rho = 1.0 / (1.0 + np.exp(-rwm_samples[:, 0]))
+    rwm_l = np.exp(rwm_samples[:, 1])
+    zzs_rho = 1.0 / (1.0 + np.exp(-zzs_samples[:, 0]))
+    zzs_l = np.exp(zzs_samples[:, 1])
+
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+
+    # Marginal for rho
+    ax1 = axes[0, 0]
+    ax1.hist(rwm_rho, bins=30, alpha=0.5, density=True, label='RWM', color='red')
+    ax1.hist(zzs_rho, bins=30, alpha=0.5, density=True, label='ZZS', color='cyan')
+    ax1.axvline(TRUE_RHO, color='black', linestyle='--', linewidth=2, label='True value')
+    ax1.set_xlabel(r'$\rho$', fontsize=12)
+    ax1.set_ylabel('Density', fontsize=12)
+    ax1.set_title(r'Marginal Distribution of $\rho$', fontsize=12, fontweight='bold')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+
+    # Marginal for l
+    ax2 = axes[0, 1]
+    ax2.hist(rwm_l, bins=30, alpha=0.5, density=True, label='RWM', color='red')
+    ax2.hist(zzs_l, bins=30, alpha=0.5, density=True, label='ZZS', color='cyan')
+    ax2.axvline(TRUE_L, color='black', linestyle='--', linewidth=2, label='True value')
+    ax2.set_xlabel(r'$l$', fontsize=12)
+    ax2.set_ylabel('Density', fontsize=12)
+    ax2.set_title(r'Marginal Distribution of $l$', fontsize=12, fontweight='bold')
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+
+    # KDE for rho
+    ax3 = axes[1, 0]
+    rho_grid = np.linspace(0, 1, 200)
+    try:
+        kde_rwm_rho = gaussian_kde(rwm_rho)
+        ax3.plot(rho_grid, kde_rwm_rho(rho_grid), label='RWM (KDE)', color='red', linewidth=2)
+    except:
+        pass
+    try:
+        kde_zzs_rho = gaussian_kde(zzs_rho)
+        ax3.plot(rho_grid, kde_zzs_rho(rho_grid), label='ZZS (KDE)', color='cyan', linewidth=2)
+    except:
+        pass
+    ax3.axvline(TRUE_RHO, color='black', linestyle='--', linewidth=2, label='True value')
+    ax3.set_xlabel(r'$\rho$', fontsize=12)
+    ax3.set_ylabel('Density', fontsize=12)
+    ax3.set_title(r'KDE of $\rho$', fontsize=12, fontweight='bold')
+    ax3.legend()
+    ax3.grid(True, alpha=0.3)
+
+    # KDE for l
+    ax4 = axes[1, 1]
+    l_grid = np.linspace(0.5, 2.5, 200)
+    try:
+        kde_rwm_l = gaussian_kde(rwm_l)
+        ax4.plot(l_grid, kde_rwm_l(l_grid), label='RWM (KDE)', color='red', linewidth=2)
+    except:
+        pass
+    try:
+        kde_zzs_l = gaussian_kde(zzs_l)
+        ax4.plot(l_grid, kde_zzs_l(l_grid), label='ZZS (KDE)', color='cyan', linewidth=2)
+    except:
+        pass
+    ax4.axvline(TRUE_L, color='black', linestyle='--', linewidth=2, label='True value')
+    ax4.set_xlabel(r'$l$', fontsize=12)
+    ax4.set_ylabel('Density', fontsize=12)
+    ax4.set_title(r'KDE of $l$', fontsize=12, fontweight='bold')
+    ax4.legend()
+    ax4.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+
+    # Save
+    fig_path = os.path.join(FIG_DIR, 'marginals.png')
+    plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+    print(f"  ✓ Saved figure: {fig_path}")
+
+    return fig
+
+
+def plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
+                                  rwm_samples, zzs_samples,
+                                  xi_rho_true, xi_l_true):
+    """Plot 2D posterior grid without requiring both samplers."""
+    print("=" * 70)
+    print("Creating 2D posterior plot (grid only)...")
+    print("=" * 70)
+
+    # Convert transformed space to original space for labeling
+    rho_grid = 1.0 / (1.0 + np.exp(-xi_rho_grid))
+    l_grid = np.exp(xi_l_grid)
+
+    # Normalize log-posterior for plotting
+    log_post_norm = log_post_grid - np.max(log_post_grid)
+    post_norm = np.exp(log_post_norm)
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+
+    # Plot 1: Transformed space (xi_rho, xi_l)
+    ax1 = axes[0]
+    contour = ax1.contourf(xi_rho_grid, xi_l_grid, post_norm, levels=20, cmap='viridis')
+    ax1.contour(xi_rho_grid, xi_l_grid, post_norm, levels=10, colors='white',
+                linewidths=0.5, alpha=0.3)
+
+    # Plot samples if available
+    if rwm_samples is not None:
+        ax1.scatter(rwm_samples[::5, 0], rwm_samples[::5, 1], c='red', s=10, alpha=0.5,
+                    label='RWM samples')
+    if zzs_samples is not None:
+        ax1.scatter(zzs_samples[::5, 0], zzs_samples[::5, 1], c='cyan', s=10, alpha=0.5,
+                    label='ZZS samples')
+
+    # True value
+    ax1.scatter([xi_rho_true], [xi_l_true], c='white', s=100, marker='*',
+                edgecolors='black', linewidths=1.5, label='True value', zorder=10)
+
+    ax1.set_xlabel(r'$\xi_\rho$ (transformed rho)', fontsize=12)
+    ax1.set_ylabel(r'$\xi_l$ (transformed l)', fontsize=12)
+    ax1.set_title('Posterior in Transformed Space', fontsize=14, fontweight='bold')
+    ax1.legend(loc='upper right')
+    ax1.grid(True, alpha=0.3)
+    plt.colorbar(contour, ax=ax1, label='Normalized Posterior')
+
+    # Plot 2: Original space (rho, l)
+    ax2 = axes[1]
+    contour2 = ax2.contourf(rho_grid, l_grid, post_norm, levels=20, cmap='viridis')
+    ax2.contour(rho_grid, l_grid, post_norm, levels=10, colors='white',
+                linewidths=0.5, alpha=0.3)
+
+    # Convert samples to original space if available
+    if rwm_samples is not None:
+        rwm_rho = 1.0 / (1.0 + np.exp(-rwm_samples[:, 0]))
+        rwm_l = np.exp(rwm_samples[:, 1])
+        ax2.scatter(rwm_rho[::5], rwm_l[::5], c='red', s=10, alpha=0.5, label='RWM samples')
+
+    if zzs_samples is not None:
+        zzs_rho = 1.0 / (1.0 + np.exp(-zzs_samples[:, 0]))
+        zzs_l = np.exp(zzs_samples[:, 1])
+        ax2.scatter(zzs_rho[::5], zzs_l[::5], c='cyan', s=10, alpha=0.5, label='ZZS samples')
+
+    ax2.scatter([TRUE_RHO], [TRUE_L], c='white', s=100, marker='*',
+                edgecolors='black', linewidths=1.5, label='True value', zorder=10)
+
+    ax2.set_xlabel(r'$\rho$', fontsize=12)
+    ax2.set_ylabel(r'$l$', fontsize=12)
+    ax2.set_title('Posterior in Original Space', fontsize=14, fontweight='bold')
+    ax2.legend(loc='upper right')
+    ax2.grid(True, alpha=0.3)
+    plt.colorbar(contour2, ax=ax2, label='Normalized Posterior')
+
+    plt.tight_layout()
+
+    # Save
+    os.makedirs(FIG_DIR, exist_ok=True)
+    fig_path = os.path.join(FIG_DIR, 'posterior_2d.png')
+    plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+    print(f"  ✓ Saved figure: {fig_path}")
+
+    return fig
+
+
+def print_summary_statistics(rwm_samples, zzs_samples):
+    """Print summary statistics for the samples."""
+    print("=" * 70)
+    print("Summary Statistics")
+    print("=" * 70)
+
+    print(f"\nTrue values:")
+    print(f"  rho = {TRUE_RHO:.3f}")
+    print(f"  l   = {TRUE_L:.3f}")
+
+    if rwm_samples is not None:
+        # Convert to original space
+        rwm_rho = 1.0 / (1.0 + np.exp(-rwm_samples[:, 0]))
+        rwm_l = np.exp(rwm_samples[:, 1])
+
+        print(f"\nRWM estimates (mean ± std):")
+        print(f"  rho = {rwm_rho.mean():.3f} ± {rwm_rho.std():.3f}")
+        print(f"  l   = {rwm_l.mean():.3f} ± {rwm_l.std():.3f}")
+
+    if zzs_samples is not None:
+        # Convert to original space
+        zzs_rho = 1.0 / (1.0 + np.exp(-zzs_samples[:, 0]))
+        zzs_l = np.exp(zzs_samples[:, 1])
+
+        print(f"\nZZS estimates (mean ± std):")
+        print(f"  rho = {zzs_rho.mean():.3f} ± {zzs_rho.std():.3f}")
+        print(f"  l   = {zzs_l.mean():.3f} ± {zzs_l.std():.3f}")
+
+
+# ============================================================================
+# Main
+# ============================================================================
+
+def main():
+    """Main execution function."""
+    parser = argparse.ArgumentParser(description='Solve inverse problem with ExponentialRecoveryField')
+    parser.add_argument('--force', action='store_true',
+                        help='Force recomputation of all data')
+    parser.add_argument('--force-obs', action='store_true',
+                        help='Force regeneration of observations')
+    parser.add_argument('--force-grid', action='store_true',
+                        help='Force recomputation of posterior grid')
+    parser.add_argument('--force-samples', action='store_true',
+                        help='Force resampling')
+    args = parser.parse_args()
+
+    # Set up RNG
+    rng = np.random.default_rng(seed=42)
+
+    # Get configuration
+    config = get_config()
+
+    # Generate or load observations
+    generate_observations(config, rng, force=args.force or args.force_obs)
+
+    # Load target distribution
+    print("=" * 70)
+    print("Loading target distribution...")
+    print("=" * 70)
+    target = get_target(config, rng=rng)
+    print(f"  Target dimension: {target.dim}")
+    print("  ✓ Target loaded successfully")
+
+    # Evaluate posterior grid
+    xi_rho_grid, xi_l_grid, log_post_grid = evaluate_posterior_grid(
+        target, rng, force=args.force or args.force_grid
+    )
+
+    # True values in transformed space
+    xi_rho_true = np.log(TRUE_RHO / (1.0 - TRUE_RHO))
+    xi_l_true = np.log(TRUE_L)
+
+    # Conditionally run samplers
+    rwm_samples = None
+    zzs_samples = None
+
+    if RUN_RWM:
+        # Run RWM sampling
+        rwm_samples = run_rwm_sampling(target, rng, force=args.force or args.force_samples)
+    else:
+        print("=" * 70)
+        print("Skipping RWM sampling (RUN_RWM = False)")
+        print("=" * 70)
+
+    if RUN_ZIGZAG:
+        # Run ZigZag sampling
+        pos, vel, times, zzs_samples = run_zigzag_sampling(
+            target, rng, force=args.force or args.force_samples
+        )
+    else:
+        print("=" * 70)
+        print("Skipping ZigZag sampling (RUN_ZIGZAG = False)")
+        print("=" * 70)
+
+    # Plot results (only if we have samples)
+    if rwm_samples is not None and zzs_samples is not None:
+        plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
+                          rwm_samples, zzs_samples,
+                          xi_rho_true, xi_l_true)
+
+        plot_marginals(rwm_samples, zzs_samples, xi_rho_true, xi_l_true)
+
+        # Print summary statistics
+        print_summary_statistics(rwm_samples, zzs_samples)
+    elif rwm_samples is not None:
+        print("=" * 70)
+        print("Only RWM samples available - creating grid plot only")
+        print("=" * 70)
+        plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
+                                     rwm_samples, None,
+                                     xi_rho_true, xi_l_true)
+    elif zzs_samples is not None:
+        print("=" * 70)
+        print("Only ZigZag samples available - creating grid plot only")
+        print("=" * 70)
+        plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
+                                     None, zzs_samples,
+                                     xi_rho_true, xi_l_true)
+    else:
+        print("=" * 70)
+        print("No samples - creating grid-only plot")
+        print("=" * 70)
+        plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
+                                     None, None,
+                                     xi_rho_true, xi_l_true)
+
+    print("\n" + "=" * 70)
+    print("✓ All done! Figures saved to:", FIG_DIR)
+    print("=" * 70)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
