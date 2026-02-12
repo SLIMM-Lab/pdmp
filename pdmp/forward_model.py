@@ -803,7 +803,15 @@ class JaxFemModel(Model):
 
         # Optionally still write full-field VTK for debugging
         # Recompute with full field to save; this keeps eval() side-effects
-        param_field = theta * jnp.ones((self.problem.fe.num_cells, self.problem.fe.num_quads))
+        if self.field is None:
+            param_field = theta * jnp.ones((self.problem.fe.num_cells, self.problem.fe.num_quads))
+        else:
+            # Use field evaluation (same as in _eval_obs)
+            physical_quad_points = self.problem.physical_quad_points
+            quad_coords_flat = physical_quad_points.reshape(-1, physical_quad_points.shape[-1])
+            field_values_flat = self.field.evaluate(theta, quad_coords_flat)
+            param_field = field_values_flat.reshape(self.problem.fe.num_cells, self.problem.fe.num_quads)
+
         sol_list = self.fwd_pred([param_field])
         if save:
             data_dir = './data'
