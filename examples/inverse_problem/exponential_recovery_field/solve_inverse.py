@@ -52,9 +52,9 @@ N_GRID_L = 50    # Grid points for l
 N_RWM_SAMPLES = 50  # RWM samples
 T_MAX_ZZS = 10.0     # ZigZag max time
 
-# for testing
-N_GRID_RHO = 10  # Grid points for rho
-N_GRID_L = 10    # Grid points for l
+# # for testing
+# N_GRID_RHO = 10  # Grid points for rho
+# N_GRID_L = 10    # Grid points for l
 # ============================================================================
 # Enable/Disable Samplers (set to False to skip sampling)
 # ============================================================================
@@ -333,7 +333,7 @@ def run_zigzag_sampling(target, rng: np.random.Generator, force: bool = False):
 
 def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
                       rwm_samples, zzs_samples,
-                      xi_rho_true, xi_l_true):
+                      xi_rho_true, xi_l_true, target=None):
     """Plot 2D posterior with samples - creates separate PDF figures."""
     print("=" * 70)
     print("Creating 2D posterior plots...")
@@ -347,8 +347,24 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
     log_post_norm = log_post_grid - np.max(log_post_grid)
     post_norm = np.exp(log_post_norm)
 
-    # Define colormap (using rocket colormap as in plot_pdf_contours)
-    cmap = sns.color_palette('rocket', as_cmap=True)
+    # Evaluate prior on the grid if target is provided
+    log_prior_grid = None
+    if target is not None and hasattr(target, 'prior'):
+        log_prior_grid = np.zeros_like(log_post_grid)
+        for i in range(xi_rho_grid.shape[1]):
+            for j in range(xi_rho_grid.shape[0]):
+                xi = np.array([xi_rho_grid[j, i], xi_l_grid[j, i]])
+                try:
+                    log_prior_grid[j, i] = target.prior.log_density(xi)
+                except:
+                    log_prior_grid[j, i] = -np.inf
+        # Normalize prior for plotting
+        log_prior_norm = log_prior_grid - np.max(log_prior_grid)
+        prior_norm = np.exp(log_prior_norm)
+
+    # Define colormaps
+    cmap_post = sns.color_palette('rocket', as_cmap=True)  # Posterior
+    cmap_prior = sns.color_palette('viridis', as_cmap=True)  # Prior
 
     os.makedirs(FIG_DIR, exist_ok=True)
 
@@ -368,9 +384,14 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
         keep_ticks=True
     )
 
-    # Plot contours with the same style as plot_pdf_contours
+    # Plot prior contours first (if available)
+    if log_prior_grid is not None:
+        ax1.contour(xi_rho_grid, xi_l_grid, prior_norm, levels=20,
+                    zorder=1, alpha=0.3, cmap=cmap_prior, linestyles='dashed')
+
+    # Plot posterior contours
     ax1.contour(xi_rho_grid, xi_l_grid, post_norm, levels=20,
-                zorder=1, alpha=0.6, cmap=cmap)
+                zorder=2, alpha=0.6, cmap=cmap_post)
 
     # Plot samples
     ax1.scatter(rwm_samples[::5, 0], rwm_samples[::5, 1], c='red', s=10, alpha=0.5,
@@ -405,6 +426,13 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
     log_post_original_norm = log_post_original - np.nanmax(log_post_original)
     post_original_norm = np.exp(log_post_original_norm)
 
+    # Apply change of variables to prior if available
+    prior_original_norm = None
+    if log_prior_grid is not None:
+        log_prior_original = log_prior_grid - log_jacobian
+        log_prior_original_norm = log_prior_original - np.nanmax(log_prior_original)
+        prior_original_norm = np.exp(log_prior_original_norm)
+
     # Determine plot limits
     rho_min, rho_max = rho_grid.min(), rho_grid.max()
     l_min, l_max = l_grid.min(), l_grid.max()
@@ -417,9 +445,14 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
         keep_ticks=True
     )
 
-    # Plot contours
+    # Plot prior contours first (if available)
+    if prior_original_norm is not None:
+        ax2.contour(rho_grid, l_grid, prior_original_norm, levels=20,
+                    zorder=1, alpha=0.3, cmap=cmap_prior, linestyles='dashed')
+
+    # Plot posterior contours
     ax2.contour(rho_grid, l_grid, post_original_norm, levels=20,
-                zorder=1, alpha=0.6, cmap=cmap)
+                zorder=2, alpha=0.6, cmap=cmap_post)
 
     # Convert samples to original space
     rwm_rho = 1.0 / (1.0 + np.exp(-rwm_samples[:, 0]))
@@ -550,7 +583,7 @@ def plot_marginals(rwm_samples, zzs_samples, xi_rho_true, xi_l_true):
 
 def plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
                                   rwm_samples, zzs_samples,
-                                  xi_rho_true, xi_l_true):
+                                  xi_rho_true, xi_l_true, target=None):
     """Plot 2D posterior grid without requiring both samplers - creates separate PDF figures."""
     print("=" * 70)
     print("Creating 2D posterior plots (grid only)...")
@@ -564,8 +597,24 @@ def plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
     log_post_norm = log_post_grid - np.max(log_post_grid)
     post_norm = np.exp(log_post_norm)
 
-    # Define colormap (using rocket colormap as in plot_pdf_contours)
-    cmap = sns.color_palette('rocket', as_cmap=True)
+    # Evaluate prior on the grid if target is provided
+    log_prior_grid = None
+    if target is not None and hasattr(target, 'prior'):
+        log_prior_grid = np.zeros_like(log_post_grid)
+        for i in range(xi_rho_grid.shape[1]):
+            for j in range(xi_rho_grid.shape[0]):
+                xi = np.array([xi_rho_grid[j, i], xi_l_grid[j, i]])
+                try:
+                    log_prior_grid[j, i] = target.prior.log_density(xi)
+                except:
+                    log_prior_grid[j, i] = -np.inf
+        # Normalize prior for plotting
+        log_prior_norm = log_prior_grid - np.max(log_prior_grid)
+        prior_norm = np.exp(log_prior_norm)
+
+    # Define colormaps
+    cmap_post = sns.color_palette('rocket', as_cmap=True)  # Posterior
+    cmap_prior = sns.color_palette('viridis', as_cmap=True)  # Prior
 
     os.makedirs(FIG_DIR, exist_ok=True)
 
@@ -585,9 +634,14 @@ def plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
         keep_ticks=True
     )
 
-    # Plot contours with the same style as plot_pdf_contours
+    # Plot prior contours first (if available)
+    if log_prior_grid is not None:
+        ax1.contour(xi_rho_grid, xi_l_grid, prior_norm, levels=20,
+                    zorder=1, alpha=0.3, cmap=cmap_prior, linestyles='-')
+
+    # Plot posterior contours
     ax1.contour(xi_rho_grid, xi_l_grid, post_norm, levels=20,
-                zorder=1, alpha=0.6, cmap=cmap)
+                zorder=2, alpha=0.6, cmap=cmap_post)
 
     # Plot samples if available
     if rwm_samples is not None:
@@ -624,6 +678,13 @@ def plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
     log_post_original_norm = log_post_original - np.nanmax(log_post_original)
     post_original_norm = np.exp(log_post_original_norm)
 
+    # Apply change of variables to prior if available
+    prior_original_norm = None
+    if log_prior_grid is not None:
+        log_prior_original = log_prior_grid - log_jacobian
+        log_prior_original_norm = log_prior_original - np.nanmax(log_prior_original)
+        prior_original_norm = np.exp(log_prior_original_norm)
+
     # Determine plot limits
     rho_min, rho_max = rho_grid.min(), rho_grid.max()
     l_min, l_max = l_grid.min(), l_grid.max()
@@ -636,9 +697,14 @@ def plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
         keep_ticks=True
     )
 
-    # Plot contours
+    # Plot prior contours first (if available)
+    if prior_original_norm is not None:
+        ax2.contour(rho_grid, l_grid, prior_original_norm, levels=20,
+                    zorder=1, alpha=0.3, cmap=cmap_prior, linestyles='-')
+
+    # Plot posterior contours
     ax2.contour(rho_grid, l_grid, post_original_norm, levels=20,
-                zorder=1, alpha=0.6, cmap=cmap)
+                zorder=2, alpha=0.6, cmap=cmap_post)
 
     # Convert samples to original space if available
     if rwm_samples is not None:
@@ -774,7 +840,7 @@ def main():
     if rwm_samples is not None and zzs_samples is not None:
         plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
                           rwm_samples, zzs_samples,
-                          xi_rho_true, xi_l_true)
+                          xi_rho_true, xi_l_true, target=target)
 
         plot_marginals(rwm_samples, zzs_samples, xi_rho_true, xi_l_true)
 
@@ -786,21 +852,21 @@ def main():
         print("=" * 70)
         plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
                                      rwm_samples, None,
-                                     xi_rho_true, xi_l_true)
+                                     xi_rho_true, xi_l_true, target=target)
     elif zzs_samples is not None:
         print("=" * 70)
         print("Only ZigZag samples available - creating grid plot only")
         print("=" * 70)
         plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
                                      None, zzs_samples,
-                                     xi_rho_true, xi_l_true)
+                                     xi_rho_true, xi_l_true, target=target)
     else:
         print("=" * 70)
         print("No samples - creating grid-only plot")
         print("=" * 70)
         plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
                                      None, None,
-                                     xi_rho_true, xi_l_true)
+                                     xi_rho_true, xi_l_true, target=target)
 
     print("\n" + "=" * 70)
     print("✓ All done! Figures saved to:", FIG_DIR)
@@ -809,8 +875,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
 
