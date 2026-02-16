@@ -69,7 +69,8 @@ N_GRID_L = 50    # Grid points for l
 
 # Sampling parameters
 N_RWM_SAMPLES = 100  # Number of RWM samples
-T_MAX_ZZS = 10.0    # ZigZag max time
+T_MAX_ZZS = 150.0    # ZigZag max time
+SKIP_ZZS = 1
 
 # Uncomment for quick testing with coarser resolution
 # N_GRID_RHO = 10
@@ -78,8 +79,23 @@ T_MAX_ZZS = 10.0    # ZigZag max time
 # ============================================================================
 # Enable/Disable Samplers
 # ============================================================================
-RUN_RWM = True      # Set to True to run Random Walk Metropolis
-RUN_ZIGZAG = False   # Set to True to run ZigZag sampler
+RUN_RWM = False      # Set to True to run Random Walk Metropolis
+RUN_ZIGZAG = True   # Set to True to run ZigZag sampler
+
+# ============================================================================
+# Plotting Options
+# ============================================================================
+# PLOT_PRIOR: Controls whether to show prior contours in plots
+#   - True (default): Show prior in background (viridis colormap, semi-transparent)
+#   - False: Hide prior for cleaner plots
+#
+# PLOT_ZZS_PATH: Controls how ZigZag sampler is visualized
+#   - False (default): Show equidistant samples along trajectory (~500 points)
+#   - True: Show full piecewise linear path with bounce points marked
+#          (useful for debugging/analyzing sampler dynamics)
+
+PLOT_PRIOR = False           # Set to False to hide prior contours in plots
+PLOT_ZZS_PATH = True       # Set to True to plot full ZigZag path instead of samples
 
 # File names
 OBS_FILE = os.path.join(DATA_DIR, "observations.dat")
@@ -324,8 +340,19 @@ def run_zigzag_sampling(target, rng: np.random.Generator, force: bool = False):
 
     # Surrogate: Laplace approximation fitted at the mode
     # (parameters are automatically computed by get_surrogate)
+    # surrogate_config = {
+    #     'name': 'Laplace',
+    # }
+
     surrogate_config = {
-        'name': 'Laplace',
+        'name': 'GaussianProcess',
+        'n_samples': 100,
+        'n_restarts': 50,
+        'lbfgs_steps': 5,
+        'train_on_init': True,
+        'mean': [0.0, 0.0],
+        'cov': [[1.0, 0.0], [0.0, 1.0]],
+        'lr': 0.5
     }
 
     zig_zag_config = {
@@ -350,6 +377,7 @@ def run_zigzag_sampling(target, rng: np.random.Generator, force: bool = False):
 
     # Sample equidistantly along path
     n_samples_zzs = 500
+    # n_samples_zzs = 50
     samples_zzs = sample_equidistant_along_path(pos, vel, times, N=n_samples_zzs)
 
     # Save
@@ -452,7 +480,8 @@ def transform_samples_to_original_space(samples, aff_trans, like_trans):
 
 def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
                       rwm_samples, zzs_samples,
-                      xi_rho_true, xi_l_true, target=None):
+                      xi_rho_true, xi_l_true, target=None,
+                      zzs_path=None, plot_prior=True, plot_zzs_path=False):
     """Plot 2D posterior with optional samples in both spaces.
 
     Creates separate PDF figures for transformed (affine) space and original parameter space.
@@ -467,6 +496,9 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
         xi_rho_true: True value in transformed space
         xi_l_true: True value in transformed space
         target: Target distribution object (optional, used to extract transformations)
+        zzs_path: Tuple of (positions, velocities, times) for ZigZag path (optional)
+        plot_prior: Whether to plot prior contours (default: True)
+        plot_zzs_path: Whether to plot full ZigZag path instead of samples (default: False)
     """
     print("=" * 70)
     print("Creating 2D posterior plots...")
@@ -541,8 +573,8 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
         keep_ticks=True
     )
 
-    # Plot prior contours (if available)
-    if prior_norm is not None:
+    # Plot prior contours (if available and enabled)
+    if prior_norm is not None and plot_prior:
         ax1.contour(xi_rho_grid, xi_l_grid, prior_norm, levels=20,
                     zorder=1, alpha=0.3, cmap=cmap_prior, linestyles='-')
 
@@ -554,13 +586,20 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
     if rwm_samples is not None:
         ax1.scatter(rwm_samples[::5, 0], rwm_samples[::5, 1], c='red', s=10, alpha=0.5,
                     label='RWM', zorder=2)
-    if zzs_samples is not None:
-        ax1.scatter(zzs_samples[::5, 0], zzs_samples[::5, 1], c='cyan', s=10, alpha=0.5,
+
+    # Plot ZigZag: either full path or samples
+    if plot_zzs_path and zzs_path is not None:
+        # Plot the full piecewise linear path
+        positions, velocities, times = zzs_path
+        ax1.plot(positions[:,0], positions[:,1], c='C0', linewidth=1.5, alpha=0.7, zorder=2)
+    elif zzs_samples is not None:
+        # Plot equidistant samples
+        ax1.scatter(zzs_samples[::5, 0], zzs_samples[::1, 1], c='cyan', s=10, alpha=0.5,
                     label='ZZS', zorder=2)
 
     # True value
-    ax1.scatter(*xi_aff_true, c='black', s=100, marker='*',
-                edgecolors='white', linewidths=1.5, label='True', zorder=10)
+    ax1.scatter(*xi_aff_true, c='C3', s=120, marker='*',
+                edgecolors='none', linewidths=1.5, label='True', zorder=10)
 
     ax1.legend(loc='upper right', frameon=False)
 
@@ -604,8 +643,8 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
         keep_ticks=True
     )
 
-    # Plot prior contours (if available)
-    if prior_original_norm is not None:
+    # Plot prior contours (if available and enabled)
+    if prior_original_norm is not None and plot_prior:
         ax2.contour(rho_grid, l_grid, prior_original_norm, levels=20,
                     zorder=1, alpha=0.3, cmap=cmap_prior, linestyles='-')
 
@@ -624,16 +663,17 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
                     label='RWM', zorder=2)
 
     if zzs_samples is not None:
+        # Plot equidistant samples
         if aff_trans is not None and like_trans is not None:
             zzs_rho, zzs_l = transform_samples_to_original_space(zzs_samples, aff_trans, like_trans)
         else:
             zzs_rho = 1.0 / (1.0 + np.exp(-zzs_samples[:, 0]))
             zzs_l = np.exp(zzs_samples[:, 1])
-        ax2.scatter(zzs_rho[::5], zzs_l[::5], c='cyan', s=10, alpha=0.5,
-                    label='ZZS', zorder=2)
+        ax2.plot(zzs_rho[::SKIP_ZZS], zzs_l[::SKIP_ZZS], 'o', c='C0', ms=3, alpha=0.5,
+                    label='ZZS', zorder=2, mec='none')
 
-    ax2.scatter([TRUE_RHO], [TRUE_L], c='black', s=100, marker='*',
-                edgecolors='white', linewidths=1.5, label='True', zorder=10)
+    ax2.scatter([TRUE_RHO], [TRUE_L], c='C3', s=120, marker='*',
+                edgecolors='none', linewidths=1.5, label='True', zorder=10)
 
     ax2.legend(loc='upper right', frameon=False)
 
@@ -882,6 +922,7 @@ def main():
     # Conditionally run samplers
     rwm_samples = None
     zzs_samples = None
+    zzs_path = None  # To store full ZigZag path (positions, velocities, times)
 
     if RUN_RWM:
         # Run RWM sampling
@@ -896,6 +937,8 @@ def main():
         pos, vel, times, zzs_samples = run_zigzag_sampling(
             target, rng, force=args.force or args.force_samples
         )
+        # Store path data for potential plotting
+        zzs_path = (pos, vel, times)
     else:
         print("=" * 70)
         print("Skipping ZigZag sampling (RUN_ZIGZAG = False)")
@@ -904,7 +947,9 @@ def main():
     # Plot results - unified plotting function handles all cases
     plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
                       rwm_samples, zzs_samples,
-                      xi_rho_true, xi_l_true, target=target)
+                      xi_rho_true, xi_l_true, target=target,
+                      zzs_path=zzs_path, plot_prior=PLOT_PRIOR,
+                      plot_zzs_path=PLOT_ZZS_PATH)
 
     # Plot marginals if we have any samples
     if rwm_samples is not None or zzs_samples is not None:
