@@ -5,7 +5,7 @@ This script:
 1. Generates synthetic observations (or loads existing ones)
 2. Sets up an inverse problem with:
    - ExponentialRecoveryField with parameters [rho, l]
-   - Transformed likelihood with LOGIT for rho and EXPONENTIAL for l
+   - Transformed likelihood with SIGMOID for rho and EXPONENTIAL for l
 3. Evaluates and plots the 2D unnormalized posterior
 4. Samples using Random Walk Metropolis (RWM)
 5. Samples using ZigZag Sampler (ZZS)
@@ -22,7 +22,7 @@ from scipy.stats import gaussian_kde
 from typing import Dict, Any
 import seaborn as sns
 
-from pdmp.distributions import LOGIT, EXPONENTIAL, COMPOSITE
+from pdmp.distributions import LOGIT, EXPONENTIAL, COMPOSITE, SIGMOID
 from pdmp.loader import get_target, get_sampler, get_surrogate
 from pdmp.plotting_utils import get_2d_despined_figure
 from pdmp.forward_model import JaxFemModel
@@ -52,9 +52,9 @@ N_GRID_L = 50    # Grid points for l
 N_RWM_SAMPLES = 50  # RWM samples
 T_MAX_ZZS = 10.0     # ZigZag max time
 
-# # for testing
-# N_GRID_RHO = 10  # Grid points for rho
-# N_GRID_L = 10    # Grid points for l
+# for testing
+N_GRID_RHO = 10  # Grid points for rho
+N_GRID_L = 10    # Grid points for l
 # ============================================================================
 # Enable/Disable Samplers (set to False to skip sampling)
 # ============================================================================
@@ -89,8 +89,8 @@ def get_config():
                 'idx': 0,  # Recovery along x-direction
                 'coefficient_distribution': {
                     'name': 'MultivariateNormal',
-                    'mean': [0.5, 1.0],  # [rho, l]
-                    'cov': [[0.1, 0.0], [0.0, 0.2]]
+                    'mean': [0.5, 0.9],  # [rho, l]
+                    'cov': [[2., 0.0], [0.0, 2.0]]
                 }
             }
         },
@@ -101,7 +101,7 @@ def get_config():
             'name': 'TransformedLikelihood',
             'transformation': COMPOSITE,
             'transformations': [
-                {'type': LOGIT, 'a': 0.0, 'b': 1.0},  # For rho (bounded to [0, 1])
+                {'type': SIGMOID, 'a': 0.0, 'b': 1.0},  # For rho (bounded to [0, 1])
                 EXPONENTIAL,  # For l (positive)
             ],
             'indices': [np.array([0]), np.array([1])],
@@ -156,7 +156,7 @@ def generate_observations(config: Dict[str, Any], rng: np.random.Generator, forc
 
     # Generate observations (model works directly with field coefficients [rho, l])
     y_obs = model.eval(theta_true_original).copy()  # Make a writable copy
-    y_obs += rng.standard_normal(model.get_dim_out()) * SIGMA_OBS
+    # y_obs += rng.standard_normal(model.get_dim_out()) * SIGMA_OBS
 
     # Save observations
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -185,8 +185,8 @@ def evaluate_posterior_grid(target, rng: np.random.Generator, force: bool = Fals
     # Grid in transformed space
     # rho in [0, 1] -> xi_rho in [-inf, inf], focus on [-3, 3] (covers ~0.05 to 0.95)
     # l in (0, inf) -> xi_l in [-inf, inf], focus on [-1, 1.5] (covers ~0.37 to 4.48)
-    xi_rho_min, xi_rho_max = 0.57, 0.87
-    xi_l_min, xi_l_max = -0.25, 2.25
+    xi_rho_min, xi_rho_max = 0.0, 1.4
+    xi_l_min, xi_l_max = -1.0, 2.5
 
     xi_rho_vals = np.linspace(xi_rho_min, xi_rho_max, N_GRID_RHO)
     xi_l_vals = np.linspace(xi_l_min, xi_l_max, N_GRID_L)
@@ -194,6 +194,10 @@ def evaluate_posterior_grid(target, rng: np.random.Generator, force: bool = Fals
 
     # Evaluate log-posterior
     log_post_grid = np.zeros_like(xi_rho_grid)
+
+    true_xi_rho = np.log(TRUE_RHO / (1.0 - TRUE_RHO))  # logit transform
+    true_xi_l = np.log(TRUE_L)  # log transform
+    true_xi = np.array([true_xi_rho, true_xi_l])
 
     print(f"  Grid size: {N_GRID_RHO} × {N_GRID_L} = {N_GRID_RHO * N_GRID_L} points")
     print(f"  xi_rho range: [{xi_rho_min}, {xi_rho_max}]")
@@ -419,7 +423,7 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
     # log p(rho, l) = log p(xi_rho, xi_l) - log|det J|
     # For logit: log|dxi/drho| = log(1/(rho(1-rho)))
     # For exponential: log|dxi/dl| = log(1/l)
-    log_jacobian = np.log(1.0 / (rho_grid * (1.0 - rho_grid))) + np.log(1.0 / l_grid)
+    log_jacobian = np.log(rho_grid * (1.0 - rho_grid)) + np.log(l_grid)
     log_post_original = log_post_grid - log_jacobian
 
     # Normalize for plotting
@@ -671,7 +675,7 @@ def plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
     # log p(rho, l) = log p(xi_rho, xi_l) - log|det J|
     # For logit: log|dxi/drho| = log(1/(rho(1-rho)))
     # For exponential: log|dxi/dl| = log(1/l)
-    log_jacobian = np.log(1.0 / (rho_grid * (1.0 - rho_grid))) + np.log(1.0 / l_grid)
+    log_jacobian = np.log(rho_grid * (1.0 - rho_grid)) + np.log(l_grid)
     log_post_original = log_post_grid - log_jacobian
 
     # Normalize for plotting
