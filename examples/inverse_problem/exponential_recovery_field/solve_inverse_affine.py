@@ -820,6 +820,176 @@ def plot_marginals(rwm_samples, zzs_samples, xi_rho_true, xi_l_true, target=None
 
 
 
+def plot_exponential_field(rwm_samples, zzs_samples, target=None, config=None):
+    """Plot exponential recovery field with 95% credible intervals.
+
+    The field is F(x) = F_inf * (1 - (1 - rho) * exp(-x/l))
+
+    Args:
+        rwm_samples: RWM samples in affine space (can be None)
+        zzs_samples: ZigZag samples in affine space (can be None)
+        target: Target distribution object (optional, used to extract transformations)
+        config: Configuration dictionary containing field parameters
+    """
+    print("=" * 70)
+    print("Creating exponential field plots with 95% credible intervals...")
+    print("=" * 70)
+
+    # Get field parameters from config
+    if config is None:
+        print("  Warning: No config provided, using defaults")
+        f_infinity = 1.0
+        d_x = 1.0
+    else:
+        model_config = config.get('distribution', {}).get('model', {})
+        field_config = model_config.get('field', {})
+        f_infinity = field_config.get('f_infinity', 1.0)
+        d_x = model_config.get('d_x', 1.0)
+
+    print(f"  F_infinity = {f_infinity}")
+    print(f"  x range: [0, {d_x}]")
+
+    # Create x grid
+    x_vals = np.linspace(0, d_x, 200)
+
+    # Function to evaluate field
+    def eval_field(rho, l, x):
+        """Evaluate F(x) = F_inf * (1 - (1 - rho) * exp(-x/l))"""
+        return f_infinity * (1.0 - (1.0 - rho) * np.exp(-x / l))
+
+    # Extract transformations from target
+    if target is not None and hasattr(target, '_transformation'):
+        aff_trans = target._transformation
+        like_trans = target._base_distribution._likelihood._transformation
+    else:
+        aff_trans = None
+        like_trans = None
+
+    os.makedirs(FIG_DIR, exist_ok=True)
+
+    # Initialize variables
+    rwm_median = rwm_lower = rwm_upper = None
+    zzs_median = zzs_lower = zzs_upper = None
+    prior_median = prior_lower = prior_upper = None
+
+    # Generate prior samples and compute credible interval
+    if target is not None and hasattr(target, '_base_distribution'):
+        base_dist = target._base_distribution
+        if hasattr(base_dist, 'prior'):
+            print("  Generating prior samples...")
+            n_prior_samples = 5000
+
+            # Sample from prior in xi space (transformed space)
+            prior = base_dist.prior
+            prior_samples_xi = np.array([prior.get_sample() for _ in range(n_prior_samples)])
+
+            # Transform to (rho, l) space using likelihood transformation
+            if like_trans is not None:
+                prior_rho = np.zeros(n_prior_samples)
+                prior_l = np.zeros(n_prior_samples)
+
+                for i in range(n_prior_samples):
+                    xi = prior_samples_xi[i]
+                    x = like_trans.transform(xi)
+                    prior_rho[i] = x[0]
+                    prior_l[i] = x[1]
+
+                # Evaluate field for all prior samples
+                prior_fields = np.zeros((n_prior_samples, len(x_vals)))
+                for i in range(n_prior_samples):
+                    prior_fields[i, :] = eval_field(prior_rho[i], prior_l[i], x_vals)
+
+                # Compute percentiles
+                prior_median = np.percentile(prior_fields, 50, axis=0)
+                prior_lower = np.percentile(prior_fields, 2.5, axis=0)
+                prior_upper = np.percentile(prior_fields, 97.5, axis=0)
+
+                print(f"  Prior: {n_prior_samples} samples processed")
+            else:
+                print("  Warning: No likelihood transformation available, skipping prior")
+
+    # Process RWM samples
+    if rwm_samples is not None:
+        if aff_trans is not None and like_trans is not None:
+            rwm_rho, rwm_l = transform_samples_to_original_space(rwm_samples, aff_trans, like_trans)
+        else:
+            rwm_rho = 1.0 / (1.0 + np.exp(-rwm_samples[:, 0]))
+            rwm_l = np.exp(rwm_samples[:, 1])
+
+        # Evaluate field for all samples
+        rwm_fields = np.zeros((len(rwm_rho), len(x_vals)))
+        for i in range(len(rwm_rho)):
+            rwm_fields[i, :] = eval_field(rwm_rho[i], rwm_l[i], x_vals)
+
+        # Compute percentiles
+        rwm_median = np.percentile(rwm_fields, 50, axis=0)
+        rwm_lower = np.percentile(rwm_fields, 2.5, axis=0)
+        rwm_upper = np.percentile(rwm_fields, 97.5, axis=0)
+
+        print(f"  RWM: {len(rwm_rho)} samples processed")
+
+    # Process ZZS samples
+    if zzs_samples is not None:
+        if aff_trans is not None and like_trans is not None:
+            zzs_rho, zzs_l = transform_samples_to_original_space(zzs_samples, aff_trans, like_trans)
+        else:
+            zzs_rho = 1.0 / (1.0 + np.exp(-zzs_samples[:, 0]))
+            zzs_l = np.exp(zzs_samples[:, 1])
+
+        # Evaluate field for all samples
+        zzs_fields = np.zeros((len(zzs_rho), len(x_vals)))
+        for i in range(len(zzs_rho)):
+            zzs_fields[i, :] = eval_field(zzs_rho[i], zzs_l[i], x_vals)
+
+        # Compute percentiles
+        zzs_median = np.percentile(zzs_fields, 50, axis=0)
+        zzs_lower = np.percentile(zzs_fields, 2.5, axis=0)
+        zzs_upper = np.percentile(zzs_fields, 97.5, axis=0)
+
+        print(f"  ZZS: {len(zzs_rho)} samples processed")
+
+    # True field
+    true_field = eval_field(TRUE_RHO, TRUE_L, x_vals)
+
+    # Create plot
+    fig, ax = plt.subplots(1, 1, figsize=(6., 4.))
+
+    # Plot prior (in background with low opacity)
+    if prior_median is not None:
+        ax.plot(x_vals, prior_median, 'C0', linewidth=1.5, linestyle='-',
+                label='Prior (median)', zorder=3, alpha=1)
+        ax.fill_between(x_vals, prior_lower, prior_upper, color='C0', alpha=0.15,
+                        label='Prior (95% CI)', zorder=0)
+
+    # Plot RWM
+    if rwm_samples is not None and rwm_median is not None:
+        ax.plot(x_vals, rwm_median, 'r-', linewidth=2, label='RWM (median)', zorder=3)
+        ax.fill_between(x_vals, rwm_lower, rwm_upper, color='red', alpha=0.2,
+                        label='RWM (95% CI)', zorder=2)
+
+    # Plot ZZS
+    if zzs_samples is not None and zzs_median is not None:
+        ax.plot(x_vals, zzs_median, '-', c='C1', linewidth=2, label='ZZS (median)', zorder=3)
+        ax.fill_between(x_vals, zzs_lower, zzs_upper, color='C1', alpha=0.2,
+                        label='ZZS (95% CI)', zorder=2)
+
+    # Plot true field
+    ax.plot(x_vals, true_field, 'k--', linewidth=2, label='True field', zorder=4)
+
+    ax.set_xlabel(r'$x$')
+    ax.set_ylabel(r'$F(x)$')
+    ax.set_title('Exponential Recovery Field with 95% Credible Intervals')
+    ax.legend(loc='best', frameon=False)
+    ax.grid(True, alpha=0.3)
+    sns.despine()
+
+    # Save
+    fig_path = os.path.join(FIG_DIR, 'exponential_field.pdf')
+    fig.savefig(fig_path, bbox_inches='tight')
+    print(f"  ✓ Saved figure: {fig_path}")
+    plt.close(fig)
+
+
 def print_summary_statistics(rwm_samples, zzs_samples, target=None):
     """Print summary statistics for the samples.
 
@@ -958,6 +1128,10 @@ def main():
     # Print summary statistics if we have any samples
     if rwm_samples is not None or zzs_samples is not None:
         print_summary_statistics(rwm_samples, zzs_samples, target=target)
+
+    # Plot exponential field with credible intervals if we have any samples
+    if rwm_samples is not None or zzs_samples is not None:
+        plot_exponential_field(rwm_samples, zzs_samples, target=target, config=config)
 
     print("\n" + "=" * 70)
     print("✓ All done! Figures saved to:", FIG_DIR)
