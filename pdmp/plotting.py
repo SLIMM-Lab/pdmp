@@ -5,7 +5,7 @@ import numpy as np
 import seaborn as sns
 from matplotlib import pyplot as plt
 
-from pdmp.distributions import Distribution, Transformation
+from pdmp.distributions import Distribution, Transformation, AffineTransformation
 from pdmp.surrogates import SurrogateModel
 
 
@@ -149,7 +149,7 @@ def plot_pdf_grad_contours(target: Union[Distribution, SurrogateModel],
         levels = 20
 
     if transformation is None:
-        transformation = AffineTransformtion(M=np.eye(2), b=np.zeros(2))
+        transformation = AffineTransformation(M=np.eye(2), b=np.zeros(2))
 
     if isinstance(target, SurrogateModel):
         f_eval = lambda x: target.grad(x, idx=idx)
@@ -212,7 +212,7 @@ def plot_pdf_contours(target: Union[Distribution, SurrogateModel],
 
     # set identity transformation if none is given
     if transformation is None:
-        transformation = AffineTransformtion(M=np.eye(2), b=np.zeros(2))
+        transformation = AffineTransformation(M=np.eye(2), b=np.zeros(2))
 
     if isinstance(target, SurrogateModel):
         f_eval = lambda x: target.eval(x, delta=True)
