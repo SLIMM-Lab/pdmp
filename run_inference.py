@@ -8,8 +8,9 @@ import torch
 import numpy as np
 
 from pdmp import logger
-from pdmp.logger_setup import setup_file_handler
+from pdmp.logger_setup import setup_file_handler, suppress_external_loggers
 from pdmp.loader import get_target, get_sampler, get_surrogate, yaml_to_numpy, save_config
+
 
 
 def parse_args():
@@ -22,7 +23,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run Monte Carlo simulation.")
     parser.add_argument(
         "--config",
-        default='config.yml',
+        default='config.yaml',
         type=str,
         help="The path to the configuration file.",
     )
@@ -57,6 +58,9 @@ def main():
     try:
         # load the problem configuration
         target = get_target(config['problem'], rng=rng)
+
+        # Suppress verbose output from external libraries after they're imported
+        suppress_external_loggers()
 
         if 'surrogate' in config:
             surrogate = get_surrogate(config.get('surrogate'),
