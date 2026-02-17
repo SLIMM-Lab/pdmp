@@ -642,8 +642,6 @@ class JaxFemModel(Model):
         else:
             self._n_params = n_params
 
-        import logging
-        logging.disable(logging.INFO)
 
         from jax_fem.problem import Problem
         from jax_fem.solver import ad_wrapper

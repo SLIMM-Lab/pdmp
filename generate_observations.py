@@ -13,6 +13,8 @@ from pdmp.loader import yaml_to_numpy, get_target
 from pdmp.distributions import get_prior, AffineTransformtion, ExponentialTransformation
 from pdmp.forward_model import get_model
 from pdmp.random_field import get_field
+from pdmp.logger_setup import suppress_external_loggers
+
 
 
 def parse_args():
@@ -70,6 +72,9 @@ def generate_observations(config: dict[str, Any], rng: np.random.Generator):
         llh_config = dist_cfg['likelihood']
     else:
         raise ValueError("Problem must be BayesianInverse or Transformed.")
+
+    # Suppress verbose output from external libraries after model is created
+    suppress_external_loggers()
 
     # sample ground truth coefficients from prior and write to file
     ground_truth = prior.get_sample()

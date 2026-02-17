@@ -72,3 +72,28 @@ def setup_file_handler(logger: logging.Logger,
     logger.addHandler(file_handler)
 
     logger.info("Custom logging initialized. Log file: %s", log_path)
+
+
+def suppress_external_loggers():
+    """Suppress verbose output from external libraries.
+
+    This function sets the logging level of external libraries to WARNING
+    to prevent them from cluttering the console output with INFO/DEBUG messages,
+    while still allowing important warnings and errors to be displayed.
+
+    Currently suppresses:
+        - jax_fem: Finite element solver library
+
+    Note: This should be called AFTER the external library has been imported,
+    so that its handlers are already set up.
+    """
+    # Get the jax_fem logger (will be imported when forward model is created)
+    jax_fem_logger = logging.getLogger('jax_fem')
+
+    # Set the logger level to WARNING
+    jax_fem_logger.setLevel(logging.WARNING)
+
+    # Also set all its handlers to WARNING level
+    for handler in jax_fem_logger.handlers:
+        handler.setLevel(logging.WARNING)
+
