@@ -1337,6 +1337,66 @@ class Transformation:
         raise NotImplementedError
 
 
+class LogTransformation(Transformation):
+    """Implements logarithmic transformation ξ = log(x).
+
+    This transformation maps from constrained positive space x ∈ (0, ∞)^d
+    to unbounded space ξ ∈ ℝ^d. This is the inverse of the exponential transformation.
+
+    Note: This is the counterpart to ExponentialTransformation:
+    - LogTransformation: ξ = log(x) (forward), x = exp(ξ) (inverse)
+    - ExponentialTransformation: x = exp(ξ) (forward), ξ = log(x) (inverse)
+    """
+
+    @override
+    def transform(self, x: np.ndarray) -> np.ndarray:
+        """Transform from positive to unbounded: ξ = log(x)."""
+        return np.log(x)
+
+    @override
+    def inverse_transform(self, xi: np.ndarray) -> np.ndarray:
+        """Transform from unbounded to positive: x = exp(ξ)."""
+        return np.exp(xi)
+
+    @override
+    def jacobian(self, x: np.ndarray) -> np.ndarray:
+        """Jacobian matrix dξ/dx = diag(1/x)."""
+        return np.diag(1.0 / x)
+
+    @override
+    def inv_jacobian(self, x: np.ndarray) -> np.ndarray:
+        """Inverse Jacobian matrix dx/dξ = diag(x)."""
+        return np.diag(x)
+
+    @override
+    def log_det_jacobian(self, x: np.ndarray) -> float:
+        """log |det(J)| = -sum(log(x)) since J is diagonal with 1/x."""
+        return -np.sum(np.log(x), axis=-1)
+
+    @override
+    def grad_log_det_jacobian(self, x: np.ndarray) -> np.ndarray:
+        """Gradient of log determinant: d/dx[-sum(log(x))] = -1/x."""
+        return -1.0 / x
+
+    @override
+    def hessian(self, x: np.ndarray) -> np.ndarray:
+        """Hessian is a 3-tensor with diagonal elements being -1/x²."""
+        d = x.shape[0]
+        H = np.zeros((d, d, d))
+        idx = np.arange(d)
+        H[idx, idx, idx] = -1.0 / (x**2)
+        return H
+
+    @override
+    def hessian_log_det_jacobian(self, x: np.ndarray) -> np.ndarray:
+        """Hessian of log determinant: d²/dx²[-sum(log(x))] = diag(1/x²)."""
+        d = x.shape[0]
+        H = np.zeros((d, d))
+        idx = np.arange(d)
+        H[idx, idx] = 1.0 / (x**2)
+        return H
+
+
 class ExponentialTransformation(Transformation):
     """Implements exponential transformation x = exp(ξ)."""
 
@@ -1887,11 +1947,12 @@ class CompositeTransformation(Transformation):
 
 
 EXPONENTIAL = 'Exponential'
+LOG = 'Log'
 AFFINE = 'Affine'
 SIGMOID = 'Sigmoid'
 LOGIT = 'Logit'
 COMPOSITE = 'Composite'
-TRANSFORMATIONS = [EXPONENTIAL, AFFINE, SIGMOID, LOGIT, COMPOSITE]
+TRANSFORMATIONS = [EXPONENTIAL, LOG, AFFINE, SIGMOID, LOGIT, COMPOSITE]
 
 
 class TransformedDistribution(Distribution):
@@ -1913,6 +1974,8 @@ class TransformedDistribution(Distribution):
 
         if params['transformation'] == EXPONENTIAL:
             self._transformation = ExponentialTransformation()
+        elif params['transformation'] == LOG:
+            self._transformation = LogTransformation()
         elif params['transformation'] == AFFINE:
             M = params.get('M', None)
             b = params.get('b', None)
@@ -1963,8 +2026,7 @@ class TransformedDistribution(Distribution):
 
             if indices is None:
                 raise ValueError(
-                    "COMPOSITE transformation requires 'indices' parameter "
-                    "(or base_distribution must be JointDistribution)"
+                    "COMPOSITE transformation requires 'indices' parameter"
                 )
 
             # Build transformation objects from specs
@@ -1978,6 +2040,8 @@ class TransformedDistribution(Distribution):
                     trans_type = spec.get('type', spec.get('transformation'))
                     if trans_type == EXPONENTIAL:
                         transformations.append(ExponentialTransformation())
+                    elif trans_type == LOG:
+                        transformations.append(LogTransformation())
                     elif trans_type == AFFINE:
                         M = spec.get('M')
                         b = spec.get('b')
@@ -2000,6 +2064,8 @@ class TransformedDistribution(Distribution):
                     # String specification for simple transformations
                     if spec == EXPONENTIAL:
                         transformations.append(ExponentialTransformation())
+                    elif spec == LOG:
+                        transformations.append(LogTransformation())
                     elif spec == SIGMOID:
                         a = params.get('a', 0.0)
                         b = params.get('b', 1.0)
@@ -2131,6 +2197,8 @@ class TransformedLikelihood(Likelihood):
 
         if params['transformation'] == EXPONENTIAL:
             self._transformation = ExponentialTransformation()
+        elif params['transformation'] == LOG:
+            self._transformation = LogTransformation()
         elif params['transformation'] == AFFINE:
             M = params.get('M', None)
             b = params.get('b', None)
@@ -2181,6 +2249,8 @@ class TransformedLikelihood(Likelihood):
                     trans_type = spec.get('type', spec.get('transformation'))
                     if trans_type == EXPONENTIAL:
                         transformations.append(ExponentialTransformation())
+                    elif trans_type == LOG:
+                        transformations.append(LogTransformation())
                     elif trans_type == AFFINE:
                         M = spec.get('M')
                         b = spec.get('b')
@@ -2203,6 +2273,8 @@ class TransformedLikelihood(Likelihood):
                     # String specification for simple transformations
                     if spec == EXPONENTIAL:
                         transformations.append(ExponentialTransformation())
+                    elif spec == LOG:
+                        transformations.append(LogTransformation())
                     elif spec == SIGMOID:
                         a = params.get('a', 0.0)
                         b = params.get('b', 1.0)
