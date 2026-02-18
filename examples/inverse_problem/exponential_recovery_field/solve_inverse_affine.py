@@ -44,7 +44,7 @@ from pdmp.distributions import EXPONENTIAL, COMPOSITE, SIGMOID
 from pdmp.loader import get_target, get_sampler, get_surrogate
 from pdmp.plotting_utils import get_2d_despined_figure
 from pdmp.utils import sample_equidistant_along_path
-
+from pdmp.logger_setup import suppress_external_loggers
 
 # ============================================================================
 # Configuration
@@ -68,9 +68,10 @@ N_GRID_RHO = 50  # Grid points for rho
 N_GRID_L = 50    # Grid points for l
 
 # Sampling parameters
-N_RWM_SAMPLES = 100  # Number of RWM samples
+N_RWM_SAMPLES = 1000  # Number of RWM samples
 T_MAX_ZZS = 150.0    # ZigZag max time
 SKIP_ZZS = 1
+SKIP_RWM = 2
 
 # Uncomment for quick testing with coarser resolution
 # N_GRID_RHO = 10
@@ -79,7 +80,7 @@ SKIP_ZZS = 1
 # ============================================================================
 # Enable/Disable Samplers
 # ============================================================================
-RUN_RWM = False      # Set to True to run Random Walk Metropolis
+RUN_RWM = True      # Set to True to run Random Walk Metropolis
 RUN_ZIGZAG = True   # Set to True to run ZigZag sampler
 
 # ============================================================================
@@ -232,8 +233,8 @@ def evaluate_posterior_grid(target, rng: np.random.Generator, force: bool = Fals
     # Grid in affine space (xi_aff)
     # The affine transformation maps: xi = M @ xi_aff + b
     # where xi is in the likelihood-transformed space
-    xi_rho_min, xi_rho_max = -3.0, 3.0
-    xi_l_min, xi_l_max = -3.0, 3.0
+    xi_rho_min, xi_rho_max = -4.5, 3.0
+    xi_l_min, xi_l_max = -3.5, 4.0
 
     xi_rho_vals = np.linspace(xi_rho_min, xi_rho_max, N_GRID_RHO)
     xi_l_vals = np.linspace(xi_l_min, xi_l_max, N_GRID_L)
@@ -296,7 +297,7 @@ def run_rwm_sampling(target, rng: np.random.Generator, force: bool = False):
 
     rwm_config = {
         'name': 'RandomWalkMetropolis',
-        'sigma': 1.0,  # Step size
+        'sigma': 1.5,  # Step size
         'x_0': x_0,
         'n_samples': N_RWM_SAMPLES
     }
@@ -504,6 +505,8 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
     print("Creating 2D posterior plots...")
     print("=" * 70)
 
+    gt_color = 'k'
+
     # Extract transformations from target
     if target is not None and hasattr(target, '_transformation'):
         aff_trans = target._transformation
@@ -584,8 +587,8 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
 
     # Plot samples if available
     if rwm_samples is not None:
-        ax1.scatter(rwm_samples[::5, 0], rwm_samples[::5, 1], c='red', s=10, alpha=0.5,
-                    label='RWM', zorder=2)
+        ax1.plot(rwm_samples[::SKIP_RWM, 0], rwm_samples[::SKIP_RWM, 1], 'o', c='C3', ms=3, alpha=0.5,
+                 label='RWM', zorder=2, mec='none')
 
     # Plot ZigZag: either full path or samples
     if plot_zzs_path and zzs_path is not None:
@@ -598,7 +601,7 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
                     label='ZZS', zorder=2)
 
     # True value
-    ax1.scatter(*xi_aff_true, c='C3', s=120, marker='*',
+    ax1.scatter(*xi_aff_true, c=gt_color, s=120, marker='*',
                 edgecolors='none', linewidths=1.5, label='True', zorder=10)
 
     ax1.legend(loc='upper right', frameon=False)
@@ -632,8 +635,10 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
         prior_original_norm = np.exp(log_prior_original_norm)
 
     # Determine plot limits (with optional manual override)
-    rho_min, rho_max = rho_grid.min(), min(rho_grid.max(), 0.81)
-    l_min, l_max = l_grid.min(), min(l_grid.max(), 12.5)
+    # rho_min, rho_max = rho_grid.min(), min(rho_grid.max(), 1.)
+    # l_min, l_max = l_grid.min(), min(l_grid.max(), 12.5)
+    rho_min, rho_max = 0.0, 1.0  # Force limits for rho since it's bounded
+    l_min, l_max = 0.0, 15.  # Force limits for l based on true value and prior
 
     fig2, ax2 = get_2d_despined_figure(
         plot_limits=([rho_min, rho_max], [l_min, l_max]),
@@ -659,8 +664,8 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
         else:
             rwm_rho = 1.0 / (1.0 + np.exp(-rwm_samples[:, 0]))
             rwm_l = np.exp(rwm_samples[:, 1])
-        ax2.scatter(rwm_rho[::5], rwm_l[::5], c='red', s=10, alpha=0.5,
-                    label='RWM', zorder=2)
+        ax2.plot(rwm_rho[::SKIP_RWM], rwm_l[::SKIP_RWM], 'o', c='C3', ms=3, alpha=0.5,
+                 label='RWM', zorder=2, mec='none')
 
     if zzs_samples is not None:
         # Plot equidistant samples
@@ -672,7 +677,7 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
         ax2.plot(zzs_rho[::SKIP_ZZS], zzs_l[::SKIP_ZZS], 'o', c='C0', ms=3, alpha=0.5,
                     label='ZZS', zorder=2, mec='none')
 
-    ax2.scatter([TRUE_RHO], [TRUE_L], c='C3', s=120, marker='*',
+    ax2.scatter([TRUE_RHO], [TRUE_L], c=gt_color, s=120, marker='*',
                 edgecolors='none', linewidths=1.5, label='True', zorder=10)
 
     ax2.legend(loc='upper right', frameon=False)
@@ -844,7 +849,7 @@ def plot_exponential_field(rwm_samples, zzs_samples, target=None, config=None):
         model_config = config.get('distribution', {}).get('model', {})
         field_config = model_config.get('field', {})
         f_infinity = field_config.get('f_infinity', 1.0)
-        d_x = model_config.get('d_x', 1.0)
+        d_x = model_config.get('d_z', 1.0)
 
     print(f"  F_infinity = {f_infinity}")
     print(f"  x range: [0, {d_x}]")
@@ -952,7 +957,8 @@ def plot_exponential_field(rwm_samples, zzs_samples, target=None, config=None):
     true_field = eval_field(TRUE_RHO, TRUE_L, x_vals)
 
     # Create plot
-    fig, ax = plt.subplots(1, 1, figsize=(6., 4.))
+    # fig, ax = plt.subplots(1, 1, figsize=(6., 4.))
+    fig, ax = get_2d_despined_figure(figsize=(5., 3.), equal_axes=False, keep_ticks=True)
 
     # Plot prior (in background with low opacity)
     if prior_median is not None:
@@ -963,8 +969,8 @@ def plot_exponential_field(rwm_samples, zzs_samples, target=None, config=None):
 
     # Plot RWM
     if rwm_samples is not None and rwm_median is not None:
-        ax.plot(x_vals, rwm_median, 'r-', linewidth=2, label='RWM (median)', zorder=3)
-        ax.fill_between(x_vals, rwm_lower, rwm_upper, color='red', alpha=0.2,
+        ax.plot(x_vals, rwm_median, '-', color='C3', linewidth=2, label='RWM (median)', zorder=3)
+        ax.fill_between(x_vals, rwm_lower, rwm_upper, color='C3', alpha=0.2,
                         label='RWM (95% CI)', zorder=2)
 
     # Plot ZZS
@@ -978,8 +984,7 @@ def plot_exponential_field(rwm_samples, zzs_samples, target=None, config=None):
 
     ax.set_xlabel(r'$x$')
     ax.set_ylabel(r'$F(x)$')
-    ax.set_title('Exponential Recovery Field with 95% Credible Intervals')
-    ax.legend(loc='best', frameon=False)
+    ax.legend(loc='lower right')
     ax.grid(True, alpha=0.3)
     sns.despine()
 
@@ -1077,6 +1082,10 @@ def main():
     print("Loading target distribution...")
     print("=" * 70)
     target = get_target(config, rng=rng)
+
+    # Suppress verbose output from external libraries after target is created
+    suppress_external_loggers()
+
     print(f"  Target dimension: {target.dim}")
     print("  ✓ Target loaded successfully")
 
