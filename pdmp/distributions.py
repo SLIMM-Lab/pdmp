@@ -1955,6 +1955,164 @@ COMPOSITE = 'Composite'
 TRANSFORMATIONS = [EXPONENTIAL, LOG, AFFINE, SIGMOID, LOGIT, COMPOSITE]
 
 
+def get_transformation(
+    params: dict[str, Any],
+    base_object: Union[Distribution, Likelihood] = None,
+    context: str = "Transformation"
+) -> Transformation:
+    """Create a transformation object from parameter dictionary.
+
+    This helper function parses transformation parameters and creates the appropriate
+    Transformation object. Used by both TransformedDistribution and TransformedLikelihood
+    to avoid code duplication.
+
+    Args:
+        params: Dictionary containing transformation parameters.
+                Must have 'transformation' key specifying the type.
+        base_object: Optional base Distribution or Likelihood object.
+                     Used for automatic mean/curvature finding in AFFINE transformations
+                     and automatic index inference for JointDistribution.
+        context: String describing the context (for error messages).
+
+    Returns:
+        Transformation: The configured transformation object.
+
+    Raises:
+        ValueError: If transformation parameters are invalid.
+        NotImplementedError: If transformation type is not recognized.
+    """
+    trans_type = params.get('transformation')
+
+    if trans_type == EXPONENTIAL:
+        return ExponentialTransformation()
+
+    elif trans_type == LOG:
+        return LogTransformation()
+
+    elif trans_type == AFFINE:
+        M = params.get('M', None)
+        b = params.get('b', None)
+        x_0 = params.get('x_0', None)
+
+        if b is None and base_object is not None:
+            b = find_mean(base_object, x_0=x_0)
+            params['b'] = b
+
+        if M is None and base_object is not None:
+            M = find_curvature(base_object, mean=b)
+            params['M'] = M
+
+        if M is None or b is None:
+            raise ValueError(f"AFFINE transformation requires 'M' and 'b' parameters")
+
+        C, _ = _safe_cholesky(M, name=f"AffineTransformation(M) for {context}")
+        return AffineTransformation(C, b)
+
+    elif trans_type == SIGMOID:
+        a = params.get('a', 0.0)
+        b = params.get('b', 1.0)
+        return SigmoidTransformation(a, b)
+
+    elif trans_type == LOGIT:
+        a = params.get('a', 0.0)
+        b = params.get('b', 1.0)
+        return LogitTransformation(a, b)
+
+    elif trans_type == COMPOSITE:
+        # Get list of transformation specs and indices
+        transform_specs = params.get('transformations', None)
+        indices = params.get('indices', None)
+
+        if transform_specs is None:
+            raise ValueError(
+                "COMPOSITE transformation requires 'transformations' parameter"
+            )
+
+        # If base is JointDistribution and indices not provided,
+        # automatically create indices based on child dimensions
+        if indices is None and isinstance(base_object, JointDistribution):
+            indices = []
+            offset = 0
+            for dist in base_object.distributions:
+                dim = dist.dim
+                indices.append(np.arange(offset, offset + dim))
+                offset += dim
+            logger.info(
+                f"Automatically created indices for JointDistribution: "
+                f"dims = {[len(idx) for idx in indices]}"
+            )
+
+        if indices is None:
+            raise ValueError(
+                "COMPOSITE transformation requires 'indices' parameter "
+                "(or base_object must be JointDistribution)"
+            )
+
+        # Build transformation objects from specs
+        transformations = []
+        for spec in transform_specs:
+            if isinstance(spec, Transformation):
+                # Already a transformation object
+                transformations.append(spec)
+            elif isinstance(spec, dict):
+                # Dictionary specification - recursively call for each sub-transformation
+                trans_type = spec.get('type', spec.get('transformation'))
+                if trans_type == EXPONENTIAL:
+                    transformations.append(ExponentialTransformation())
+                elif trans_type == LOG:
+                    transformations.append(LogTransformation())
+                elif trans_type == AFFINE:
+                    M = spec.get('M')
+                    b = spec.get('b')
+                    if M is None or b is None:
+                        raise ValueError(
+                            "AFFINE transformation in COMPOSITE requires 'M' and 'b'"
+                        )
+                    transformations.append(AffineTransformation(M, b))
+                elif trans_type == SIGMOID:
+                    a = spec.get('a', 0.0)
+                    b = spec.get('b', 1.0)
+                    transformations.append(SigmoidTransformation(a, b))
+                elif trans_type == LOGIT:
+                    a = spec.get('a', 0.0)
+                    b = spec.get('b', 1.0)
+                    transformations.append(LogitTransformation(a, b))
+                else:
+                    raise ValueError(f"Unknown transformation type: {trans_type}")
+            elif isinstance(spec, str):
+                # String specification for simple transformations
+                if spec == EXPONENTIAL:
+                    transformations.append(ExponentialTransformation())
+                elif spec == LOG:
+                    transformations.append(LogTransformation())
+                elif spec == SIGMOID:
+                    a = params.get('a', 0.0)
+                    b = params.get('b', 1.0)
+                    transformations.append(SigmoidTransformation(a, b))
+                elif spec == LOGIT:
+                    a = params.get('a', 0.0)
+                    b = params.get('b', 1.0)
+                    transformations.append(LogitTransformation(a, b))
+                else:
+                    raise ValueError(
+                        f"String specification '{spec}' not supported for COMPOSITE. "
+                        f"Use dict or Transformation object for {spec}."
+                    )
+            else:
+                raise ValueError(
+                    f"Invalid transformation specification: {spec}. "
+                    f"Expected Transformation, dict, or str."
+                )
+
+        return CompositeTransformation(transformations, indices)
+
+    else:
+        raise NotImplementedError(
+            f"Transformation {trans_type} not recognized.\n"
+            f"pick any of {TRANSFORMATIONS}"
+        )
+
+
 class TransformedDistribution(Distribution):
     """Base class for transformed distributions."""
 
@@ -1971,125 +2129,11 @@ class TransformedDistribution(Distribution):
 
         super().__init__(rng=base_distribution.rng)
         self._base_distribution = base_distribution
-
-        if params['transformation'] == EXPONENTIAL:
-            self._transformation = ExponentialTransformation()
-        elif params['transformation'] == LOG:
-            self._transformation = LogTransformation()
-        elif params['transformation'] == AFFINE:
-            M = params.get('M', None)
-            b = params.get('b', None)
-            x_0 = params.get('x_0', None)
-
-            if b is None:
-                b = find_mean(base_distribution, x_0=x_0)
-                params['b'] = b
-
-            if M is None:
-                M = find_curvature(base_distribution, mean=b)
-                params['M'] = M
-
-            C, _ = _safe_cholesky(M, name="AffineTransformation(M) for TransformedDistribution")
-
-            self._transformation = AffineTransformation(C, b)
-        elif params['transformation'] == SIGMOID:
-            a = params.get('a', 0.0)
-            b = params.get('b', 1.0)
-            self._transformation = SigmoidTransformation(a, b)
-        elif params['transformation'] == LOGIT:
-            a = params.get('a', 0.0)
-            b = params.get('b', 1.0)
-            self._transformation = LogitTransformation(a, b)
-        elif params['transformation'] == COMPOSITE:
-            # Get list of transformation specs and indices
-            transform_specs = params.get('transformations', None)
-            indices = params.get('indices', None)
-
-            if transform_specs is None:
-                raise ValueError(
-                    "COMPOSITE transformation requires 'transformations' parameter"
-                )
-
-            # If base distribution is JointDistribution and indices not provided,
-            # automatically create indices based on child dimensions
-            if indices is None and isinstance(base_distribution, JointDistribution):
-                indices = []
-                offset = 0
-                for dist in base_distribution.distributions:
-                    dim = dist.dim
-                    indices.append(np.arange(offset, offset + dim))
-                    offset += dim
-                logger.info(
-                    f"Automatically created indices for JointDistribution: "
-                    f"dims = {[len(idx) for idx in indices]}"
-                )
-
-            if indices is None:
-                raise ValueError(
-                    "COMPOSITE transformation requires 'indices' parameter"
-                )
-
-            # Build transformation objects from specs
-            transformations = []
-            for spec in transform_specs:
-                if isinstance(spec, Transformation):
-                    # Already a transformation object
-                    transformations.append(spec)
-                elif isinstance(spec, dict):
-                    # Dictionary specification
-                    trans_type = spec.get('type', spec.get('transformation'))
-                    if trans_type == EXPONENTIAL:
-                        transformations.append(ExponentialTransformation())
-                    elif trans_type == LOG:
-                        transformations.append(LogTransformation())
-                    elif trans_type == AFFINE:
-                        M = spec.get('M')
-                        b = spec.get('b')
-                        if M is None or b is None:
-                            raise ValueError(
-                                "AFFINE transformation in COMPOSITE requires 'M' and 'b'"
-                            )
-                        transformations.append(AffineTransformation(M, b))
-                    elif trans_type == SIGMOID:
-                        a = spec.get('a', 0.0)
-                        b = spec.get('b', 1.0)
-                        transformations.append(SigmoidTransformation(a, b))
-                    elif trans_type == LOGIT:
-                        a = spec.get('a', 0.0)
-                        b = spec.get('b', 1.0)
-                        transformations.append(LogitTransformation(a, b))
-                    else:
-                        raise ValueError(f"Unknown transformation type: {trans_type}")
-                elif isinstance(spec, str):
-                    # String specification for simple transformations
-                    if spec == EXPONENTIAL:
-                        transformations.append(ExponentialTransformation())
-                    elif spec == LOG:
-                        transformations.append(LogTransformation())
-                    elif spec == SIGMOID:
-                        a = params.get('a', 0.0)
-                        b = params.get('b', 1.0)
-                        transformations.append(SigmoidTransformation(a, b))
-                    elif spec == LOGIT:
-                        a = params.get('a', 0.0)
-                        b = params.get('b', 1.0)
-                        transformations.append(LogitTransformation(a, b))
-                    else:
-                        raise ValueError(
-                            f"String specification '{spec}' not supported for COMPOSITE. "
-                            f"Use dict or Transformation object for {spec}."
-                        )
-                else:
-                    raise ValueError(
-                        f"Invalid transformation specification: {spec}. "
-                        f"Expected Transformation, dict, or str."
-                    )
-
-            self._transformation = CompositeTransformation(transformations, indices)
-        else:
-            raise NotImplementedError(
-                f"Transformation {params['transformation']} not recognized.\n"
-                f"pick any of {TRANSFORMATIONS}")
+        self._transformation = get_transformation(
+            params,
+            base_object=base_distribution,
+            context="TransformedDistribution"
+        )
 
     @override
     def get_sample(self, n: int = 1) -> np.ndarray:
@@ -2194,111 +2238,11 @@ class TransformedLikelihood(Likelihood):
         """
         super().__init__(rng=likelihood.rng)
         self._likelihood = likelihood
-
-        if params['transformation'] == EXPONENTIAL:
-            self._transformation = ExponentialTransformation()
-        elif params['transformation'] == LOG:
-            self._transformation = LogTransformation()
-        elif params['transformation'] == AFFINE:
-            M = params.get('M', None)
-            b = params.get('b', None)
-            x_0 = params.get('x_0', None)
-
-            if b is None:
-                b = find_mean(likelihood, x_0=x_0)
-                params['b'] = b
-
-            if M is None:
-                M = find_curvature(likelihood, mean=b)
-                params['M'] = M
-
-            C, _ = _safe_cholesky(M, name="AffineTransformation(M) for TransformedLikelihood")
-
-            self._transformation = AffineTransformation(C, b)
-        elif params['transformation'] == SIGMOID:
-            a = params.get('a', 0.0)
-            b = params.get('b', 1.0)
-            self._transformation = SigmoidTransformation(a, b)
-        elif params['transformation'] == LOGIT:
-            a = params.get('a', 0.0)
-            b = params.get('b', 1.0)
-            self._transformation = LogitTransformation(a, b)
-        elif params['transformation'] == COMPOSITE:
-            # Get list of transformation specs and indices
-            transform_specs = params.get('transformations', None)
-            indices = params.get('indices', None)
-
-            if transform_specs is None:
-                raise ValueError(
-                    "COMPOSITE transformation requires 'transformations' parameter"
-                )
-
-            if indices is None:
-                raise ValueError(
-                    "COMPOSITE transformation requires 'indices' parameter"
-                )
-
-            # Build transformation objects from specs
-            transformations = []
-            for spec in transform_specs:
-                if isinstance(spec, Transformation):
-                    # Already a transformation object
-                    transformations.append(spec)
-                elif isinstance(spec, dict):
-                    # Dictionary specification
-                    trans_type = spec.get('type', spec.get('transformation'))
-                    if trans_type == EXPONENTIAL:
-                        transformations.append(ExponentialTransformation())
-                    elif trans_type == LOG:
-                        transformations.append(LogTransformation())
-                    elif trans_type == AFFINE:
-                        M = spec.get('M')
-                        b = spec.get('b')
-                        if M is None or b is None:
-                            raise ValueError(
-                                "AFFINE transformation in COMPOSITE requires 'M' and 'b'"
-                            )
-                        transformations.append(AffineTransformation(M, b))
-                    elif trans_type == SIGMOID:
-                        a = spec.get('a', 0.0)
-                        b = spec.get('b', 1.0)
-                        transformations.append(SigmoidTransformation(a, b))
-                    elif trans_type == LOGIT:
-                        a = spec.get('a', 0.0)
-                        b = spec.get('b', 1.0)
-                        transformations.append(LogitTransformation(a, b))
-                    else:
-                        raise ValueError(f"Unknown transformation type: {trans_type}")
-                elif isinstance(spec, str):
-                    # String specification for simple transformations
-                    if spec == EXPONENTIAL:
-                        transformations.append(ExponentialTransformation())
-                    elif spec == LOG:
-                        transformations.append(LogTransformation())
-                    elif spec == SIGMOID:
-                        a = params.get('a', 0.0)
-                        b = params.get('b', 1.0)
-                        transformations.append(SigmoidTransformation(a, b))
-                    elif spec == LOGIT:
-                        a = params.get('a', 0.0)
-                        b = params.get('b', 1.0)
-                        transformations.append(LogitTransformation(a, b))
-                    else:
-                        raise ValueError(
-                            f"String specification '{spec}' not supported for COMPOSITE. "
-                            f"Use dict or Transformation object for {spec}."
-                        )
-                else:
-                    raise ValueError(
-                        f"Invalid transformation specification: {spec}. "
-                        f"Expected Transformation, dict, or str."
-                    )
-
-            self._transformation = CompositeTransformation(transformations, indices)
-        else:
-            raise NotImplementedError(
-                f"Transformation {params['transformation']} not recognized.\n"
-                f"pick any of {TRANSFORMATIONS}")
+        self._transformation = get_transformation(
+            params,
+            base_object=likelihood,
+            context="TransformedLikelihood"
+        )
 
     @property
     def dim(self) -> int:
