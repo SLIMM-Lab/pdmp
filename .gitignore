@@ -72,3 +72,7 @@ examples/inverse_problem/exponential_recovery_field/GRID_MODE_GUIDE.md
 examples/inverse_problem/exponential_recovery_field/QUICK_REFERENCE.md
 examples/inverse_problem/exponential_recovery_field/SETUP_COMPLETE.md
 examples/inverse_problem/exponential_recovery_field/samples
+examples/inverse_problem/exponential_recovery_field/forward_model
+examples/inverse_problem/exponential_recovery_field/model_params
+examples/inverse_problem/exponential_recovery_field/investigate_likelihood.py
+
