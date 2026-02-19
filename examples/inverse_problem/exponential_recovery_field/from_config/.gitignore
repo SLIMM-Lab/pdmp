@@ -1,0 +1,26 @@
+# Generated data and figures
+cache/
+figures/
+zzs/
+bps/
+rwm/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
