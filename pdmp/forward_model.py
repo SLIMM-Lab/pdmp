@@ -438,18 +438,24 @@ def get_model(config: dict, field=None):
         raise ValueError(f"Model {config['name']} not recognized.")
 
 
-def build_sensor_interpolants(fe, sensors, location_fn, tol=1e-8):
+def build_sensor_interpolants(fe, sensors, location_fn_map, tol=1e-8):
     """Build interpolation data for each sensor on a given boundary.
 
-    Each sensor specification in ``sensors`` may be either:
+    Each sensor specification in ``sensors`` must include a ``'location_fn'``
+    key that identifies which boundary face to search.  It may be either a
+    callable ``(point) -> bool`` or a string key looked up in
+    ``location_fn_map``.
 
-    * Legacy single-point form::
+    Each sensor specification may otherwise be either:
 
-        {"name": "sensor_name", "point": [x, y, z]}
+    * Single-point form::
+
+        {"name": "sensor_name", "location_fn": "bottom", "point": [x, y, z]}
 
     * Multi-point form::
 
-        {"name": "sensor_name", "points": [[x1, y1, z1], [x2, y2, z2], ...]}
+        {"name": "sensor_name", "location_fn": "side_faces",
+         "points": [[x1, y1, z1], [x2, y2, z2], ...]}
 
     Internally, each sensor is represented with arrays of shape
     (n_points, n_face_nodes) for ``nodes`` and ``weights`` so that
@@ -458,19 +464,38 @@ def build_sensor_interpolants(fe, sensors, location_fn, tol=1e-8):
     No aggregation across points is performed here; all point-wise
     displacements are returned by :func:`evaluate_sensor_displacements`.
     """
-    boundary_inds_list = fe.get_boundary_conditions_inds([location_fn])
-    if not boundary_inds_list:
-        raise ValueError("No boundary faces found for sensor location function.")
-    boundary_inds = boundary_inds_list[0]
-    if boundary_inds.size == 0:
-        raise ValueError("Boundary selector returned zero faces.")
 
     interpolants = []
     for spec in sensors:
         if "name" not in spec:
             raise ValueError("Each sensor spec must contain a 'name' key.")
 
-        # Resolve list of points for this sensor (legacy or new style)
+        # Resolve location_fn for this sensor group
+        if "location_fn" not in spec:
+            raise ValueError(f"Sensor '{spec['name']}' must define a 'location_fn' key.")
+        loc = spec["location_fn"]
+        if callable(loc):
+            location_fn = loc
+        elif isinstance(loc, str):
+            if loc not in location_fn_map:
+                raise ValueError(
+                    f"Sensor '{spec['name']}': unknown location_fn '{loc}'. "
+                    f"Must be one of {list(location_fn_map.keys())} or a callable."
+                )
+            location_fn = location_fn_map[loc]
+        else:
+            raise ValueError(
+                f"Sensor '{spec['name']}': 'location_fn' must be a string or callable, got {type(loc)}."
+            )
+
+        boundary_inds_list = fe.get_boundary_conditions_inds([location_fn])
+        if not boundary_inds_list or boundary_inds_list[0].size == 0:
+            raise ValueError(
+                f"Sensor '{spec['name']}': no boundary faces found for location_fn '{loc}'."
+            )
+        boundary_inds = boundary_inds_list[0]
+
+        # Resolve list of points for this sensor
         if "points" in spec:
             points = np.asarray(spec["points"], dtype=float)
             if points.ndim == 1:
@@ -498,7 +523,7 @@ def build_sensor_interpolants(fe, sensors, location_fn, tol=1e-8):
                     break
             if weights is None or node_ids is None:
                 raise ValueError(
-                    f"Sensor {spec['name']} point {p} not located on selected boundary."
+                    f"Sensor '{spec['name']}' point {p} not located on selected boundary."
                 )
             all_node_ids.append(node_ids)
             all_weights.append(weights)
@@ -513,7 +538,6 @@ def build_sensor_interpolants(fe, sensors, location_fn, tol=1e-8):
             "weights": weights_arr,
         }
 
-        # For backward compatibility, keep a single 'point' entry when applicable
         if n_points == 1:
             interpolant["point"] = points[0]
 
@@ -606,7 +630,7 @@ def evaluate_sensor_displacements(sol, interpolants):
 
 
 class JaxFemModel(Model):
-    """JAX-based FEM model wrapper with support for random fields.
+    """JAX-based FEM model wrapper with support for random fields and configurable sensors.
 
     This model supports efficient likelihood gradient computation via VJP
     (Jacobian-vector product) and can work with JAX-compatible random fields
@@ -618,17 +642,54 @@ class JaxFemModel(Model):
       - Supports J^T v via `linearize` and `eval_vjp`
       - Provides full Jacobian via `eval_grad` and Hessian via `eval_hessian`
       - Can use a random field to map coefficients to material properties
+      - Allows flexible sensor placement on mesh boundaries
 
     Parameters
     ----------
+    d_x, d_y, d_z : float
+        Domain dimensions in x, y, z directions.
+    ele_type : str, optional
+        Element type (default 'HEX8').
+    nu : float, optional
+        Poisson's ratio (default 0.3).
+    h : float, optional
+        Mesh size parameter (default 0.5).
+    d_u : float, optional
+        Dirichlet boundary displacement value (default -0.1).
+    traction : list, optional
+        Traction vector on boundary (default [0., 0.015, 0.]).
+    obs_loc : np.ndarray, optional
+        Legacy observation locations (deprecated, use sensors instead).
+    n_params : int, optional
+        Number of parameters (default 1), overridden if field is provided.
+    d_obs : int, optional
+        Number of observations (default 1), automatically inferred from sensors.
     field : JaxRandomField, optional
         Random field mapping coefficients to material properties.
         If provided, determines n_params from field.dim.
+    sensors : list of dict, optional
+        List of sensor specifications. Each sensor dict must include:
+        - 'name': str, sensor identifier
+        - 'location_fn': str or callable, boundary face to place the sensor on.
+          Strings are resolved from the built-in map: 'side_faces', 'top_surface', 'bottom'.
+          A callable ``(point) -> bool`` may also be provided directly.
+        - 'point': array-like, single observation point [x, y, z]
+        - 'points': array-like, multiple observation points [[x1,y1,z1], ...]
+
+        Example::
+
+            {"name": "sensor1", "location_fn": "bottom", "point": [0.5, 0.5, 0.0]}
+            {"name": "sensor2", "location_fn": "side_faces", "points": [[0.0, 0.5, 1.0], [1.0, 0.5, 1.0]]}
+
+        Default: [{"name": "sensor_left_center", "location_fn": "side_faces",
+                   "point": [0, 0.5*d_y, 0.5*d_z]}]
     """
     def __init__(self, d_x: float, d_y: float, d_z: float, ele_type: str = 'HEX8', nu: float = 0.3, h: float = 0.5,
                  d_u: float = -0.1, traction=None, obs_loc: np.ndarray = None, n_params: int = 1, d_obs: int = 1,
-                 field=None):
+                 field=None, sensors=None):
         super().__init__()
+
+        # todo: remove obs_loc and d_obs in favor of sensors for specifying observation setup
 
         if traction is None:
             traction = [0., .015, 0.]
@@ -707,9 +768,19 @@ class JaxFemModel(Model):
 
         location_fns = [top]
 
-        sensor_specs = [
-            {"name": "sensor_left_center", "point": np.array([0, 0.5*d_y, 0.5*d_z])},
-        ]
+        # Built-in map of named boundary selectors available to sensor specs
+        location_fn_map = {
+            'side_faces': side_faces,
+            'top_surface': top_surface,
+            'bottom': bottom,
+        }
+
+        # Use provided sensors or default to a single sensor on the side faces todo: remove backwards compatibility
+        if sensors is None:
+            sensors = [
+                {"name": "sensor_left_center", "location_fn": "side_faces",
+                 "point": np.array([0, 0.5*d_y, 0.5*d_z])},
+            ]
 
         data_dir = os.path.join(os.path.dirname(__file__), 'data')
         cell_type = get_meshio_cell_type(ele_type)
@@ -729,7 +800,7 @@ class JaxFemModel(Model):
             location_fns=location_fns
         )
 
-        self.sensor_interpolants = build_sensor_interpolants(self.problem.fe, sensor_specs, side_faces) if sensor_specs else []
+        self.sensor_interpolants = build_sensor_interpolants(self.problem.fe, sensors, location_fn_map) if sensors else []
 
         # rho = 0.5*jnp.ones((self.problem.fe.num_cells, self.problem.fe.num_quads))
         E = 1.e6
@@ -940,6 +1011,14 @@ class JaxFemModel(Model):
         Args:
             config (dict): configuration dictionary with keys like 'd_x', 'd_y', 'd_z',
                           'ele_type', 'nu', 'h', etc.
+                          Optional 'sensors' key specifies sensor configurations. Each entry
+                          must include 'location_fn' (string key or callable), plus either
+                          'point' or 'points':
+
+                              {"name": "s1", "location_fn": "bottom", "point": [x, y, z]}
+                              {"name": "s2", "location_fn": "side_faces",
+                               "points": [[x1,y1,z1], [x2,y2,z2]]}
+
             field (JaxRandomField, optional): JAX-compatible random field for spatially-varying properties
 
         Returns:
@@ -966,12 +1045,34 @@ class JaxFemModel(Model):
 
         d_obs = int(config.get('d_obs', 1))
 
+        # Parse sensors configuration
+        sensors = None
+        if 'sensors' in config:
+            sensors = []
+            for sensor_spec in config['sensors']:
+                sensor = {"name": sensor_spec["name"]}
+
+                if "location_fn" not in sensor_spec:
+                    raise ValueError(
+                        f"Sensor '{sensor_spec['name']}' in config must define 'location_fn'."
+                    )
+                sensor["location_fn"] = sensor_spec["location_fn"]
+
+                if "point" in sensor_spec:
+                    sensor["point"] = np.array(sensor_spec["point"])
+                elif "points" in sensor_spec:
+                    sensor["points"] = np.array(sensor_spec["points"])
+                else:
+                    raise ValueError(f"Sensor '{sensor_spec['name']}' must define 'point' or 'points'")
+
+                sensors.append(sensor)
+
         return cls(
             d_x=d_x, d_y=d_y, d_z=d_z,
             ele_type=ele_type, nu=nu, h=h, d_u=d_u,
             traction=traction, obs_loc=obs_loc,
             n_params=n_params, d_obs=d_obs,
-            field=field
+            field=field, sensors=sensors,
         )
 
 if __name__ == '__main__':
