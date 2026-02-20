@@ -860,7 +860,7 @@ class JaxFemModel(Model):
         u_list = [jnp.ravel(reading["u"]) for reading in sensor_readings]
         return jnp.concatenate(u_list, axis=0) if u_list else jnp.array([])
 
-    def eval(self, params: np.ndarray, idx: int = 0, save: bool = False) -> np.ndarray:  # noqa: D401
+    def eval(self, params: np.ndarray, idx: int = 0, save_dir: str = None) -> np.ndarray:  # noqa: D401
         """Evaluate observed displacement components.
 
         Returns the concatenated vector of per-point sensor displacements.
@@ -881,11 +881,10 @@ class JaxFemModel(Model):
             field_values_flat = self.field.evaluate(theta, quad_coords_flat)
             param_field = field_values_flat.reshape(self.problem.fe.num_cells, self.problem.fe.num_quads)
 
-        sol_list = self.fwd_pred([param_field])
-        if save:
-            data_dir = './data'
-            os.makedirs(data_dir, exist_ok=True)
-            vtk_path = os.path.join(data_dir, 'vtk/u.vtu')
+        if save_dir:
+            sol_list = self.fwd_pred([param_field])
+            os.makedirs(save_dir, exist_ok=True)
+            vtk_path = os.path.join(save_dir, 'vtk/u.vtu')
             os.makedirs(os.path.dirname(vtk_path), exist_ok=True)
             save_sol(self.problem.fe, sol_list[0], vtk_path)
 
