@@ -596,7 +596,7 @@ def point_in_triangle(point, tri, tol):
     v = (dot00 * dot12 - dot01 * dot02) * inv_denom
     w = 1.0 - u - v
     inside = (u >= -tol) and (v >= -tol) and (w >= -tol) and (u + v <= 1.0 + tol)
-    return inside, (w, v, u)
+    return inside, (w, u, v)  # weights for tri[0], tri[1], tri[2] respectively
 
 def evaluate_sensor_displacements(sol, interpolants):
     """Evaluate displacements at sensors based on precomputed interpolants.
