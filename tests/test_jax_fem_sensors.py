@@ -3,10 +3,10 @@
 
 Sensor Format:
 - Each sensor spec must include 'name', 'location_fn', and either 'point' or 'points'.
-- 'location_fn' can be a string ('side_faces', 'top_surface', 'bottom') or a callable.
+- 'location_fn' can be a string ('side_faces', 'top_face', 'bottom_face') or a callable.
 
   Example: [{"name": "s1", "location_fn": "side_faces", "point": np.array([x, y, z])}]
-  Example: [{"name": "s1", "location_fn": "bottom",
+  Example: [{"name": "s1", "location_fn": "bottom_face",
              "points": np.array([[x1,y1,z1], [x2,y2,z2]])}]
 
 Output Dimensions:
@@ -21,7 +21,11 @@ from pdmp.distributions import MultivariateNormal
 
 
 def test_jax_fem_model_basic_sensors():
-    """Test JaxFemModel with basic sensor setup."""
+    """Test JaxFemModel with basic sensor setup.
+
+    Also verifies that specifying a sensor point that does not lie on the
+    declared face raises a ``ValueError`` during model construction.
+    """
     print("=" * 70)
     print("Testing JaxFemModel with basic sensors")
     print("=" * 70)
@@ -30,23 +34,55 @@ def test_jax_fem_model_basic_sensors():
     field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
     field = JaxConstantField(field_dist)
 
-    # Define a simple sensor (single point)
-    sensors = [
-        {"name": "sensor_center", "location_fn": "side_faces", "point": np.array([0.5, 0.5, 1.25])}
+    # --- Part 1: point NOT on side_faces should raise ValueError --------------
+    # [0.5, 0.5, 1.25] is an interior point; none of its x/y coordinates equal
+    # 0 or d_x/d_y, so build_sensor_interpolants must raise a ValueError.
+    invalid_sensors = [
+        {"name": "sensor_interior", "location_fn": "side_faces",
+         "point": np.array([0.5, 0.5, 1.25])}
     ]
 
-    # Create FEM model with sensor
+    print("Part 1: Verifying that an off-face sensor point raises ValueError...")
+    raised = False
+    try:
+        _ = JaxFemModel(
+            d_x=1.0, d_y=1.0, d_z=2.5,
+            h=0.25,
+            n_params=1,
+            field=field,
+            sensors=invalid_sensors
+        )
+    except ValueError as e:
+        raised = True
+        print(f"  \u2713 ValueError raised as expected: {e}")
+        assert "sensor_interior" in str(e) or "not located" in str(e), (
+            f"Unexpected error message: {e}"
+        )
+
+    assert raised, (
+        "Expected a ValueError when the sensor point is not on the declared face, "
+        "but no exception was raised."
+    )
+
+    # --- Part 2: valid sensor point on side_faces creates model correctly -----
+    # [0.0, 0.5, 1.25] lies on the x=0 side face.
+    print("Part 2: Creating model with a valid side-face sensor point...")
+    valid_sensors = [
+        {"name": "sensor_side", "location_fn": "side_faces",
+         "point": np.array([0.0, 0.5, 1.25])}
+    ]
+
     model = JaxFemModel(
         d_x=1.0, d_y=1.0, d_z=2.5,
         h=0.25,  # coarse mesh for testing
         n_params=1,
         field=field,
-        sensors=sensors
+        sensors=valid_sensors
     )
 
     print(f"Model input dimension: {model.get_dim_in()}")
     print(f"Model output dimension: {model.get_dim_out()}")
-    print(f"Number of sensors: {len(sensors)}")
+    print(f"Number of sensors: {len(valid_sensors)}")
 
     assert model.get_dim_in() == 1, "Should have 1 parameter (from field)"
     # Each sensor point produces 3 displacement components (x, y, z)
@@ -61,7 +97,7 @@ def test_jax_fem_model_basic_sensors():
     print(f"Model output values: {y}")
 
     assert y.shape == (3,), f"Expected shape (3,), got {y.shape}"
-    print("✓ Basic sensor test passed!\n")
+    print("\u2713 Basic sensor test passed!\n")
 
 
 def test_jax_fem_model_multiple_points_per_sensor():
@@ -146,7 +182,7 @@ def test_jax_fem_model_multiple_sensor_groups():
         },
         {
             "name": "top_sensor",
-            "location_fn": "top_surface",
+            "location_fn": "top_face",
             "point": np.array([0.5, 0.5, 2.5])
         }
     ]
@@ -262,7 +298,7 @@ def test_jax_fem_model_sensors_from_config_multiple_groups():
         },
         {
             "name": "top_sensor",
-            "location_fn": "top_surface",
+            "location_fn": "top_face",
             "point": [0.5, 0.5, 2.5]
         },
     ]
@@ -466,7 +502,7 @@ def test_dirichlet_boundary_sensors_near_zero():
     sensors_on_dirichlet = [
         {
             "name": "dirichlet_face_sensors",
-            "location_fn": "bottom",
+            "location_fn": "bottom_face",
             "points": np.array([
                 [0.25, 0.25, 0.0],
                 [0.5,  0.5,  0.0],
@@ -531,11 +567,11 @@ def test_dirichlet_boundary_sensors_near_zero():
 
     # --- Sanity check: sensor at top should have non-zero displacement --------
     from pdmp.forward_model import build_sensor_interpolants
-    sensors_top = [{"name": "top_sensor", "location_fn": "top_surface",
+    sensors_top = [{"name": "top_sensor", "location_fn": "top_face",
                     "point": np.array([0.5, 0.5, 2.5])}]
     top_interpolants = build_sensor_interpolants(
         fe, sensors_top,
-        location_fn_map={'top_surface': lambda p: jnp.isclose(p[2], 2.5, atol=1e-5)}
+        location_fn_map={'top_face': lambda p: jnp.isclose(p[2], 2.5, atol=1e-5)}
     )
     top_readings = evaluate_sensor_displacements(sol, top_interpolants)
     u_top = np.asarray(top_readings[0]["u"])
