@@ -555,19 +555,83 @@ def face_interpolation_weights(point, coords, tol):
             return face_weights
         return None
     if len(coords) == 4:
-        return quad_barycentric_weights(point, coords, tol)
+        return quad_bilinear_weights(point, coords, tol)
     raise ValueError(f"Unsupported face with {len(coords)} nodes for interpolation.")
 
-def quad_barycentric_weights(point, quad_coords, tol):
-    tri_sets = ((0, 1, 2), (0, 2, 3))
-    for tri in tri_sets:
-        inside, weights = point_in_triangle(point, quad_coords[list(tri)], tol)
-        if inside:
-            face_weights = np.zeros(len(quad_coords))
-            for local_idx, w in zip(tri, weights):
-                face_weights[local_idx] = w
-            return face_weights
-    return None
+def quad_bilinear_weights(point, quad_coords, tol):
+    """Bilinear interpolation weights for a planar quad face (4 nodes).
+
+    Correctly evaluates all four bilinear shape functions at the query point,
+    so that interior face points receive contributions from all four nodes —
+    as the FEM bilinear basis requires.
+
+    Unlike a naïve implementation, this does **not** assume a fixed CCW/CW node
+    ordering (such as the standard (-1,-1),(+1,-1),(+1,+1),(-1,+1) convention).
+    Instead, it projects all four nodes onto the face plane and solves for the
+    local (s,t) coordinates that are consistent with the actual node layout.
+    This makes it robust to the row-major or otherwise non-standard orderings
+    produced by different mesh generators.
+
+    Returns
+    -------
+    np.ndarray of shape (4,) if the point lies on the face, else None.
+    """
+    # ── Coplanarity check ────────────────────────────────────────────────────
+    v0 = quad_coords[1] - quad_coords[0]
+    v1 = quad_coords[3] - quad_coords[0]
+    normal = np.cross(v0, v1)
+    normal_norm = np.linalg.norm(normal)
+    if normal_norm < tol:
+        # Fallback: try with the other diagonal
+        v1 = quad_coords[2] - quad_coords[0]
+        normal = np.cross(v0, v1)
+        normal_norm = np.linalg.norm(normal)
+        if normal_norm < tol:
+            return None
+    if np.abs(np.dot(normal, point - quad_coords[0])) / normal_norm > tol:
+        return None
+
+    # ── Project onto face plane (2D) ─────────────────────────────────────────
+    e1 = v0 / np.linalg.norm(v0)
+    e2 = np.cross(normal / normal_norm, e1)
+
+    def to_2d(p):
+        d = p - quad_coords[0]
+        return np.array([np.dot(d, e1), np.dot(d, e2)])
+
+    nodes_2d = np.array([to_2d(quad_coords[i]) for i in range(4)])  # (4, 2)
+    point_2d = to_2d(point)                                           # (2,)
+
+    # ── Determine local (s, t) coordinates for each mesh node ────────────────
+    # We fit the bilinear map  x(s,t) = sum_i N_i(s,t) * x_i  by finding the
+    # axis-aligned bounding box of the 2D nodes and mapping them to [-1,+1]^2.
+    # This correctly handles row-major and column-major orderings.
+    mins = nodes_2d.min(axis=0)
+    maxs = nodes_2d.max(axis=0)
+    span = maxs - mins
+    if np.any(span < tol):
+        return None
+
+    # Map each node to its local coordinate in [-1, +1]^2
+    nodes_st = 2.0 * (nodes_2d - mins) / span - 1.0   # (4, 2)
+    # Round to ±1 to avoid floating-point drift at corners
+    nodes_st = np.clip(nodes_st, -1.0, 1.0)
+    s_nodes = nodes_st[:, 0]
+    t_nodes = nodes_st[:, 1]
+
+    # ── Map query point to local coordinates ─────────────────────────────────
+    point_st = 2.0 * (point_2d - mins) / span - 1.0
+
+    # ── Check the point is inside [-1,+1]^2 (with tolerance) ─────────────────
+    boundary_tol = max(tol, 1e-6)
+    if np.abs(point_st[0]) > 1.0 + boundary_tol or np.abs(point_st[1]) > 1.0 + boundary_tol:
+        return None
+    point_st = np.clip(point_st, -1.0, 1.0)
+    s, t = point_st
+
+    # ── Evaluate bilinear shape functions ─────────────────────────────────────
+    weights = 0.25 * (1.0 + s_nodes * s) * (1.0 + t_nodes * t)
+    return weights
 
 def point_in_triangle(point, tri, tol):
     v0 = tri[1] - tri[0]
