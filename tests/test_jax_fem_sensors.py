@@ -16,8 +16,419 @@ Output Dimensions:
 
 import numpy as np
 from pdmp.random_field import JaxConstantField, get_jax_field
-from pdmp.forward_model import JaxFemModel
+from pdmp.forward_model import (
+    JaxFemModel,
+    quad_bilinear_weights,
+    point_in_triangle,
+    build_sensor_interpolants,
+    evaluate_sensor_displacements,
+)
 from pdmp.distributions import MultivariateNormal
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Unit tests for the low-level interpolation primitives
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_quad_weights_at_nodes():
+    """At each corner node the corresponding weight must be 1 and all others 0."""
+    print("=" * 70)
+    print("Unit test: quad_bilinear_weights at corner nodes")
+    print("=" * 70)
+
+    # Axis-aligned unit square in the z=0 plane, CCW ordering.
+    quad = np.array([
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+    ])
+    tol = 1e-8
+
+    for i, node in enumerate(quad):
+        w = quad_bilinear_weights(node, quad, tol)
+        assert w is not None, f"Node {i}: weights returned None"
+        assert np.allclose(w[i], 1.0, atol=1e-10), \
+            f"Node {i}: expected w[{i}]=1, got {w}"
+        other = [j for j in range(4) if j != i]
+        assert np.allclose(w[other], 0.0, atol=1e-10), \
+            f"Node {i}: expected other weights=0, got {w}"
+        print(f"  node {i}: weights = {w}  ✓")
+
+    print("✓ quad_weights_at_nodes passed!\n")
+
+
+def test_quad_weights_at_centre():
+    """At the face centre all four weights should equal 0.25."""
+    print("=" * 70)
+    print("Unit test: quad_bilinear_weights at face centre")
+    print("=" * 70)
+
+    quad = np.array([
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+    ])
+    centre = np.array([0.5, 0.5, 0.0])
+    tol = 1e-8
+
+    w = quad_bilinear_weights(centre, quad, tol)
+    assert w is not None, "Centre: weights returned None"
+    assert np.allclose(w, 0.25, atol=1e-10), \
+        f"Centre: expected all weights=0.25, got {w}"
+    print(f"  centre weights = {w}  ✓")
+    print("✓ quad_weights_at_centre passed!\n")
+
+
+def test_quad_weights_on_edge():
+    """On an edge only the two nodes spanning that edge should be non-zero."""
+    print("=" * 70)
+    print("Unit test: quad_bilinear_weights on edge")
+    print("=" * 70)
+
+    quad = np.array([
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+    ])
+    tol = 1e-8
+
+    # Mid-point of edge 0-1 (y=0 bottom edge): nodes 0 and 1 share weight 0.5
+    p_edge01 = np.array([0.5, 0.0, 0.0])
+    w = quad_bilinear_weights(p_edge01, quad, tol)
+    assert w is not None
+    assert np.allclose(w[0], 0.5, atol=1e-10) and np.allclose(w[1], 0.5, atol=1e-10), \
+        f"Edge 0-1 midpoint: expected [0.5, 0.5, 0, 0], got {w}"
+    assert np.allclose(w[2:], 0.0, atol=1e-10), \
+        f"Edge 0-1 midpoint: expected w[2]=w[3]=0, got {w}"
+    print(f"  edge 0-1 midpoint weights = {w}  ✓")
+
+    # Point at y=0.49 on left edge (x=0): nodes 0 and 3, weights (0.51, 0.49) approx
+    p_left = np.array([0.0, 0.49, 0.0])
+    w2 = quad_bilinear_weights(p_left, quad, tol)
+    assert w2 is not None
+    assert np.allclose(w2[1], 0.0, atol=1e-10) and np.allclose(w2[2], 0.0, atol=1e-10), \
+        f"Left edge y=0.49: expected w[1]=w[2]=0, got {w2}"
+    assert np.isclose(w2[0] + w2[3], 1.0, atol=1e-10), \
+        f"Left edge y=0.49: weights should sum to 1, got {w2}"
+    assert np.isclose(w2[3], 0.49, atol=1e-10) and np.isclose(w2[0], 0.51, atol=1e-10), \
+        f"Left edge y=0.49: expected w[0]=0.51, w[3]=0.49, got {w2}"
+    print(f"  left edge (x=0, y=0.49) weights = {w2}  ✓")
+
+    print("✓ quad_weights_on_edge passed!\n")
+
+
+def test_quad_weights_interior_all_nonzero():
+    """For a generic interior point all four bilinear weights must be non-zero.
+
+    This is the key test that was broken by the old triangle-splitting approach,
+    which would assign zero weight to one node even for interior points.
+    """
+    print("=" * 70)
+    print("Unit test: quad_bilinear_weights — all 4 weights non-zero at interior")
+    print("=" * 70)
+
+    quad = np.array([
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+    ])
+    tol = 1e-8
+
+    interior_points = [
+        np.array([0.3, 0.4, 0.0]),
+        np.array([0.7, 0.2, 0.0]),
+        np.array([0.1, 0.9, 0.0]),
+        np.array([0.6, 0.6, 0.0]),
+    ]
+
+    for p in interior_points:
+        w = quad_bilinear_weights(p, quad, tol)
+        assert w is not None, f"Interior point {p}: weights returned None"
+        assert np.all(w > tol), \
+            f"Interior point {p}: expected all 4 weights > 0, got {w}"
+        assert np.isclose(np.sum(w), 1.0, atol=1e-10), \
+            f"Interior point {p}: weights don't sum to 1, got sum={np.sum(w)}"
+        # Verify reconstruction: sum_i w_i * node_i == point (x, y components)
+        reconstructed = w @ quad[:, :2]
+        assert np.allclose(reconstructed, p[:2], atol=1e-10), \
+            f"Interior point {p}: reconstruction failed: got {reconstructed}"
+        print(f"  p={p[:2]}  weights={np.round(w,4)}  reconstructed={np.round(reconstructed,4)}  ✓")
+
+    print("✓ quad_weights_interior_all_nonzero passed!\n")
+
+
+def test_quad_weights_off_plane_rejected():
+    """A point that is not coplanar with the face must return None."""
+    print("=" * 70)
+    print("Unit test: quad_bilinear_weights rejects off-plane points")
+    print("=" * 70)
+
+    quad = np.array([
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+    ])
+    tol = 1e-8
+
+    off_plane_points = [
+        np.array([0.5, 0.5, 0.1]),    # above face, inside projected boundary
+        np.array([0.3, 0.3, -0.05]),  # below face
+        np.array([0.0, 0.49, 2.5]),   # the original bug case: on x=0 side face, z=2.5
+    ]
+
+    for p in off_plane_points:
+        w = quad_bilinear_weights(p, quad, tol)
+        assert w is None, \
+            f"Off-plane point {p}: expected None, got {w}"
+        print(f"  p={p}  correctly rejected (returned None)  ✓")
+
+    print("✓ quad_weights_off_plane_rejected passed!\n")
+
+
+def test_quad_weights_outside_face_rejected():
+    """A coplanar point that lies outside the face boundary must return None."""
+    print("=" * 70)
+    print("Unit test: quad_bilinear_weights rejects out-of-face coplanar points")
+    print("=" * 70)
+
+    quad = np.array([
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+    ])
+    tol = 1e-8
+
+    outside_points = [
+        np.array([1.5, 0.5, 0.0]),   # outside in x
+        np.array([0.5, -0.1, 0.0]),  # outside in y
+        np.array([-0.1, 0.5, 0.0]),  # outside in x (negative)
+    ]
+
+    for p in outside_points:
+        w = quad_bilinear_weights(p, quad, tol)
+        assert w is None, \
+            f"Out-of-face point {p}: expected None, got {w}"
+        print(f"  p={p}  correctly rejected (returned None)  ✓")
+
+    print("✓ quad_weights_outside_face_rejected passed!\n")
+
+
+def test_quad_weights_non_square_face():
+    """Bilinear interpolation should work on a rectangular (non-square) face."""
+    print("=" * 70)
+    print("Unit test: quad_bilinear_weights on a rectangular face")
+    print("=" * 70)
+
+    # 2 x 0.5 rectangle in z=1 plane
+    quad = np.array([
+        [0.0, 0.0, 1.0],
+        [2.0, 0.0, 1.0],
+        [2.0, 0.5, 1.0],
+        [0.0, 0.5, 1.0],
+    ])
+    tol = 1e-8
+
+    # Centre should give all weights = 0.25
+    centre = np.array([1.0, 0.25, 1.0])
+    w = quad_bilinear_weights(centre, quad, tol)
+    assert w is not None
+    assert np.allclose(w, 0.25, atol=1e-10), f"Rectangle centre: expected all 0.25, got {w}"
+    print(f"  rectangle centre weights = {w}  ✓")
+
+    # Interior point (1.2, 0.1): all 4 weights non-zero
+    p = np.array([1.2, 0.1, 1.0])
+    w2 = quad_bilinear_weights(p, quad, tol)
+    assert w2 is not None
+    assert np.all(w2 > tol), f"Rectangle interior: expected all weights > 0, got {w2}"
+    reconstructed = w2 @ quad[:, :2]
+    assert np.allclose(reconstructed, p[:2], atol=1e-10), \
+        f"Rectangle interior: reconstruction failed: {reconstructed} != {p[:2]}"
+    print(f"  rectangle interior p={p[:2]}  weights={np.round(w2,4)}  ✓")
+
+    print("✓ quad_weights_non_square_face passed!\n")
+
+
+def test_point_in_triangle_coplanarity():
+    """point_in_triangle must reject points that are not on the triangle's plane."""
+    print("=" * 70)
+    print("Unit test: point_in_triangle coplanarity check")
+    print("=" * 70)
+
+    tri = np.array([
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+    ])
+    tol = 1e-8
+
+    # Off-plane: z != 0 but (x,y) projects inside the triangle
+    inside, w = point_in_triangle(np.array([0.2, 0.2, 0.1]), tri, tol)
+    assert not inside, "Off-plane point should be rejected"
+    print("  off-plane point correctly rejected  ✓")
+
+    # On-plane, inside
+    inside, w = point_in_triangle(np.array([0.2, 0.2, 0.0]), tri, tol)
+    assert inside and w is not None
+    assert np.isclose(sum(w), 1.0, atol=1e-10)
+    print(f"  on-plane interior point: weights={np.round(w,4)}  ✓")
+
+    # On-plane, outside
+    inside, _ = point_in_triangle(np.array([0.8, 0.8, 0.0]), tri, tol)
+    assert not inside, "Out-of-triangle point should be rejected"
+    print("  on-plane exterior point correctly rejected  ✓")
+
+    print("✓ point_in_triangle_coplanarity passed!\n")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Integration test: verify all-4-node contribution through a full FEM solve
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_interior_face_sensor_uses_all_four_nodes():
+    """An interior face sensor must interpolate from all 4 nodes of its quad face.
+
+    With the old triangle-splitting approach one of the four nodes received zero
+    weight even at interior points.  This test verifies that the bilinear
+    implementation gives non-zero weight to all four nodes for a point that is
+    strictly inside the face (not on any edge or at any corner).
+    """
+    print("=" * 70)
+    print("Integration test: interior face sensor uses all 4 nodes")
+    print("=" * 70)
+
+    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field = JaxConstantField(field_dist)
+
+    # Place sensor strictly inside a top-face quad: x and y are not on any mesh
+    # node (h=0.25 → nodes at 0, 0.25, 0.5, …).  x=0.1, y=0.1 falls in the
+    # quad spanned by (0,0), (0.25,0), (0.25,0.25), (0,0.25).
+    sensors = [
+        {"name": "interior_top",
+         "location_fn": "top_face",
+         "point": np.array([0.1, 0.1, 2.5])}
+    ]
+
+    model = JaxFemModel(
+        d_x=1.0, d_y=1.0, d_z=2.5,
+        h=0.25,
+        n_params=1,
+        field=field,
+        sensors=sensors,
+    )
+
+    interp = model.sensor_interpolants[0]
+    weights = interp["weights"][0]
+    nodes   = interp["nodes"][0]
+    coords  = model.problem.fe.points[nodes]
+
+    print(f"  Sensor node IDs  : {nodes}")
+    print(f"  Node coordinates :")
+    for nid, c, w in zip(nodes, coords, weights):
+        print(f"    node {nid:4d}  {c}  weight={w:.6f}")
+
+    tol = 1e-8
+    assert np.all(weights > tol), (
+        f"Expected all 4 weights > 0 for interior point, got {weights}. "
+        "This indicates the old triangle-splitting bug is still present."
+    )
+    assert np.isclose(np.sum(weights), 1.0, atol=1e-10), \
+        f"Weights do not sum to 1: {weights}"
+
+    # Also verify the weighted sum of node coordinates recovers the sensor point
+    reconstructed = weights @ coords
+    expected = np.array([0.1, 0.1, 2.5])
+    assert np.allclose(reconstructed, expected, atol=1e-10), \
+        f"Weight reconstruction failed: {reconstructed} != {expected}"
+    print(f"  Reconstructed point: {reconstructed}  ✓")
+
+    print("✓ interior_face_sensor_uses_all_four_nodes passed!\n")
+
+
+def test_shared_edge_sensors_agree():
+    """Two sensors at the same point on the edge shared by two boundary faces
+    must produce identical interpolation weights (on the two shared edge nodes)
+    and identical displacement readings after a FEM solve.
+    """
+    print("=" * 70)
+    print("Integration test: shared-edge sensors agree")
+    print("=" * 70)
+
+    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field = JaxConstantField(field_dist)
+
+    # y=0.49 is strictly between mesh nodes 0.25 and 0.5 so the point lies on
+    # an interior edge of each boundary face (not at a corner node).
+    shared_pt = np.array([0.0, 0.49, 2.5])
+
+    sensors = [
+        {"name": "side_edge",  "location_fn": "side_faces", "point": shared_pt},
+        {"name": "top_edge",   "location_fn": "top_face",   "point": shared_pt},
+    ]
+
+    model = JaxFemModel(
+        d_x=1.0, d_y=1.0, d_z=2.5,
+        h=0.25,
+        n_params=1,
+        field=field,
+        sensors=sensors,
+    )
+
+    s0, s1 = model.sensor_interpolants
+
+    # Non-zero weights must sit on exactly the two nodes of the shared edge
+    nz0 = set(s0["nodes"][0][s0["weights"][0] > 1e-10].tolist())
+    nz1 = set(s1["nodes"][0][s1["weights"][0] > 1e-10].tolist())
+
+    print(f"  side_edge  non-zero-weight nodes: {sorted(nz0)}")
+    print(f"  top_edge   non-zero-weight nodes: {sorted(nz1)}")
+
+    assert nz0 == nz1, (
+        f"Both sensors should activate the same two edge nodes, "
+        f"but side={sorted(nz0)}, top={sorted(nz1)}"
+    )
+    assert len(nz0) == 2, f"Expected exactly 2 non-zero-weight nodes, got {len(nz0)}"
+
+    # The weights on those two shared nodes should be identical
+    def shared_weights(interp):
+        nz_mask = interp["weights"][0] > 1e-10
+        return dict(zip(interp["nodes"][0][nz_mask].tolist(),
+                        interp["weights"][0][nz_mask].tolist()))
+
+    w0 = shared_weights(s0)
+    w1 = shared_weights(s1)
+    for node_id in nz0:
+        assert np.isclose(w0[node_id], w1[node_id], atol=1e-10), (
+            f"Node {node_id}: side weight={w0[node_id]}, top weight={w1[node_id]}"
+        )
+    print(f"  Shared edge weights: {w0}  ✓")
+
+    # Full FEM solve: displacement readings must be identical
+    import jax.numpy as jnp
+    fe = model.problem.fe
+    param_field = 10. * jnp.ones((fe.num_cells, fe.num_quads))
+    sol = model.fwd_pred([param_field])[0]
+    readings = evaluate_sensor_displacements(sol, model.sensor_interpolants)
+    u0 = np.asarray(readings[0]["u"])
+    u1 = np.asarray(readings[1]["u"])
+    diff = np.max(np.abs(u0 - u1))
+    print(f"  side displacement : {u0}")
+    print(f"  top  displacement : {u1}")
+    print(f"  max |difference|  : {diff:.2e}")
+    assert diff == 0.0, f"Expected exactly zero difference, got {diff:.2e}"
+
+    print("✓ shared_edge_sensors_agree passed!\n")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Existing integration tests (unchanged)
+# ─────────────────────────────────────────────────────────────────────────────
+
 
 
 def test_jax_fem_model_basic_sensors():
@@ -586,15 +997,25 @@ def test_dirichlet_boundary_sensors_near_zero():
 
 
 if __name__ == '__main__':
+    # ── Unit tests (no FEM model needed) ──────────────────────────────────────
+    test_quad_weights_at_nodes()
+    test_quad_weights_at_centre()
+    test_quad_weights_on_edge()
+    test_quad_weights_interior_all_nonzero()
+    test_quad_weights_off_plane_rejected()
+    test_quad_weights_outside_face_rejected()
+    test_quad_weights_non_square_face()
+    test_point_in_triangle_coplanarity()
+
+    # ── Integration tests (need a FEM solve) ──────────────────────────────────
     # Initialize jax-fem logger by creating a minimal model, then suppress it
-    # This prevents verbose output during the actual tests
     print("Initializing test environment...")
     field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[1.**2]]))
     field = JaxConstantField(field_dist)
-    _ = JaxFemModel(d_x=1.0, d_y=1.0, d_z=2.5, h=0.5, n_params=1, field=field)
+    _ = JaxFemModel(d_x=1.0, d_y=1.0, d_z=2.5, h=0.5, n_params=1, field=field,
+                    sensors=[{"name": "warmup", "location_fn": "side_faces",
+                               "point": np.array([0.0, 0.5, 1.0])}])
 
-    # Now suppress the logger for all subsequent model creations
-    # Use ERROR level instead of WARNING to suppress even more output
     import logging
     jax_fem_logger = logging.getLogger('jax_fem')
     jax_fem_logger.setLevel(logging.ERROR)
@@ -602,7 +1023,8 @@ if __name__ == '__main__':
         handler.setLevel(logging.ERROR)
     print("Logger suppression activated.\n")
 
-    # Run all tests
+    test_interior_face_sensor_uses_all_four_nodes()
+    test_shared_edge_sensors_agree()
     test_jax_fem_model_basic_sensors()
     test_jax_fem_model_multiple_points_per_sensor()
     test_jax_fem_model_multiple_sensor_groups()
