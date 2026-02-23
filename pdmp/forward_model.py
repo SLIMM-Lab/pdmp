@@ -753,15 +753,15 @@ class JaxFemModel(Model):
         def zero_dirichlet_val(point):
             return 0.
 
-        def bottom(point):
+        def bottom_face(point):
             return jnp.isclose(point[2], 0., atol=1e-5)
 
-        def top(point):
+        def indenter(point):
             return (point[2] > 2.0) * jnp.isclose(point[1], d_y, atol=1e-5)
             # return ((point[0] - d_x / 2.) ** 2 + (point[2] - d_z - 0.75) ** 2 > 1.8
             #         * jnp.isclose(point[1], d_y, atol=1e-5))
 
-        def top_surface(point):
+        def top_face(point):
             return jnp.isclose(point[2], d_z, atol=1e-5)
 
         def side_faces(point):
@@ -771,18 +771,18 @@ class JaxFemModel(Model):
                     jnp.isclose(point[1], d_y, atol=1e-5))
 
         dirichlet_bc_info = [
-            [bottom,             bottom,             bottom], # location
+            [bottom_face, bottom_face, bottom_face], # location
             [0,                  1,                  2],   # dof
             [zero_dirichlet_val, zero_dirichlet_val, zero_dirichlet_val] # value
         ]
 
-        location_fns = [top]
+        location_fns = [indenter]
 
         # Built-in map of named boundary selectors available to sensor specs
         location_fn_map = {
             'side_faces': side_faces,
-            'top_surface': top_surface,
-            'bottom': bottom,
+            'top_face': top_face,
+            'bottom_face': bottom_face,
         }
 
         # Use provided sensors or default to a single sensor on the side faces todo: remove backwards compatibility
