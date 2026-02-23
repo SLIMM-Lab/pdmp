@@ -573,6 +573,16 @@ def point_in_triangle(point, tri, tol):
     v0 = tri[1] - tri[0]
     v1 = tri[2] - tri[0]
     v2 = point - tri[0]
+
+    # Coplanarity check: the point must lie on the plane of the triangle.
+    # Compute the face normal and verify the point has no component along it.
+    normal = np.cross(v0, v1)
+    normal_norm = np.linalg.norm(normal)
+    if normal_norm < tol:
+        return False, None
+    if np.abs(np.dot(normal, v2)) / normal_norm > tol:
+        return False, None
+
     dot00 = np.dot(v0, v0)
     dot01 = np.dot(v0, v1)
     dot02 = np.dot(v0, v2)
