@@ -880,7 +880,14 @@ class JaxFemModel(Model):
         E = 1.e6
         params = [E]
 
-        self.fwd_pred = ad_wrapper(self.problem)
+        # Use UMFPACK (direct solver) for the adjoint.  The default JAX BiCGStab
+        # starts from a zero initial guess and can hit a numerical breakdown
+        # (ρ → 0 in the BiCGStab recurrence) for certain RHS vectors, causing
+        # sporadic "adjoint solver did not converge" failures near MAP points.
+        # UMFPACK is a direct sparse solver and is unconditionally robust here.
+        # might need to have two wrappers for problem bc umfpack does not scale well with dofs
+        # BiCGStab only caused problems at the MAP so far, expected to work for the rest of domain
+        self.fwd_pred = ad_wrapper(self.problem, adjoint_solver_options={"umfpack_solver": {}})
 
         # infer observed dimension from sensor setup (if any)
         if self.sensor_interpolants:
