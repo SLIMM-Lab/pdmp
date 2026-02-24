@@ -203,7 +203,6 @@ class CustomDumper(yaml.SafeDumper):
 # Attach the new list representation to our dumper
 CustomDumper.add_representer(list, CustomDumper.represent_list)
 
-
 def dump_yaml_custom_format(data: Any, file_path: str):
     """Dumps YAML data where lists are in bracket format but dictionaries use standard indentation.
 
@@ -218,6 +217,23 @@ def dump_yaml_custom_format(data: Any, file_path: str):
                   sort_keys=False,
                   default_flow_style=False)
 
+def get_config(config_path: str) -> dict:
+    """Load the configuration from a file.
+
+    Args:
+        config_path: The path to the configuration file.
+    Returns:
+        dict: The configuration dictionary.
+    """
+
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+
+    # convert the configuration to numpy arrays
+    config = yaml_to_numpy(config,
+                           exclude_keys={'hidden_layers', 'update_model'})
+
+    return config
 
 def save_config(config: dict,
                 save_dir: str,

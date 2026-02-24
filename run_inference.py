@@ -9,7 +9,7 @@ import numpy as np
 
 from pdmp import logger
 from pdmp.logger_setup import setup_file_handler, suppress_external_loggers
-from pdmp.loader import get_target, get_sampler, get_surrogate, yaml_to_numpy, save_config
+from pdmp.loader import get_target, get_sampler, get_surrogate, get_config, save_config
 
 
 
@@ -35,17 +35,10 @@ def main():
 
     # parse input arguments
     args = parse_args()
-
-    # load the configuration file
-    with open(args.config, 'r') as f:
-        config = yaml.safe_load(f)
+    config = get_config(args.config)
 
     setup_file_handler(logger, config['output']['dir'],
                        **config['output']['logging'])
-
-    # # convert the configuration to numpy arrays
-    config = yaml_to_numpy(config,
-                           exclude_keys={'hidden_layers', 'update_model'})
 
     # collect seed for rng
     rng = np.random.default_rng(config.get('seed', 0))
