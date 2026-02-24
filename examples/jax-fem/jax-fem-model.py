@@ -6,6 +6,9 @@ from pdmp.forward_model import JaxFemModel
 from pdmp.distributions import GaussianLikelihood
 from pdmp.plotting_utils import get_2d_despined_figure
 
+from pdmp import logger
+from pdmp.logger_setup import setup_file_handler, suppress_external_loggers
+
 save_fig = False
 path = 'figures'
 
@@ -14,13 +17,16 @@ if save_fig and not os.path.exists(path):
     os.makedirs(path)
 
 if __name__ == "__main__":
-    model = JaxFemModel(d_x=1.0, d_y=1.0, d_z=2.5, n_params=1, h=0.125, traction=[0, 15e-4, 0])
+
+    setup_file_handler(logger, '.')
+    model = JaxFemModel(d_x=1.0, d_y=1.0, d_z=2.5, n_params=1, h=0.25, traction=[0, 15e-4, 0])
+    suppress_external_loggers()
 
     theta = np.array([1.5])
     print(f"theta = {theta}")
 
     # Forward eval
-    y = model.eval(theta, save=True)
+    y = model.eval(theta)
     print(f"eval(theta) -> y shape: {y.shape}, y = {y}")
 
     # Linearize + VJP
