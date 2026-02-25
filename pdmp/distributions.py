@@ -576,8 +576,8 @@ class BananaDistribution(Distribution):
     """Banana distribution."""
 
     def __init__(self,
-                 mean: np.ndarray,
-                 cov: np.ndarray,
+                 mean: np.ndarray = np.array([0.0, 4.0]),
+                 cov: np.ndarray = np.array([[1.0, 0.5], [0.5, 1.0]]),
                  a: float = 2.0,
                  b: float = 0.2,
                  rng: np.random.Generator = None,
@@ -632,6 +632,23 @@ class BananaDistribution(Distribution):
             nGrad[0] / self._a + nGrad[1] * self._a * self._b * 2 * x[0],
             nGrad[1] * self._a
         ])
+
+    @override
+    def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
+        y = self.transform(x)
+        # Jacobian J = ∂y/∂x
+        J = np.array([[1.0 / self._a, 0.0],
+                      [2.0 * self._a * self._b * x[0], self._a]])
+        # Hessian of log p_gauss at y: H_gauss = -C^{-1}
+        H_gauss = -self._gaussian.inv_C
+        # Gradient of log p_gauss at y: g = -C^{-1}(y - mu)
+        g_gauss = self._gaussian.grad_log_density(y)
+        # Chain rule, first-order part: J^T H_gauss J
+        H = J.T @ H_gauss @ J
+        # Second-order part from the curvature of y_2 w.r.t. x:
+        # ∂²y_2/∂x_0² = 2*a*b, all other second derivatives are zero.
+        H[0, 0] += g_gauss[1] * 2.0 * self._a * self._b
+        return H
 
 
 class MultivariateLogNormal(Distribution):
