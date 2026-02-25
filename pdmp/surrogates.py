@@ -27,6 +27,12 @@ from gpytorch.kernels import RBFKernel, ScaleKernel, RBFKernelGrad
 from gpytorch.distributions.multivariate_normal import MultivariateNormal as gpyMultivariateNormal
 from gpytorch.distributions.multitask_multivariate_normal import MultitaskMultivariateNormal
 
+from botorch.models.model import Model as BoTorchModel
+from botorch.posteriors.gpytorch import GPyTorchPosterior
+from botorch.acquisition import AcquisitionFunction
+from botorch.optim import optimize_acqf
+from linear_operator.operators import DiagLinearOperator
+
 from pdmp.distributions import Distribution, MultivariateNormal, Posterior, find_mean, find_curvature
 from pdmp.plotting_utils import get_2d_despined_figure
 from pdmp import logger
@@ -558,6 +564,137 @@ class NeuralNetwork(SurrogateModel):
             f'figures/training_validation_loss_{self._x_data.shape[0]}.pdf')
 
 
+class _BoTorchGPWrapper(BoTorchModel):
+    """Thin BoTorch-compatible wrapper around an ExactGPModel.
+
+    Used during Bayesian optimisation to evaluate BoTorch acquisition
+    functions and run ``optimize_acqf``.
+    """
+
+    _num_outputs: int = 1
+
+    @property
+    def num_outputs(self) -> int:
+        return self._num_outputs
+
+    def __init__(self, gp_model: ExactGP,
+                 likelihood: _GaussianLikelihoodBase):
+        super().__init__()
+        self._gp = gp_model
+        self._lik = likelihood
+
+    def posterior(self,
+                  X: torch.Tensor,
+                  observation_noise: bool = False,
+                  **kwargs) -> GPyTorchPosterior:
+        self._gp.eval()
+        self._lik.eval()
+        with gpytorch.settings.fast_pred_var(True):
+            dist = self._gp(X)
+        return GPyTorchPosterior(distribution=dist)
+
+
+class _BoTorchDerivGPWrapper(BoTorchModel):
+    """BoTorch wrapper for DerivativeGPModel exposing only the function-value task.
+
+    The derivative GP has ``dim + 1`` output tasks; this wrapper projects
+    onto task 0 (function value) so that scalar acquisition functions work
+    without modification.
+    """
+
+    _num_outputs: int = 1
+
+    @property
+    def num_outputs(self) -> int:
+        return self._num_outputs
+
+    def __init__(self, gp_model: ExactGP,
+                 likelihood: _GaussianLikelihoodBase):
+        super().__init__()
+        self._gp = gp_model
+        self._lik = likelihood
+
+    def posterior(self,
+                  X: torch.Tensor,
+                  observation_noise: bool = False,
+                  **kwargs) -> GPyTorchPosterior:
+        self._gp.eval()
+        self._lik.eval()
+        with (gpytorch.settings.fast_pred_var(True),
+              gpytorch.settings.fast_computations(False, False, False)):
+            dist = self._gp(X)
+        # Extract function-value task (index 0) from MultitaskMultivariateNormal.
+        mean_f = dist.mean[..., 0]   # [..., n]
+        var_f = dist.variance[..., 0]  # [..., n]
+        f_dist = gpyMultivariateNormal(mean_f, DiagLinearOperator(var_f))
+        return GPyTorchPosterior(distribution=f_dist)
+
+
+class _MaxVarianceAcquisition(AcquisitionFunction):
+    """Active-learning acquisition that maximises GP posterior variance.
+
+    Selects points where the surrogate is most uncertain, regardless of the
+    predicted density level.  Useful for global exploration.
+    """
+
+    def forward(self, X: torch.Tensor) -> torch.Tensor:
+        # X: [batch_shape, 1, d]
+        posterior = self.model.posterior(X.squeeze(-2))
+        return posterior.variance.squeeze(-1).squeeze(-1)
+
+
+class _WeightedVarianceAcquisition(AcquisitionFunction):
+    """Active-learning acquisition maximising density-weighted GP variance.
+
+    Combines uncertainty (GP variance) with relevance (current density
+    estimate), so new training points are placed where the surrogate is
+    both uncertain *and* in a high-probability region.  This is particularly
+    effective for non-Gaussian targets such as banana-shaped posteriors.
+
+    The density weight is computed from the full surrogate:
+        weight(x) = exp( GP_mean(x) + Laplace_offset(x) )
+    normalised over the candidate batch to prevent overflow.
+    """
+
+    def __init__(self, model: BoTorchModel, laplace_mean: torch.Tensor,
+                 laplace_inv_cov: torch.Tensor,
+                 laplace_constant: torch.Tensor,
+                 laplace_log_det: torch.Tensor,
+                 laplace_delta: torch.Tensor):
+        super().__init__(model=model)
+        self.register_buffer('laplace_mean', laplace_mean)
+        self.register_buffer('laplace_inv_cov', laplace_inv_cov)
+        self.register_buffer('laplace_constant', laplace_constant)
+        self.register_buffer('laplace_log_det', laplace_log_det)
+        self.register_buffer('laplace_delta', laplace_delta)
+
+    def _laplace_log_density(self, X: torch.Tensor) -> torch.Tensor:
+        """Differentiable Laplace log-density offset for a batch of points.
+
+        Args:
+            X: Tensor of shape [..., d].
+
+        Returns:
+            Log-density values of shape [...].
+        """
+        diff = X - self.laplace_mean
+        quad = -0.5 * (diff @ self.laplace_inv_cov * diff).sum(-1)
+        return quad + self.laplace_constant - 0.5 * self.laplace_log_det - self.laplace_delta
+
+    def forward(self, X: torch.Tensor) -> torch.Tensor:
+        # X: [batch_shape, 1, d]
+        X_sq = X.squeeze(-2)  # [batch_shape, d]
+        posterior = self.model.posterior(X_sq)
+        mean = posterior.mean.squeeze(-1)   # [batch_shape]
+        var = posterior.variance.squeeze(-1)  # [batch_shape]
+        laplace_offset = self._laplace_log_density(X_sq)  # [batch_shape]
+        total_log_density = mean + laplace_offset
+        # Normalise across batch to avoid overflow; detach for stability.
+        total_log_density = total_log_density - total_log_density.max().detach()
+        weights = torch.exp(total_log_density)
+        return var * weights
+
+
 class ExactGPModel(ExactGP):
     """Exact Gaussian process model based on GPyTorch."""
 
@@ -959,6 +1096,189 @@ class GaussianProcessBase(SurrogateModel, ABC):
         """
         raise NotImplementedError
 
+    # ------------------------------------------------------------------
+    # Bayesian optimisation training
+    # ------------------------------------------------------------------
+
+    def _get_bo_bounds(self, scale: float) -> torch.Tensor:
+        """Compute axis-aligned search bounds from the Laplace approximation.
+
+        Args:
+            scale: Half-width of the search box measured in Laplace standard
+                deviations (one per dimension).
+
+        Returns:
+            bounds: Tensor of shape [2, d] where row 0 is the lower bound
+                and row 1 is the upper bound.
+        """
+        mean = torch.tensor(self._laplace._mean, dtype=dtype)
+        std = torch.tensor(np.sqrt(np.diag(self._laplace._cov)), dtype=dtype)
+        return torch.stack([mean - scale * std, mean + scale * std])
+
+    def _make_botorch_model(self) -> BoTorchModel:
+        """Return a BoTorch-compatible wrapper around the current GP model.
+
+        Subclasses must override this method.
+        """
+        raise NotImplementedError
+
+    def _bo_query_point(self, target: Distribution,
+                        x_new: np.ndarray) -> torch.Tensor:
+        """Evaluate the target at ``x_new`` and return the GP training target.
+
+        The return value is the *residual* w.r.t. the Laplace approximation:
+          * For ``GaussianProcess``: scalar tensor with
+            ``target.log_density(x) - laplace.eval(x, delta=True)``.
+          * For ``DerivativeGaussianProcess``: tensor of shape ``[d + 1]``,
+            stacking the function residual and the gradient residual.
+
+        Subclasses must override this method.
+        """
+        raise NotImplementedError
+
+    def _train_bayesian_optimization(
+            self,
+            target: Distribution,
+            n_init: int = 10,
+            n_bo_iter: int = 50,
+            acquisition: str = 'weighted_variance',
+            bo_bounds_scale: float = 4.0,
+            bo_retrain_interval: int = 5,
+            bo_num_restarts: int = 5,
+            bo_raw_samples: int = 256,
+    ) -> None:
+        """Train the GP by sequentially selecting informative training points.
+
+        Starts from a small initial batch sampled near the MAP estimate
+        (Laplace approximation) and then iteratively picks the next training
+        point that maximises the chosen acquisition function.  This is
+        particularly effective for strongly non-Gaussian targets (e.g.
+        banana-shaped posteriors) where a naive Laplace initialisation spreads
+        training points in low-density regions.
+
+        Args:
+            target: The target distribution.
+            n_init: Number of initial training points drawn from the Laplace
+                approximation.
+            n_bo_iter: Number of Bayesian optimisation rounds.  Each round
+                queries ``target`` once.
+            acquisition: Acquisition function to use.  Choices:
+
+                * ``'max_variance'``: maximise GP posterior variance
+                  (pure exploration, no density weighting).
+                * ``'weighted_variance'``: maximise GP variance weighted by
+                  the current density estimate (focuses on high-probability,
+                  high-uncertainty regions).
+            bo_bounds_scale: The BO search region is an axis-aligned box
+                ``Laplace_mean ± bo_bounds_scale * Laplace_std``.
+            bo_retrain_interval: Re-optimise GP hyper-parameters every this
+                many BO iterations.  Set to ``0`` to only retrain at the end.
+            bo_num_restarts: Number of random restarts for ``optimize_acqf``.
+            bo_raw_samples: Number of raw random samples used to initialise
+                ``optimize_acqf`` restarts.
+        """
+        logger.warning(
+            f"BO training: n_init={n_init}, n_bo_iter={n_bo_iter}, "
+            f"acquisition='{acquisition}', bounds_scale={bo_bounds_scale}")
+
+        # --- 1. Initial batch from the Laplace approximation ---------------
+        samples = self._laplace.get_samples(n_init)
+        self._x_data = torch.tensor(samples, dtype=dtype)
+        y_list = [self._bo_query_point(target, samples[i]) for i in range(n_init)]
+        self._y_data = torch.stack(y_list)
+
+        # --- 2. Train GP on the initial batch ------------------------------
+        logger.warning("BO: training initial GP ...")
+        self.train(**self._training_params)
+
+        # --- 3. Pre-compute Laplace tensors for WeightedVariance -----------
+        laplace_mean = torch.tensor(self._laplace._mean, dtype=dtype)
+        laplace_inv_cov = torch.tensor(self._laplace.gaussian.inv_C, dtype=dtype)
+        laplace_constant = torch.tensor(self._laplace.gaussian.constant, dtype=dtype)
+        laplace_log_det = torch.tensor(self._laplace.gaussian.log_det, dtype=dtype)
+        laplace_delta = torch.tensor(self._laplace._delta, dtype=dtype)
+
+        bounds = self._get_bo_bounds(bo_bounds_scale)
+
+        # --- 4. BO loop ----------------------------------------------------
+        disable_tqdm = ('PBS_ENVIRONMENT' in os.environ or
+                        'SLURM_JOB_ID' in os.environ)
+
+        with tqdm(total=n_bo_iter,
+                  desc='Bayesian optimisation',
+                  file=sys.stdout,
+                  dynamic_ncols=True,
+                  leave=True,
+                  disable=disable_tqdm) as pbar:
+
+            for iteration in range(n_bo_iter):
+
+                # Build acquisition function
+                botorch_model = self._make_botorch_model()
+
+                if acquisition == 'max_variance':
+                    acq_fn = _MaxVarianceAcquisition(model=botorch_model)
+                elif acquisition == 'weighted_variance':
+                    acq_fn = _WeightedVarianceAcquisition(
+                        model=botorch_model,
+                        laplace_mean=laplace_mean,
+                        laplace_inv_cov=laplace_inv_cov,
+                        laplace_constant=laplace_constant,
+                        laplace_log_det=laplace_log_det,
+                        laplace_delta=laplace_delta,
+                    )
+                else:
+                    raise ValueError(
+                        f"Unknown acquisition '{acquisition}'. "
+                        "Choose from: 'max_variance', 'weighted_variance'")
+
+                # Optimise acquisition to find next candidate
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    candidate, _ = optimize_acqf(
+                        acq_function=acq_fn,
+                        bounds=bounds,
+                        q=1,
+                        num_restarts=bo_num_restarts,
+                        raw_samples=bo_raw_samples,
+                    )
+
+                x_new = candidate.squeeze(0).detach().numpy()
+
+                # Query target at the selected candidate
+                y_new = self._bo_query_point(target, x_new)
+
+                # Append to training data
+                x_new_t = torch.tensor(x_new, dtype=dtype).unsqueeze(0)
+                self._x_data = torch.vstack((self._x_data, x_new_t))
+                if y_new.dim() == 0:
+                    self._y_data = torch.hstack(
+                        (self._y_data, y_new.unsqueeze(0)))
+                else:
+                    self._y_data = torch.vstack(
+                        (self._y_data, y_new.unsqueeze(0)))
+
+                # Retrain or just push new data into the GP
+                retrain = (bo_retrain_interval > 0 and
+                           (iteration + 1) % bo_retrain_interval == 0)
+                if retrain:
+                    logger.info(
+                        f"BO iter {iteration + 1}: retraining GP "
+                        f"({len(self._x_data)} points).")
+                    self.train(**self._training_params)
+                else:
+                    self._model.set_train_data(
+                        self._x_data, self._y_data, strict=False)
+                    self._model.eval()
+                    self._likelihood.eval()
+
+                pbar.update()
+
+        # --- 5. Final retrain with all collected data ----------------------
+        logger.warning(
+            f"BO: final GP retraining with {len(self._x_data)} points ...")
+        self.train(**self._training_params)
+
     def save_model(self, path: str = 'model_params'):
         """Save the neural network model to a file.
 
@@ -1004,6 +1324,14 @@ class GaussianProcess(GaussianProcessBase):
                  *args,
                  train_on_init: bool = True,
                  n_samples: int = 100,
+                 training_strategy: str = 'laplace',
+                 n_bo_init: int = 10,
+                 n_bo_iter: int = 50,
+                 acquisition: str = 'weighted_variance',
+                 bo_bounds_scale: float = 4.0,
+                 bo_retrain_interval: int = 5,
+                 bo_num_restarts: int = 5,
+                 bo_raw_samples: int = 256,
                  **kwargs):
         """Initialize the Gaussian process surrogate model.
 
@@ -1012,8 +1340,34 @@ class GaussianProcess(GaussianProcessBase):
             rng: The random number generator.
             args: Additional positional arguments.
             train_on_init: Whether to train the model on initialization.
-            n_samples: The number of training data to use.
-            kwargs: Additional keyword arguments.
+            n_samples: Number of Laplace samples used when
+                ``training_strategy='laplace'`` (default behaviour).
+            training_strategy: How to select initial training points.
+
+                * ``'laplace'`` *(default)*: draw ``n_samples`` from the
+                  Laplace approximation — existing behaviour, fully backwards
+                  compatible.
+                * ``'bayesian_optimization'``: start from ``n_bo_init``
+                  Laplace samples and then run ``n_bo_iter`` rounds of
+                  Bayesian optimisation to adaptively place training points.
+                  Useful for strongly non-Gaussian targets.
+            n_bo_init: Initial Laplace samples before BO starts
+                (``training_strategy='bayesian_optimization'`` only).
+            n_bo_iter: Number of BO rounds
+                (``training_strategy='bayesian_optimization'`` only).
+            acquisition: BO acquisition function.  One of
+                ``'max_variance'`` or ``'weighted_variance'``
+                (``training_strategy='bayesian_optimization'`` only).
+            bo_bounds_scale: Search region half-width in Laplace standard
+                deviations (``training_strategy='bayesian_optimization'``
+                only).
+            bo_retrain_interval: Re-optimise GP hyper-parameters every this
+                many BO rounds; ``0`` means only at the end
+                (``training_strategy='bayesian_optimization'`` only).
+            bo_num_restarts: ``optimize_acqf`` restarts per BO round.
+            bo_raw_samples: Raw random samples per ``optimize_acqf`` call.
+            kwargs: Additional keyword arguments forwarded to
+                ``GaussianProcessBase``.
         """
         super().__init__(target, rng, *args, n_samples=n_samples, **kwargs)
 
@@ -1026,17 +1380,34 @@ class GaussianProcess(GaussianProcessBase):
 
         # train model unless specified otherwise
         if train_on_init:
-            samples = self._laplace.get_samples(n_samples)
-            self._x_data = torch.tensor(samples, dtype=dtype)
-            self._y_data = torch.zeros(n_samples, dtype=dtype)
+            if training_strategy == 'laplace':
+                samples = self._laplace.get_samples(n_samples)
+                self._x_data = torch.tensor(samples, dtype=dtype)
+                self._y_data = torch.zeros(n_samples, dtype=dtype)
 
-            for i in range(n_samples):
-                self._y_data[i] = torch.tensor(
-                    target.log_density(samples[i]) -
-                    self._laplace.eval(samples[i], delta=True),
-                    dtype=dtype)
+                for i in range(n_samples):
+                    self._y_data[i] = torch.tensor(
+                        target.log_density(samples[i]) -
+                        self._laplace.eval(samples[i], delta=True),
+                        dtype=dtype)
 
-            self.train(**self._training_params)
+                self.train(**self._training_params)
+
+            elif training_strategy == 'bayesian_optimization':
+                self._train_bayesian_optimization(
+                    target=target,
+                    n_init=n_bo_init,
+                    n_bo_iter=n_bo_iter,
+                    acquisition=acquisition,
+                    bo_bounds_scale=bo_bounds_scale,
+                    bo_retrain_interval=bo_retrain_interval,
+                    bo_num_restarts=bo_num_restarts,
+                    bo_raw_samples=bo_raw_samples,
+                )
+            else:
+                raise ValueError(
+                    f"Unknown training_strategy '{training_strategy}'. "
+                    "Choose from: 'laplace', 'bayesian_optimization'")
 
         logger.info(f'{self.__class__.__name__} surrogate model initialized.')
 
@@ -1047,6 +1418,17 @@ class GaussianProcess(GaussianProcessBase):
     @property
     def _likelihood(self) -> gpytorch.likelihoods._GaussianLikelihoodBase:
         return self.__likelihood
+
+    @override
+    def _make_botorch_model(self) -> BoTorchModel:
+        return _BoTorchGPWrapper(self._model, self._likelihood)
+
+    @override
+    def _bo_query_point(self, target: Distribution,
+                        x_new: np.ndarray) -> torch.Tensor:
+        residual = (target.log_density(x_new) -
+                    self._laplace.eval(x_new, delta=True))
+        return torch.tensor(residual, dtype=dtype)
 
     @override
     def _add_data_on(self,
@@ -1203,6 +1585,14 @@ class DerivativeGaussianProcess(GaussianProcessBase):
                  *args,
                  train_on_init: bool = True,
                  n_samples: int = 100,
+                 training_strategy: str = 'laplace',
+                 n_bo_init: int = 10,
+                 n_bo_iter: int = 50,
+                 acquisition: str = 'weighted_variance',
+                 bo_bounds_scale: float = 4.0,
+                 bo_retrain_interval: int = 5,
+                 bo_num_restarts: int = 5,
+                 bo_raw_samples: int = 256,
                  **kwargs):
         """Initialize the Derivative Gaussian process surrogate model.
 
@@ -1211,8 +1601,21 @@ class DerivativeGaussianProcess(GaussianProcessBase):
             rng: The random number generator.
             args: Additional positional arguments.
             train_on_init: Whether to train the model on initialization.
-            n_samples: The number of training data to use.
-            kwargs: Additional keyword arguments.
+            n_samples: Number of Laplace samples when
+                ``training_strategy='laplace'`` (default behaviour).
+            training_strategy: Training point selection strategy.  One of
+                ``'laplace'`` (default) or ``'bayesian_optimization'``.
+                See ``GaussianProcess`` for full documentation of each option.
+            n_bo_init: Initial Laplace samples before BO starts.
+            n_bo_iter: Number of BO rounds.
+            acquisition: BO acquisition function (``'max_variance'`` or
+                ``'weighted_variance'``).
+            bo_bounds_scale: Search region half-width in Laplace std units.
+            bo_retrain_interval: Hyper-parameter retraining interval during BO.
+            bo_num_restarts: ``optimize_acqf`` restarts per BO round.
+            bo_raw_samples: Raw random samples per ``optimize_acqf`` call.
+            kwargs: Additional keyword arguments forwarded to
+                ``GaussianProcessBase``.
         """
         super().__init__(target, rng, *args, n_samples=n_samples, **kwargs)
 
@@ -1224,23 +1627,40 @@ class DerivativeGaussianProcess(GaussianProcessBase):
 
         # train model unless specified otherwise
         if train_on_init:
-            samples = self._laplace.get_samples(n_samples)
-            self._x_data = torch.tensor(samples, dtype=dtype)
-            self._y_data = torch.zeros(n_samples,
-                                       target.dim + 1,
-                                       dtype=dtype)
+            if training_strategy == 'laplace':
+                samples = self._laplace.get_samples(n_samples)
+                self._x_data = torch.tensor(samples, dtype=dtype)
+                self._y_data = torch.zeros(n_samples,
+                                           target.dim + 1,
+                                           dtype=dtype)
 
-            for i in range(n_samples):
-                self._y_data[i, 0] = torch.tensor(
-                    target.log_density(samples[i]) -
-                    self._laplace.eval(samples[i], delta=True),
-                    dtype=dtype)
-                self._y_data[i, 1:] = torch.tensor(
-                    target.grad_log_density(samples[i]) -
-                    self._laplace.grad(samples[i]),
-                    dtype=dtype)
+                for i in range(n_samples):
+                    self._y_data[i, 0] = torch.tensor(
+                        target.log_density(samples[i]) -
+                        self._laplace.eval(samples[i], delta=True),
+                        dtype=dtype)
+                    self._y_data[i, 1:] = torch.tensor(
+                        target.grad_log_density(samples[i]) -
+                        self._laplace.grad(samples[i]),
+                        dtype=dtype)
 
-            self.train(**self._training_params)
+                self.train(**self._training_params)
+
+            elif training_strategy == 'bayesian_optimization':
+                self._train_bayesian_optimization(
+                    target=target,
+                    n_init=n_bo_init,
+                    n_bo_iter=n_bo_iter,
+                    acquisition=acquisition,
+                    bo_bounds_scale=bo_bounds_scale,
+                    bo_retrain_interval=bo_retrain_interval,
+                    bo_num_restarts=bo_num_restarts,
+                    bo_raw_samples=bo_raw_samples,
+                )
+            else:
+                raise ValueError(
+                    f"Unknown training_strategy '{training_strategy}'. "
+                    "Choose from: 'laplace', 'bayesian_optimization'")
 
         logger.info(f'{self.__class__.__name__} surrogate model initialized.')
 
@@ -1251,6 +1671,20 @@ class DerivativeGaussianProcess(GaussianProcessBase):
     @property
     def _likelihood(self) -> gpytorch.likelihoods._GaussianLikelihoodBase:
         return self.__likelihood
+
+    @override
+    def _make_botorch_model(self) -> BoTorchModel:
+        return _BoTorchDerivGPWrapper(self._model, self._likelihood)
+
+    @override
+    def _bo_query_point(self, target: Distribution,
+                        x_new: np.ndarray) -> torch.Tensor:
+        residual_f = (target.log_density(x_new) -
+                      self._laplace.eval(x_new, delta=True))
+        residual_g = (target.grad_log_density(x_new) -
+                      self._laplace.grad(x_new))
+        return torch.tensor(
+            np.concatenate([[residual_f], residual_g]), dtype=dtype)
 
     @override
     def _add_data_on(self,
