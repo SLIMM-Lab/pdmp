@@ -27,6 +27,7 @@ dependencies:
   - yapf
   - pyyaml
   - typing-extensions
+  - botorch
 
    # pip dependencies
   - pip
