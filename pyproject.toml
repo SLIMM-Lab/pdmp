@@ -1,4 +1,10 @@
 [tool.pytest.ini_options]
 filterwarnings = [
     "ignore::DeprecationWarning:matplotlib.*",
+    # torch.jit.script deprecation (triggered by gpytorch/botorch internals)
+    "ignore::DeprecationWarning:torch.*",
+    # pyparsing deprecations issued from within pyparsing itself
+    "ignore::UserWarning:pyparsing.*",
+    # pyparsing deprecations issued from matplotlib (uses pyparsing for math parsing)
+    "ignore::UserWarning:matplotlib.*",
 ]
