@@ -8,8 +8,9 @@ log-density using two strategies:
   MAP.  On a banana target this concentrates samples near the mode but misses
   the curved tails.
 * **Bayesian optimisation** – start from a small Laplace batch and then
-  iteratively place training points where the acquisition function
-  ``weighted_variance`` is maximised, adaptively tracking the true density.
+  iteratively place training points where the acquisition function is
+  maximised (``weighted_variance``, ``max_variance``, or
+  ``exponentiated_variance``), adaptively tracking the true density.
 
 For each strategy the script produces separate PDF figures:
 
@@ -464,7 +465,8 @@ def parse_args():
     p.add_argument('--n-bo', type=int, default=30,
                    help='Number of BO rounds (default 30)')
     p.add_argument('--acquisition',
-                   choices=['max_variance', 'weighted_variance'],
+                   choices=['max_variance', 'weighted_variance',
+                            'exponentiated_variance'],
                    default='weighted_variance',
                    help='BO acquisition function (default: weighted_variance)')
     p.add_argument('--no-laplace', action='store_true',
