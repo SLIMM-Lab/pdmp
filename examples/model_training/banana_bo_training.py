@@ -14,12 +14,12 @@ log-density using two strategies:
 
 For each strategy the script produces separate PDF figures:
 
-  ``density_true.pdf``               – true log-density contours
-  ``unnorm_density_true.pdf``        – true (unnormalised) density contours
-  ``density_laplace.pdf``            – Laplace-GP surrogate log-density + training pts
-  ``unnorm_density_laplace.pdf``     – Laplace-GP surrogate density + training pts
-  ``density_bo.pdf``                 – BO-GP surrogate log-density + training pts
-  ``unnorm_density_bo.pdf``          – BO-GP surrogate density + training pts
+  ``log_density_true.pdf``           – true log-density contours
+  ``density_true.pdf``               – true (unnormalised) density contours
+  ``log_density_laplace.pdf``        – Laplace-GP surrogate log-density + training pts
+  ``density_laplace.pdf``            – Laplace-GP surrogate density + training pts
+  ``log_density_bo.pdf``             – BO-GP surrogate log-density + training pts
+  ``density_bo.pdf``                 – BO-GP surrogate density + training pts
   ``std_laplace.pdf``                – Laplace-GP posterior std (filled contours)
   ``std_bo.pdf``                     – BO-GP posterior std (filled contours)
   ``difference_laplace.pdf``         – signed error: surrogate − true
@@ -64,8 +64,10 @@ FIG_DIR = os.path.join(os.path.dirname(__file__), 'figures')
 os.makedirs(FIG_DIR, exist_ok=True)
 
 # ── shared plot geometry ───────────────────────────────────────────────────────
-X1_RANGE = (-6.0, 6.0)
+X1_RANGE = (-5.0, 5.0)
 X2_RANGE = (-7.0, 3.0)
+# X1_RANGE = (-4.0, 6.0)
+# X2_RANGE = (-7.0, 3.0)
 AXES_LABEL = ('x_1', 'x_2')
 FIGSIZE = (4., 4.)
 
@@ -136,8 +138,8 @@ def gp_posterior_std(surrogate: GaussianProcess, pts: np.ndarray) -> np.ndarray:
 # ==============================================================================
 
 GP_KWARGS = dict(
-    lbfgs_steps=20,
-    n_restarts=5,
+    lbfgs_steps=10,
+    n_restarts=50,
     lr=0.3,
     tolerance_grad=1e-6,
     tolerance_change=1e-9,
@@ -177,12 +179,12 @@ def train_bo(
         n_bo_init=n_bo_init,
         n_bo_iter=n_bo_iter,
         acquisition=acquisition,
-        bo_bounds_scale=5.0,
+        bo_bounds_scale=10.0,
         bo_retrain_interval=10,
         # bo_num_restarts=5,
         # bo_raw_samples=256,
-        bo_num_restarts=20,
-        bo_raw_samples=1024,
+        bo_num_restarts=10,
+        bo_raw_samples=512,
         **GP_KWARGS,
     )
 
@@ -231,7 +233,7 @@ def plot_true_density(X1, X2, true_log: np.ndarray):
     )
     ax.contour(X1, X2, true_norm, levels=levels, cmap=CMAP, zorder=2)
     ax.set_title('True log-density', fontsize=10)
-    _save(fig, 'density_true.pdf')
+    _save(fig, 'log_density_true.pdf')
 
 
 # ==============================================================================
@@ -300,7 +302,7 @@ def plot_true_unnorm_density(X1, X2, true_log: np.ndarray):
     )
     ax.contour(X1, X2, true_unnorm, levels=20, cmap=CMAP, zorder=2)
     ax.set_title('True density', fontsize=10)
-    _save(fig, 'unnorm_density_true.pdf')
+    _save(fig, 'density_true.pdf')
 
 
 # ==============================================================================
@@ -458,12 +460,10 @@ def parse_args():
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p.add_argument('--n-laplace', type=int, default=40,
+    p.add_argument('--n-data', type=int, default=40,
                    help='Laplace training samples (default 40)')
     p.add_argument('--n-bo-init', type=int, default=10,
                    help='Initial Laplace samples before BO (default 10)')
-    p.add_argument('--n-bo', type=int, default=30,
-                   help='Number of BO rounds (default 30)')
     p.add_argument('--acquisition',
                    choices=['max_variance', 'weighted_variance',
                             'exponentiated_variance'],
@@ -483,9 +483,9 @@ def main():
     print('Banana GP surrogate training comparison')
     print('=' * 60)
     print(f'  Target      : BananaDistribution(a=2.0, b=0.3)')
-    print(f'  Laplace n   : {args.n_laplace}')
+    print(f'  Laplace n   : {args.n_data}')
     print(f'  BO n_init   : {args.n_bo_init}')
-    print(f'  BO n_iter   : {args.n_bo}')
+    print(f'  BO n_iter   : {args.n_data - args.n_bo_init}')
     print(f'  Acquisition : {args.acquisition}')
     print(f'  Figures     : {FIG_DIR}')
 
@@ -506,13 +506,13 @@ def main():
 
     if not args.no_laplace:
         gp_laplace = train_laplace(
-            target, np.random.default_rng(SEED + 1), n_samples=args.n_laplace)
+            target, np.random.default_rng(SEED + 1), n_samples=args.n_data)
 
     if not args.no_bo:
         gp_bo = train_bo(
             target, np.random.default_rng(SEED + 2),
             n_bo_init=args.n_bo_init,
-            n_bo_iter=args.n_bo,
+            n_bo_iter=args.n_data - args.n_bo_init,
             acquisition=args.acquisition,
         )
 
@@ -525,10 +525,10 @@ def main():
     if gp_laplace is not None:
         plot_surrogate_density(gp_laplace, X1, X2, pts, true_log,
                                label='Laplace GP',
-                               filename='density_laplace.pdf')
+                               filename='log_density_laplace.pdf')
         plot_surrogate_unnorm_density(gp_laplace, X1, X2, pts, true_log,
                                       label='Laplace GP',
-                                      filename='unnorm_density_laplace.pdf')
+                                      filename='density_laplace.pdf')
         plot_surrogate_std(gp_laplace, X1, X2, pts,
                            label='Laplace GP',
                            filename='std_laplace.pdf')
@@ -539,10 +539,10 @@ def main():
     if gp_bo is not None:
         plot_surrogate_density(gp_bo, X1, X2, pts, true_log,
                                label='BO GP',
-                               filename='density_bo.pdf')
+                               filename='log_density_bo.pdf')
         plot_surrogate_unnorm_density(gp_bo, X1, X2, pts, true_log,
                                       label='BO GP',
-                                      filename='unnorm_density_bo.pdf')
+                                      filename='density_bo.pdf')
         plot_surrogate_std(gp_bo, X1, X2, pts,
                            label='BO GP',
                            filename='std_bo.pdf')
