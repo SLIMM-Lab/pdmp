@@ -695,6 +695,60 @@ class _WeightedVarianceAcquisition(AcquisitionFunction):
         return var * weights
 
 
+class _ExponentiatedVarianceAcquisition(AcquisitionFunction):
+    """Active-learning acquisition maximising the exponentiated GP.
+
+    Combines uncertainty (GP variance) with relevance (current density
+    estimate), so new training points are placed where the surrogate is
+    both uncertain *and* in a high-probability region.  This is particularly
+    effective for non-Gaussian targets such as banana-shaped posteriors.
+
+    The mean is computed from the full surrogate:
+        mean(x) = exp( GP_mean(x) + Laplace_offset(x) )
+        var_pdf(x) = (exp(GP_variance(x)) - 1) * exp(2 * mean(x) + GP_variance(x))
+    normalised over the candidate batch to prevent overflow.
+    """
+
+    def __init__(self, model: BoTorchModel, laplace_mean: torch.Tensor,
+                 laplace_inv_cov: torch.Tensor,
+                 laplace_constant: torch.Tensor,
+                 laplace_log_det: torch.Tensor,
+                 laplace_delta: torch.Tensor):
+        super().__init__(model=model)
+        self.register_buffer('laplace_mean', laplace_mean)
+        self.register_buffer('laplace_inv_cov', laplace_inv_cov)
+        self.register_buffer('laplace_constant', laplace_constant)
+        self.register_buffer('laplace_log_det', laplace_log_det)
+        self.register_buffer('laplace_delta', laplace_delta)
+
+    def _laplace_log_density(self, X: torch.Tensor) -> torch.Tensor:
+        """Differentiable Laplace log-density offset for a batch of points.
+
+        Args:
+            X: Tensor of shape [..., d].
+
+        Returns:
+            Log-density values of shape [...].
+        """
+        diff = X - self.laplace_mean
+        quad = -0.5 * (diff @ self.laplace_inv_cov * diff).sum(-1)
+        return quad + self.laplace_constant - 0.5 * self.laplace_log_det - self.laplace_delta
+
+    def forward(self, X: torch.Tensor) -> torch.Tensor:
+        # X: [batch_shape, 1, d]
+        X_sq = X.squeeze(-2)  # [batch_shape, d]
+        posterior = self.model.posterior(X_sq)
+        mean = posterior.mean.squeeze(-1)   # [batch_shape]
+        var = posterior.variance.squeeze(-1)  # [batch_shape]
+        laplace_offset = self._laplace_log_density(X_sq)  # [batch_shape]
+        total_log_density = mean + laplace_offset
+        # Normalise across batch to avoid overflow; detach for stability.
+        total_log_density = total_log_density - total_log_density.max().detach()
+        # weights = torch.exp(total_log_density)
+        # return var * weights
+        var_clamped = torch.clamp(var, max=10.0)  # Prevent overflow in exp(var).
+        return (torch.exp(var_clamped) - 1) * torch.exp(2 * total_log_density + var_clamped)
+
 class ExactGPModel(ExactGP):
     """Exact Gaussian process model based on GPyTorch."""
 
@@ -1112,7 +1166,11 @@ class GaussianProcessBase(SurrogateModel, ABC):
                 and row 1 is the upper bound.
         """
         mean = torch.tensor(self._laplace._mean, dtype=dtype)
-        std = torch.tensor(np.sqrt(np.diag(self._laplace._cov)), dtype=dtype)
+        # Use the Cholesky-corrected (always PD) covariance from the Laplace
+        # Gaussian rather than the raw _cov, which can have negative diagonal
+        # entries if find_mean did not converge to the exact MAP.
+        cov_L = self._laplace.gaussian.cov_L
+        std = torch.tensor(np.sqrt(np.diag(cov_L @ cov_L.T)), dtype=dtype)
         return torch.stack([mean - scale * std, mean + scale * std])
 
     def _make_botorch_model(self) -> BoTorchModel:
@@ -1220,6 +1278,15 @@ class GaussianProcessBase(SurrogateModel, ABC):
                     acq_fn = _MaxVarianceAcquisition(model=botorch_model)
                 elif acquisition == 'weighted_variance':
                     acq_fn = _WeightedVarianceAcquisition(
+                        model=botorch_model,
+                        laplace_mean=laplace_mean,
+                        laplace_inv_cov=laplace_inv_cov,
+                        laplace_constant=laplace_constant,
+                        laplace_log_det=laplace_log_det,
+                        laplace_delta=laplace_delta,
+                    )
+                elif acquisition == 'exponentiated_variance':
+                    acq_fn = _ExponentiatedVarianceAcquisition(
                         model=botorch_model,
                         laplace_mean=laplace_mean,
                         laplace_inv_cov=laplace_inv_cov,
