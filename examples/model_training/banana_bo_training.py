@@ -47,7 +47,7 @@ import gpytorch
 # ── project path ──────────────────────────────────────────────────────────────
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from pdmp.distributions import BananaDistribution
+from pdmp.distributions import BananaDistribution, TransformedDistribution, Distribution
 from pdmp.plotting_utils import get_2d_despined_figure
 from pdmp.surrogates import GaussianProcess
 
@@ -78,6 +78,25 @@ def make_banana(rng: np.random.Generator) -> BananaDistribution:
     mean = np.array([0.0, 4.0])
     cov = np.array([[1.0, 0.5], [0.5, 1.0]])
     return BananaDistribution(mean=mean, cov=cov, a=2.0, b=0.3, rng=rng)
+
+def rotate_banana(banana: BananaDistribution, rot: float) -> Distribution:
+    """Return a rotated version of the banana distribution."""
+    # Create a rotation matrix
+    theta = np.radians(rot)
+    c, s = np.cos(theta), np.sin(theta)
+    R = np.array([[c, -s], [s, c]])
+
+    # The AffineTransformation maps xi (output space) → x (banana space) via x = M @ xi.
+    # For a physical CCW rotation of the banana by θ, samples satisfy xi = R @ x_banana,
+    # so x_banana = R^{-1} @ xi = R.T @ xi, meaning M = R.T.
+    params = {
+        'transformation': 'Affine',
+        'M': R.T,
+        'b': np.zeros(2)
+    }
+
+    # Create the transformed distribution
+    return TransformedDistribution(base_distribution=banana, params=params)
 
 
 # ==============================================================================
@@ -469,7 +488,9 @@ def main():
     print(f'  Figures     : {FIG_DIR}')
 
     # ── target ────────────────────────────────────────────────────────────────
-    target = make_banana(np.random.default_rng(SEED))
+    target_orig = make_banana(np.random.default_rng(SEED))
+    target = target_orig
+    # target = rotate_banana(target_orig, rot=45.0)
 
     # ── evaluation grid ───────────────────────────────────────────────────────
     X1, X2, pts = make_eval_grid()
