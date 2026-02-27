@@ -634,6 +634,23 @@ class BananaDistribution(Distribution):
         ])
 
     @override
+    def get_sample(self, n: int = 1) -> np.ndarray:
+        """Sample by drawing from the underlying Gaussian and applying the inverse transform.
+
+        Inverse of transform: given y, x[0] = a*y[0],
+        x[1] = y[1]/a - b*(x[0]^2 + a^2).
+        """
+        y = self._gaussian.get_sample(n=n)
+        if n == 1:
+            x0 = self._a * y[0]
+            x1 = y[1] / self._a - self._b * (x0 ** 2 + self._a ** 2)
+            return np.array([x0, x1])
+        else:
+            x0 = self._a * y[:, 0]
+            x1 = y[:, 1] / self._a - self._b * (x0 ** 2 + self._a ** 2)
+            return np.column_stack([x0, x1])
+
+    @override
     def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
         y = self.transform(x)
         # Jacobian J = ∂y/∂x
@@ -2022,7 +2039,15 @@ def get_transformation(
         if M is None or b is None:
             raise ValueError(f"AFFINE transformation requires 'M' and 'b' parameters")
 
-        C, _ = _safe_cholesky(M, name=f"AffineTransformation(M) for {context}")
+        M_arr = np.asarray(M, dtype=float)
+        if np.allclose(M_arr, M_arr.T):
+            # Symmetric matrix (e.g. covariance): extract the Cholesky factor so
+            # that the affine map xi → C xi + b whitens the space.
+            C, _ = _safe_cholesky(M_arr, name=f"AffineTransformation(M) for {context}")
+        else:
+            # Non-symmetric matrix (e.g. rotation, shear): use directly.
+            # Applying _safe_cholesky here would symmetrise M to ~0 and destroy it.
+            C = M_arr
         return AffineTransformation(C, b)
 
     elif trans_type == SIGMOID:
