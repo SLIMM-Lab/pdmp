@@ -60,7 +60,7 @@ SEED = 42
 torch.manual_seed(SEED)
 
 # ── output directory ───────────────────────────────────────────────────────────
-FIG_DIR = os.path.join(os.path.dirname(__file__), 'figures')
+FIG_DIR = os.path.join(os.path.dirname(__file__), 'closure')
 os.makedirs(FIG_DIR, exist_ok=True)
 
 # ── shared plot geometry ───────────────────────────────────────────────────────
@@ -138,9 +138,9 @@ def gp_posterior_std(surrogate: GaussianProcess, pts: np.ndarray) -> np.ndarray:
 # ==============================================================================
 
 GP_KWARGS = dict(
-    lbfgs_steps=10,
-    n_restarts=50,
-    lr=0.3,
+    lbfgs_steps=100,
+    n_restarts=25,
+    lr=0.5,
     tolerance_grad=1e-6,
     tolerance_change=1e-9,
     print_every=5,
@@ -156,6 +156,8 @@ def train_laplace(target, rng, n_samples: int = 30) -> GaussianProcess:
         rng=rng,
         training_strategy='laplace',
         n_samples=n_samples,
+        data_path = os.path.join(FIG_DIR, 'laplace_data'),
+        figure_path = os.path.join(FIG_DIR, 'laplace_data/figures'),
         **GP_KWARGS,
     )
 
@@ -175,6 +177,8 @@ def train_bo(
     return GaussianProcess(
         target=target,
         rng=rng,
+        data_path=os.path.join(FIG_DIR, 'bo_data'),
+        figure_path=os.path.join(FIG_DIR, 'bo_data/figures'),
         training_strategy='bayesian_optimization',
         n_bo_init=n_bo_init,
         n_bo_iter=n_bo_iter,

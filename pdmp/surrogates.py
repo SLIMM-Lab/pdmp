@@ -793,7 +793,7 @@ class GaussianProcessBase(SurrogateModel, ABC):
                  rng: np.random.Generator,
                  *args,
                  n_samples: int = 100,
-                 lbfgs_steps: int = 5,
+                 lbfgs_steps: int = 100,
                  n_restarts: int = 50,
                  lr: float = 0.5,
                  tolerance_grad: float = 1e-7,
@@ -979,7 +979,7 @@ class GaussianProcessBase(SurrogateModel, ABC):
                 # init optimizer and scheduler
                 optimizer = torch.optim.LBFGS(self._model.parameters(),
                                               lr=lr,
-                                              max_iter=lbfgs_steps,
+                                              max_iter=1,
                                               tolerance_grad=tolerance_grad,
                                               tolerance_change=tolerance_change,
                                               line_search_fn='strong_wolfe')
@@ -1068,7 +1068,7 @@ class GaussianProcessBase(SurrogateModel, ABC):
 
         for i in range(n_restarts):
             if i == best_iter:
-                ax.plot(train_losses_all[i], color='C0', alpha=1, lw=1.5)
+                ax.plot(train_losses_all[i], color='C1', alpha=0.8, lw=1.5)
             else:
                 ax.plot(train_losses_all[i], color='C0', alpha=0.3, lw=1.)
 
