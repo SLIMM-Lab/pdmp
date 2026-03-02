@@ -802,6 +802,8 @@ class GaussianProcessBase(SurrogateModel, ABC):
                  retrain_threshold: int = 1000,
                  eval_strategy: str = 'mean',
                  print_every: int = 1,
+                 data_path: str = 'model_data',
+                 figure_path: str = None,
                  **kwargs):
         """Initialize the Gaussian process surrogate model.
 
@@ -863,6 +865,9 @@ class GaussianProcessBase(SurrogateModel, ABC):
             raise ValueError(
                 f"Evaluation strategy {eval_strategy} not implemented.\n" +
                 "Choose from: 'mean', 'mean_plus_std'")
+
+        self._data_path = data_path
+        self._figure_path = figure_path
 
     @override
     def add_data(self, x: np.ndarray, y: np.ndarray, dy_dx: np.ndarray = None):
@@ -1069,9 +1074,10 @@ class GaussianProcessBase(SurrogateModel, ABC):
 
         ax.set_ylim(losses_min - 0.2 * np.abs(losses_min), losses_min + 10.)
 
-        if not os.path.exists('figures'):
-            os.makedirs('figures')
-        fig.savefig(f'figures/mll_{self._x_data.shape[0]}.pdf')
+        if self._figure_path:
+            if not os.path.exists(self._figure_path):
+                os.makedirs(self._figure_path)
+            fig.savefig(os.path.join(self._figure_path, f'mll_{self._x_data.shape[0]}.pdf'))
 
         # set model into evaluation mode
         self._model.eval()
@@ -1346,12 +1352,15 @@ class GaussianProcessBase(SurrogateModel, ABC):
             f"BO: final GP retraining with {len(self._x_data)} points ...")
         self.train(**self._training_params)
 
-    def save_model(self, path: str = 'model_params'):
+    def save_model(self, path: str = None):
         """Save the neural network model to a file.
 
         Args:
-            path: The path to the file. Default is 'model_params'.
+            path: The path to the file. Default is 'model_data'.
         """
+
+        if path is None:
+            path = self._data_path
 
         if not os.path.exists(path):
             os.makedirs(path)
@@ -1361,11 +1370,11 @@ class GaussianProcessBase(SurrogateModel, ABC):
         np.savetxt(os.path.join(path, 'x_data.dat'), self._x_data.numpy())
         np.savetxt(os.path.join(path, 'y_data.dat'), self._y_data.numpy())
 
-    def load_model(self, path: str = 'model_params'):
+    def load_model(self, path: str = 'model_data'):
         """Load the neural network model from a file.
 
         Args:
-            path: The path to the file. Default is 'model_params'.
+            path: The path to the file. Default is 'model_data'.
         """
 
         model_params = torch.load(os.path.join(path, 'model_params.th'))
