@@ -1210,6 +1210,7 @@ class GaussianProcessBase(SurrogateModel, ABC):
             bo_retrain_interval: int = 5,
             bo_num_restarts: int = 5,
             bo_raw_samples: int = 256,
+            bo_proximity_tol: float = 1e-3,
     ) -> None:
         """Train the GP by sequentially selecting informative training points.
 
@@ -1240,6 +1241,10 @@ class GaussianProcessBase(SurrogateModel, ABC):
             bo_num_restarts: Number of random restarts for ``optimize_acqf``.
             bo_raw_samples: Number of raw random samples used to initialise
                 ``optimize_acqf`` restarts.
+            bo_proximity_tol: Minimum Euclidean distance between a new
+                candidate and all existing training points.  Candidates
+                closer than this are discarded to avoid near-singular
+                kernel matrices.  Set to ``0`` to disable.
         """
         logger.warning(
             f"BO training: n_init={n_init}, n_bo_iter={n_bo_iter}, "
@@ -1308,15 +1313,38 @@ class GaussianProcessBase(SurrogateModel, ABC):
                 # Optimise acquisition to find next candidate
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    candidate, _ = optimize_acqf(
+                    candidates, acq_values = optimize_acqf(
                         acq_function=acq_fn,
                         bounds=bounds,
                         q=1,
                         num_restarts=bo_num_restarts,
                         raw_samples=bo_raw_samples,
+                        return_best_only=False,
                     )
 
-                x_new = candidate.squeeze(0).detach().numpy()
+                # Pick the best candidate that is not too close to existing data
+                order = acq_values.argsort(descending=True)
+                x_new = None
+                for idx in order:
+                    cand = candidates[idx].squeeze(0)
+                    if bo_proximity_tol > 0:
+                        min_dist = torch.norm(
+                            self._x_data - cand, dim=-1).min().item()
+                        if min_dist < bo_proximity_tol:
+                            logger.info(
+                                f"BO iter {iteration + 1}: rejecting candidate "
+                                f"#{idx.item()} (min dist {min_dist:.2e} "
+                                f"< tol {bo_proximity_tol:.2e}).")
+                            continue
+                    x_new = cand.detach().numpy()
+                    break
+
+                if x_new is None:
+                    logger.info(
+                        f"BO iter {iteration + 1}: all candidates too close "
+                        f"to existing data, skipping.")
+                    pbar.update()
+                    continue
 
                 # Query target at the selected candidate
                 y_new = self._bo_query_point(target, x_new)
@@ -1408,6 +1436,7 @@ class GaussianProcess(GaussianProcessBase):
                  bo_retrain_interval: int = 5,
                  bo_num_restarts: int = 5,
                  bo_raw_samples: int = 256,
+                 bo_proximity_tol: float = 1e-3,
                  **kwargs):
         """Initialize the Gaussian process surrogate model.
 
@@ -1442,6 +1471,8 @@ class GaussianProcess(GaussianProcessBase):
                 (``training_strategy='bayesian_optimization'`` only).
             bo_num_restarts: ``optimize_acqf`` restarts per BO round.
             bo_raw_samples: Raw random samples per ``optimize_acqf`` call.
+            bo_proximity_tol: Minimum distance to existing points; closer
+                candidates are discarded.
             kwargs: Additional keyword arguments forwarded to
                 ``GaussianProcessBase``.
         """
@@ -1479,6 +1510,7 @@ class GaussianProcess(GaussianProcessBase):
                     bo_retrain_interval=bo_retrain_interval,
                     bo_num_restarts=bo_num_restarts,
                     bo_raw_samples=bo_raw_samples,
+                    bo_proximity_tol=bo_proximity_tol,
                 )
             else:
                 raise ValueError(
@@ -1669,6 +1701,7 @@ class DerivativeGaussianProcess(GaussianProcessBase):
                  bo_retrain_interval: int = 5,
                  bo_num_restarts: int = 5,
                  bo_raw_samples: int = 256,
+                 bo_proximity_tol: float = 1e-3,
                  **kwargs):
         """Initialize the Derivative Gaussian process surrogate model.
 
@@ -1690,6 +1723,8 @@ class DerivativeGaussianProcess(GaussianProcessBase):
             bo_retrain_interval: Hyper-parameter retraining interval during BO.
             bo_num_restarts: ``optimize_acqf`` restarts per BO round.
             bo_raw_samples: Raw random samples per ``optimize_acqf`` call.
+            bo_proximity_tol: Minimum distance to existing points; closer
+                candidates are discarded.
             kwargs: Additional keyword arguments forwarded to
                 ``GaussianProcessBase``.
         """
@@ -1732,6 +1767,7 @@ class DerivativeGaussianProcess(GaussianProcessBase):
                     bo_retrain_interval=bo_retrain_interval,
                     bo_num_restarts=bo_num_restarts,
                     bo_raw_samples=bo_raw_samples,
+                    bo_proximity_tol=bo_proximity_tol,
                 )
             else:
                 raise ValueError(
