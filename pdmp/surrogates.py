@@ -949,7 +949,7 @@ class GaussianProcessBase(SurrogateModel, ABC):
             ]))
         sampler = qmc.LatinHypercube(n_params, scramble=True, rng=self._rng)
         sample = sampler.random(n_restarts)
-        scaled_sample = qmc.scale(sample, -10, 20)
+        scaled_sample = qmc.scale(sample, -5, 5)
         initial_params = torch.tensor(scaled_sample, dtype=dtype)
 
         # init best model and loss
