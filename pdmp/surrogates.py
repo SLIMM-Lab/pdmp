@@ -1179,6 +1179,24 @@ class GaussianProcessBase(SurrogateModel, ABC):
         std = torch.tensor(np.sqrt(np.diag(cov_L @ cov_L.T)), dtype=dtype)
         return torch.stack([mean - scale * std, mean + scale * std])
 
+    def _get_data_bounds(self, padding: float) -> torch.Tensor:
+        """Compute axis-aligned search bounds from the current training data.
+
+        The box is the per-dimension min/max of ``self._x_data``, expanded
+        outward by ``padding`` times the range in each dimension.
+
+        Args:
+            padding: Fraction of the per-dimension data range added on each
+                side (e.g. 0.2 adds 20% of the range as margin).
+
+        Returns:
+            bounds: Tensor of shape ``[2, d]`` (lower, upper).
+        """
+        lo = self._x_data.min(dim=0).values
+        hi = self._x_data.max(dim=0).values
+        margin = padding * (hi - lo)
+        return torch.stack([lo - margin, hi + margin])
+
     def _make_botorch_model(self) -> BoTorchModel:
         """Return a BoTorch-compatible wrapper around the current GP model.
 
@@ -1211,6 +1229,7 @@ class GaussianProcessBase(SurrogateModel, ABC):
             bo_num_restarts: int = 5,
             bo_raw_samples: int = 256,
             bo_proximity_tol: float = 1e-3,
+            bo_data_padding: float = 0.5,
     ) -> None:
         """Train the GP by sequentially selecting informative training points.
 
@@ -1220,6 +1239,14 @@ class GaussianProcessBase(SurrogateModel, ABC):
         particularly effective for strongly non-Gaussian targets (e.g.
         banana-shaped posteriors) where a naive Laplace initialisation spreads
         training points in low-density regions.
+
+        The search region is the union of the static Laplace box
+        (``mean ± bo_bounds_scale * std``) and a data-driven box (per-dimension
+        min/max of training data padded by ``bo_data_padding`` fraction of the
+        range).  The Laplace box provides a reasonable starting region; the
+        data-driven box is recomputed each iteration as new points arrive and
+        can extend the search region beyond the Laplace box when training
+        points explore new areas.
 
         Args:
             target: The target distribution.
@@ -1245,6 +1272,11 @@ class GaussianProcessBase(SurrogateModel, ABC):
                 candidate and all existing training points.  Candidates
                 closer than this are discarded to avoid near-singular
                 kernel matrices.  Set to ``0`` to disable.
+            bo_data_padding: Fraction of the per-dimension data range added
+                on each side of the data-driven bounding box.  The effective
+                search bounds are the union of this box with the static
+                Laplace box, so the region can grow as training points
+                explore new areas.
         """
         logger.warning(
             f"BO training: n_init={n_init}, n_bo_iter={n_bo_iter}, "
@@ -1267,7 +1299,7 @@ class GaussianProcessBase(SurrogateModel, ABC):
         laplace_log_det = torch.tensor(self._laplace.gaussian.log_det, dtype=dtype)
         laplace_delta = torch.tensor(self._laplace._delta, dtype=dtype)
 
-        bounds = self._get_bo_bounds(bo_bounds_scale)
+        laplace_bounds = self._get_bo_bounds(bo_bounds_scale)
 
         # --- 4. BO loop ----------------------------------------------------
         disable_tqdm = ('PBS_ENVIRONMENT' in os.environ or
@@ -1310,12 +1342,20 @@ class GaussianProcessBase(SurrogateModel, ABC):
                         f"Unknown acquisition '{acquisition}'. "
                         "Choose from: 'max_variance', 'weighted_variance'")
 
+                # Adaptive bounds: union of static Laplace box and
+                # data-driven box (recomputed each iteration)
+                data_bounds = self._get_data_bounds(bo_data_padding)
+                effective_bounds = torch.stack([
+                    torch.min(laplace_bounds[0], data_bounds[0]),
+                    torch.max(laplace_bounds[1], data_bounds[1]),
+                ])
+
                 # Optimise acquisition to find next candidate
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     candidates, acq_values = optimize_acqf(
                         acq_function=acq_fn,
-                        bounds=bounds,
+                        bounds=effective_bounds,
                         q=1,
                         num_restarts=bo_num_restarts,
                         raw_samples=bo_raw_samples,
@@ -1368,6 +1408,7 @@ class GaussianProcessBase(SurrogateModel, ABC):
                         f"({len(self._x_data)} points).")
                     self.train(**self._training_params)
                 else:
+                    self._model.train()
                     self._model.set_train_data(
                         self._x_data, self._y_data, strict=False)
                     self._model.eval()
@@ -1437,6 +1478,7 @@ class GaussianProcess(GaussianProcessBase):
                  bo_num_restarts: int = 5,
                  bo_raw_samples: int = 256,
                  bo_proximity_tol: float = 1e-3,
+                 bo_data_padding: float = 0.5,
                  **kwargs):
         """Initialize the Gaussian process surrogate model.
 
@@ -1473,6 +1515,8 @@ class GaussianProcess(GaussianProcessBase):
             bo_raw_samples: Raw random samples per ``optimize_acqf`` call.
             bo_proximity_tol: Minimum distance to existing points; closer
                 candidates are discarded.
+            bo_data_padding: Fraction of the per-dimension data range
+                added on each side of the adaptive bounding box.
             kwargs: Additional keyword arguments forwarded to
                 ``GaussianProcessBase``.
         """
@@ -1511,6 +1555,7 @@ class GaussianProcess(GaussianProcessBase):
                     bo_num_restarts=bo_num_restarts,
                     bo_raw_samples=bo_raw_samples,
                     bo_proximity_tol=bo_proximity_tol,
+                    bo_data_padding=bo_data_padding,
                 )
             else:
                 raise ValueError(
@@ -1579,9 +1624,12 @@ class GaussianProcess(GaussianProcessBase):
                 else:
                     logger.info(
                         f'Updating model with {len(self._x_data)} data points.')
+                    self._model.train()
                     self._model.set_train_data(self._x_data,
                                                self._y_data,
                                                strict=False)
+                    self._model.eval()
+                    self._likelihood.eval()
 
                 self._x_data_new = []
                 self._y_data_new = []
@@ -1702,6 +1750,7 @@ class DerivativeGaussianProcess(GaussianProcessBase):
                  bo_num_restarts: int = 5,
                  bo_raw_samples: int = 256,
                  bo_proximity_tol: float = 1e-3,
+                 bo_data_padding: float = 0.5,
                  **kwargs):
         """Initialize the Derivative Gaussian process surrogate model.
 
@@ -1725,6 +1774,8 @@ class DerivativeGaussianProcess(GaussianProcessBase):
             bo_raw_samples: Raw random samples per ``optimize_acqf`` call.
             bo_proximity_tol: Minimum distance to existing points; closer
                 candidates are discarded.
+            bo_data_padding: Fraction of the per-dimension data range
+                added on each side of the adaptive bounding box.
             kwargs: Additional keyword arguments forwarded to
                 ``GaussianProcessBase``.
         """
@@ -1768,6 +1819,7 @@ class DerivativeGaussianProcess(GaussianProcessBase):
                     bo_num_restarts=bo_num_restarts,
                     bo_raw_samples=bo_raw_samples,
                     bo_proximity_tol=bo_proximity_tol,
+                    bo_data_padding=bo_data_padding,
                 )
             else:
                 raise ValueError(
@@ -1837,9 +1889,12 @@ class DerivativeGaussianProcess(GaussianProcessBase):
                 if len(self._x_data) < self._retrain_threshold:
                     self.train(**self._training_params)
                 else:
+                    self._model.train()
                     self._model.set_train_data(self._x_data,
                                                self._y_data,
                                                strict=False)
+                    self._model.eval()
+                    self._likelihood.eval()
 
                 self._x_data_new = []
                 self._y_data_new = []

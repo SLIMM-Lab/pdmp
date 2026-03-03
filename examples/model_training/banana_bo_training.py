@@ -183,7 +183,7 @@ def train_bo(
         n_bo_init=n_bo_init,
         n_bo_iter=n_bo_iter,
         acquisition=acquisition,
-        bo_bounds_scale=10.0,
+        bo_bounds_scale=3.0,
         bo_retrain_interval=10,
         # bo_num_restarts=5,
         # bo_raw_samples=256,
