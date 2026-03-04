@@ -144,6 +144,7 @@ GP_KWARGS = dict(
     tolerance_grad=1e-6,
     tolerance_change=1e-9,
     print_every=5,
+    kernel='matern'
 )
 
 

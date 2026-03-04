@@ -23,7 +23,7 @@ from gpytorch.models import ExactGP
 from gpytorch.likelihoods import GaussianLikelihood, MultitaskGaussianLikelihood, _GaussianLikelihoodBase
 from gpytorch.mlls import ExactMarginalLogLikelihood
 from gpytorch.means import ConstantMean, ZeroMean, ConstantMeanGrad
-from gpytorch.kernels import RBFKernel, ScaleKernel, RBFKernelGrad
+from gpytorch.kernels import RBFKernel, MaternKernel, ScaleKernel, RBFKernelGrad
 from gpytorch.distributions.multivariate_normal import MultivariateNormal as gpyMultivariateNormal
 from gpytorch.distributions.multitask_multivariate_normal import MultitaskMultivariateNormal
 
@@ -753,7 +753,8 @@ class ExactGPModel(ExactGP):
     """Exact Gaussian process model based on GPyTorch."""
 
     def __init__(self, likelihood: _GaussianLikelihoodBase, ard_num_dims: int,
-                 train_x: torch.Tensor = None, train_y: torch.Tensor = None):
+                 train_x: torch.Tensor = None, train_y: torch.Tensor = None,
+                 kernel: str = 'rbf'):
         """Initialize the exact Gaussian process model.
 
         Args:
@@ -761,11 +762,20 @@ class ExactGPModel(ExactGP):
             ard_num_dims: The number of dimensions for the ARD kernel.
             train_x: The training input data.
             train_y: The training output data.
+            kernel: The kernel type. One of ``'rbf'`` (default) or
+                ``'matern'`` (Matern 5/2).
         """
 
         super(ExactGPModel, self).__init__(train_x, train_y, likelihood)
         self._mean_module = ConstantMean()
-        self._covar_module = ScaleKernel(RBFKernel(ard_num_dims=ard_num_dims))
+        if kernel == 'rbf':
+            base_kernel = RBFKernel(ard_num_dims=ard_num_dims)
+        elif kernel == 'matern':
+            base_kernel = MaternKernel(nu=2.5, ard_num_dims=ard_num_dims)
+        else:
+            raise ValueError(
+                f"Unknown kernel '{kernel}'. Choose from: 'rbf', 'matern'")
+        self._covar_module = ScaleKernel(base_kernel)
 
     def forward(self, x: torch.Tensor) -> gpyMultivariateNormal:
         mean_x = self._mean_module(x)
@@ -1479,6 +1489,7 @@ class GaussianProcess(GaussianProcessBase):
                  bo_raw_samples: int = 256,
                  bo_proximity_tol: float = 1e-3,
                  bo_data_padding: float = 0.5,
+                 kernel: str = 'rbf',
                  **kwargs):
         """Initialize the Gaussian process surrogate model.
 
@@ -1517,6 +1528,8 @@ class GaussianProcess(GaussianProcessBase):
                 candidates are discarded.
             bo_data_padding: Fraction of the per-dimension data range
                 added on each side of the adaptive bounding box.
+            kernel: The kernel type. One of ``'rbf'`` (default) or
+                ``'matern'`` (Matern 5/2).
             kwargs: Additional keyword arguments forwarded to
                 ``GaussianProcessBase``.
         """
@@ -1524,7 +1537,8 @@ class GaussianProcess(GaussianProcessBase):
 
         # define likelihood, get model, and set optimizer
         self.__likelihood = GaussianLikelihood()
-        self.__model = ExactGPModel(self.__likelihood, target.dim)
+        self.__model = ExactGPModel(self.__likelihood, target.dim,
+                                    kernel=kernel)
 
         self._x_data = torch.empty(0, target.dim, dtype=dtype)
         self._y_data = torch.empty(0, dtype=dtype)
