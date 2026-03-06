@@ -21,7 +21,7 @@ from jax_fem.utils import save_sol
 from rve_model import LinearElasticRVE
 
 # Re-use mesh/BC helpers from solve.py
-from solve import (
+from solve_j2 import (
     generate_rve_mesh,
     build_periodic_pmat,
     make_eps_macro_q,
