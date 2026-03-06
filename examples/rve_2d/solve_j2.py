@@ -499,10 +499,37 @@ def main():
     print(f"  Figures saved to {fig_dir}/")
 
     # VTK output (final step)
+    eps_cell = np.array(problem.compute_avg_strain(sol_list[0], eps_macro_q))
+    sigma_cell_np = np.array(sigma_cell)
+
+    nu_cell = np.array(problem.internal_vars[1][:, 0])
+    s11, s22, s12 = sigma_cell_np[:, 0, 0], sigma_cell_np[:, 1, 1], sigma_cell_np[:, 0, 1]
+    s33 = nu_cell * (s11 + s22)
+    von_mises = np.sqrt(0.5 * ((s11 - s22)**2 + (s22 - s33)**2
+                                + (s33 - s11)**2 + 6.0 * s12**2))
+
+    # Cell-averaged plastic strain and accumulated plastic strain
+    JxW = np.array(problem.fe.JxW)
+    w = JxW / JxW.sum(axis=1, keepdims=True)           # (nc, nq)
+    alpha_cell = np.sum(np.array(alpha_q) * w, axis=1)  # (nc,)
+    eps_p_cell = np.sum(np.array(eps_p_q) * w[:, :, None, None], axis=1)  # (nc, 2, 2)
+
     vtk_dir = os.path.join(data_dir, "vtk")
     os.makedirs(vtk_dir, exist_ok=True)
     vtk_path = os.path.join(vtk_dir, "rve_final.vtu")
-    save_sol(problem.fes[0], sol_list[0], vtk_path)
+    save_sol(problem.fes[0], sol_list[0], vtk_path, cell_infos=[
+        ('stress_xx', s11),
+        ('stress_yy', s22),
+        ('stress_xy', s12),
+        ('von_mises', von_mises),
+        ('strain_xx', eps_cell[:, 0, 0]),
+        ('strain_yy', eps_cell[:, 1, 1]),
+        ('strain_xy', 2.0 * eps_cell[:, 0, 1]),  # engineering shear strain
+        ('alpha',     alpha_cell),
+        ('eps_p_xx',  eps_p_cell[:, 0, 0]),
+        ('eps_p_yy',  eps_p_cell[:, 1, 1]),
+        ('eps_p_xy',  2.0 * eps_p_cell[:, 0, 1]),
+    ])
     print(f"  VTK saved to {vtk_path}")
 
 

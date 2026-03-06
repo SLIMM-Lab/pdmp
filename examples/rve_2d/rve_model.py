@@ -65,6 +65,24 @@ class _PlaneStrainRVEBase(Problem):
         """Replace internal_vars with *params* (list in model-specific order)."""
         self.internal_vars = params
 
+    def compute_avg_strain(self, sol, eps_macro_q):
+        """Cell-averaged total strain (symmetric part of grad u + eps_macro).
+
+        Parameters
+        ----------
+        sol : jnp.ndarray (num_nodes, vec)
+        eps_macro_q : jnp.ndarray (num_cells, num_quads, 2, 2)
+
+        Returns
+        -------
+        eps_cell : jnp.ndarray (num_cells, 2, 2)
+        """
+        u_grads = self._compute_u_grads(sol)
+        eps_qp = 0.5 * (u_grads + jnp.swapaxes(u_grads, -1, -2)) + eps_macro_q
+        JxW = self.fe.JxW
+        return (jnp.sum(eps_qp * JxW[:, :, None, None], axis=1)
+                / jnp.sum(JxW, axis=1)[:, None, None])
+
     def compute_avg_stress(self, sol, params):
         """Volume-averaged Cauchy stress over the RVE.
 

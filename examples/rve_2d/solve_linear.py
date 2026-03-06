@@ -120,10 +120,29 @@ def main():
         fig.savefig(os.path.join(fig_dir, fname), dpi=150, bbox_inches="tight")
         plt.close(fig)
 
+    # Cell-averaged strains
+    eps_cell = np.array(problem.compute_avg_strain(sol_list[0], eps_macro_q))
+    sigma_cell_np = np.array(sigma_cell)
+
+    # Plane-strain sigma_zz = nu * (sigma_xx + sigma_yy)
+    nu_cell = np.array(problem.internal_vars[1][:, 0])  # (num_cells,)
+    s11, s22, s12 = sigma_cell_np[:, 0, 0], sigma_cell_np[:, 1, 1], sigma_cell_np[:, 0, 1]
+    s33 = nu_cell * (s11 + s22)
+    von_mises = np.sqrt(0.5 * ((s11 - s22)**2 + (s22 - s33)**2
+                                + (s33 - s11)**2 + 6.0 * s12**2))
+
     vtk_dir = os.path.join(data_dir, "vtk")
     os.makedirs(vtk_dir, exist_ok=True)
     vtk_path = os.path.join(vtk_dir, "rve_linear.vtu")
-    save_sol(problem.fes[0], sol_list[0], vtk_path)
+    save_sol(problem.fes[0], sol_list[0], vtk_path, cell_infos=[
+        ('stress_xx', s11),
+        ('stress_yy', s22),
+        ('stress_xy', s12),
+        ('von_mises', von_mises),
+        ('strain_xx', eps_cell[:, 0, 0]),
+        ('strain_yy', eps_cell[:, 1, 1]),
+        ('strain_xy', 2.0 * eps_cell[:, 0, 1]),  # engineering shear strain
+    ])
     print(f"  Figures saved to {fig_dir}/")
     print(f"  VTK saved to {vtk_path}")
 
