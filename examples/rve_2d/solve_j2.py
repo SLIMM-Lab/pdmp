@@ -40,7 +40,7 @@ from jax_fem.generate_mesh import Mesh, get_meshio_cell_type
 from jax_fem.basis import get_elements
 from jax_fem.utils import save_sol
 
-from rve_model import PlaneStrainRVE
+from rve_model import J2PlasticRVE
 
 # ── Parameters ───────────────────────────────────────────────────────────
 
@@ -399,7 +399,7 @@ def main():
 
     # ── 3. Create problem ────────────────────────────────────────────
     print("Setting up problem ...")
-    problem = PlaneStrainRVE(
+    problem = J2PlasticRVE(
         mesh, vec=2, dim=2, ele_type=ele_type,
         additional_info=(phys_tags, mat_props),
     )
