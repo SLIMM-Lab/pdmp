@@ -1,8 +1,9 @@
 """2D RVE with a circular aggregate — periodic boundary conditions.
 
-Solves 2D plane-strain linear elasticity on a square representative volume
-element (RVE) containing a single circular aggregate.  A macroscopic strain
-is prescribed and the periodic fluctuation displacement field is computed.
+Solves 2D plane-strain elastoplasticity (J2 with isotropic hardening) on a
+square representative volume element (RVE) containing a single circular
+aggregate.  A macroscopic strain is prescribed in incremental load steps
+and the periodic fluctuation displacement field is computed at each step.
 
 The problem is formulated as:
 
@@ -11,16 +12,18 @@ The problem is formulated as:
 where eps_macro is the prescribed macroscopic strain tensor and u_tilde is
 the periodic fluctuation field (unknown).  The weak form becomes
 
-    integral  C : (eps_macro + sym(grad u_tilde)) : sym(grad v)  dOmega = 0
+    integral  sigma(eps_macro + sym(grad u_tilde), state) : sym(grad v)  dOmega = 0
 
-for all periodic test functions v, which is solved directly by jax-fem with
-the macroscopic strain baked into the constitutive law.
+for all periodic test functions v.
 
 Usage
 -----
-    python solve.py
+    python solve.py                          # default 20 load steps
+    python solve.py --n-steps 50             # 50 load steps
+    python solve.py --eps-xx 5e-3 --n-steps 40
 """
 
+import argparse
 import os
 import numpy as np
 import jax
@@ -32,11 +35,12 @@ import matplotlib.pyplot as plt
 import matplotlib.tri as mtri
 from matplotlib.patches import Circle
 
-from jax_fem.problem import Problem
 from jax_fem.solver import solver
 from jax_fem.generate_mesh import Mesh, get_meshio_cell_type
 from jax_fem.basis import get_elements
 from jax_fem.utils import save_sol
+
+from rve_model import PlaneStrainRVE
 
 # ── Parameters ───────────────────────────────────────────────────────────
 
@@ -44,15 +48,7 @@ L = 1.0                   # RVE side length
 R = 0.2                   # aggregate radius
 cx, cy = L / 2, L / 2     # aggregate centre
 
-E_matrix = 30e3            # Young's modulus, matrix  [MPa]
-nu_matrix = 0.2            # Poisson ratio, matrix
-E_aggregate = 60e3         # Young's modulus, aggregate [MPa]
-nu_aggregate = 0.2         # Poisson ratio, aggregate
-
 mesh_size = 0.04           # characteristic element length
-
-# Prescribed macroscopic strain  (Voigt: [eps_xx, eps_yy, gamma_xy])
-eps_macro_voigt = np.array([1e-3, 0.0, 0.0])   # uniaxial tension in x
 
 
 # ── 1. Mesh generation ──────────────────────────────────────────────────
@@ -255,129 +251,20 @@ def build_periodic_pmat(mesh, L, vec):
     return P_mat
 
 
-# ── 3. Problem definition ───────────────────────────────────────────────
+# ── 3. Helper: broadcast eps_macro to quad-point shape ───────────────────
 
-def make_rve_problem(mesh, phys_tags, eps_macro_voigt,
-                     E_mat, nu_mat, E_agg, nu_agg,
-                     ele_type="TRI3"):
-    """Create the jax-fem Problem for the periodic RVE.
-
-    The macroscopic strain is captured in the tensor_map closure so the
-    solver finds the periodic fluctuation u_tilde directly.
-    """
-
+def make_eps_macro_q(eps_macro_voigt, nc, nq):
+    """Convert Voigt strain vector to (num_cells, num_quads, 2, 2)."""
     eps_macro = jnp.array([
         [eps_macro_voigt[0],       0.5 * eps_macro_voigt[2]],
         [0.5 * eps_macro_voigt[2], eps_macro_voigt[1]],
     ])
-
-    # Pre-compute material fields  (num_cells, num_quads)
-    # (evaluated once; not a function of solver parameters)
-    E_cell  = np.where(phys_tags == 2, E_agg, E_mat).astype(np.float64)
-    nu_cell = np.where(phys_tags == 2, nu_agg, nu_mat).astype(np.float64)
-
-    class PlaneStrainRVE(Problem):
-
-        def custom_init(self):
-            self.fe = self.fes[0]
-            nq = self.fe.num_quads
-            E_q  = jnp.tile(E_cell[:, None],  (1, nq))
-            nu_q = jnp.tile(nu_cell[:, None], (1, nq))
-            self.internal_vars = [E_q, nu_q]
-
-        def get_tensor_map(self):
-            def stress(u_grad, E, nu):
-                mu    = E / (2.0 * (1.0 + nu))
-                lmbda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))
-                eps_fluct = 0.5 * (u_grad + u_grad.T)
-                eps_total = eps_fluct + eps_macro
-                sigma = (lmbda * jnp.trace(eps_total) * jnp.eye(2)
-                         + 2.0 * mu * eps_total)
-                return sigma
-            return stress
-
-        def set_params(self, params):
-            # Material map is baked in via custom_init — nothing to update.
-            pass
-
-    # Rigid-body translation is removed by pinning all four corners
-    # to zero inside P_mat (see build_periodic_pmat), so no Dirichlet
-    # BCs are needed here.
-    problem = PlaneStrainRVE(
-        mesh, vec=2, dim=2, ele_type=ele_type,
-    )
-    return problem
+    return jnp.broadcast_to(eps_macro[None, None, :, :], (nc, nq, 2, 2))
 
 
 # ── 4. Post-processing ──────────────────────────────────────────────────
 
-def compute_cell_stress_strain(mesh, sol, phys_tags, eps_macro_voigt,
-                               E_mat, nu_mat, E_agg, nu_agg):
-    """Per-element stress and strain for TRI3 (constant-strain triangle).
-
-    Returns
-    -------
-    centroids : (num_cells, 2)
-    eps_cells : (num_cells, 2, 2)   total strain tensor
-    sigma_cells : (num_cells, 2, 2) Cauchy stress tensor (in-plane)
-    """
-    points = mesh.points
-    cells  = mesh.cells
-    num_cells = len(cells)
-
-    eps_macro = np.array([
-        [eps_macro_voigt[0],       0.5 * eps_macro_voigt[2]],
-        [0.5 * eps_macro_voigt[2], eps_macro_voigt[1]],
-    ])
-
-    cell_coords = points[cells]                       # (nc, 3, 2)
-    cell_disp   = sol[cells]                           # (nc, 3, 2)
-    centroids   = cell_coords.mean(axis=1)             # (nc, 2)
-
-    # Shape-function gradients for TRI3 (constant per element)
-    x1, y1 = cell_coords[:, 0, 0], cell_coords[:, 0, 1]
-    x2, y2 = cell_coords[:, 1, 0], cell_coords[:, 1, 1]
-    x3, y3 = cell_coords[:, 2, 0], cell_coords[:, 2, 1]
-
-    det = (x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1)   # 2 * area
-
-    dNdx = np.stack([y2 - y3, y3 - y1, y1 - y2], axis=1) / det[:, None]
-    dNdy = np.stack([x3 - x2, x1 - x3, x2 - x1], axis=1) / det[:, None]
-
-    # Fluctuation displacement gradient
-    du_dx = np.einsum("cn,cn->c", cell_disp[:, :, 0], dNdx)
-    du_dy = np.einsum("cn,cn->c", cell_disp[:, :, 0], dNdy)
-    dv_dx = np.einsum("cn,cn->c", cell_disp[:, :, 1], dNdx)
-    dv_dy = np.einsum("cn,cn->c", cell_disp[:, :, 1], dNdy)
-
-    # Total strain = fluctuation + macroscopic
-    eps_xx = du_dx + eps_macro[0, 0]
-    eps_yy = dv_dy + eps_macro[1, 1]
-    eps_xy = 0.5 * (du_dy + dv_dx) + eps_macro[0, 1]
-
-    eps_cells = np.zeros((num_cells, 2, 2))
-    eps_cells[:, 0, 0] = eps_xx
-    eps_cells[:, 1, 1] = eps_yy
-    eps_cells[:, 0, 1] = eps_xy
-    eps_cells[:, 1, 0] = eps_xy
-
-    # Stress (plane strain: sigma_zz = lmbda * tr(eps), but not stored here)
-    E_c  = np.where(phys_tags == 2, E_agg, E_mat)
-    nu_c = np.where(phys_tags == 2, nu_agg, nu_mat)
-    mu_c    = E_c / (2.0 * (1.0 + nu_c))
-    lmbda_c = E_c * nu_c / ((1.0 + nu_c) * (1.0 - 2.0 * nu_c))
-
-    tr_eps = eps_xx + eps_yy
-    sigma_cells = np.zeros((num_cells, 2, 2))
-    sigma_cells[:, 0, 0] = lmbda_c * tr_eps + 2.0 * mu_c * eps_xx
-    sigma_cells[:, 1, 1] = lmbda_c * tr_eps + 2.0 * mu_c * eps_yy
-    sigma_cells[:, 0, 1] = 2.0 * mu_c * eps_xy
-    sigma_cells[:, 1, 0] = 2.0 * mu_c * eps_xy
-
-    return centroids, eps_cells, sigma_cells
-
-
-def compute_von_mises(sigma_cells, phys_tags, nu_mat, nu_agg):
+def compute_von_mises_from_cell(sigma_cells, phys_tags, nu_mat, nu_agg):
     """Von Mises stress accounting for plane-strain sigma_zz."""
     s11 = sigma_cells[:, 0, 0]
     s22 = sigma_cells[:, 1, 1]
@@ -392,93 +279,110 @@ def compute_von_mises(sigma_cells, phys_tags, nu_mat, nu_agg):
 
 # ── 5. Visualisation ────────────────────────────────────────────────────
 
-def plot_results(mesh, sol, phys_tags, eps_cells, sigma_cells, vm,
-                 L, R, cx, cy, fig_dir):
-    """Save overview plots to *fig_dir*."""
-    os.makedirs(fig_dir, exist_ok=True)
-    points = mesh.points
-    cells  = mesh.cells
-
-    tri = mtri.Triangulation(points[:, 0], points[:, 1], cells)
-
-    def _add_circle(ax):
-        ax.add_patch(Circle((cx, cy), R, fill=False, ec="k", lw=1.0,
-                            ls="--"))
-
-    # ── Mesh + phases ────────────────────────────────────────────────
+def plot_field(mesh, facecolors, phys_tags, L, R, cx, cy,
+               title, label, cmap, fig_path):
+    """Plot a per-cell scalar field on the RVE mesh."""
+    tri = mtri.Triangulation(mesh.points[:, 0], mesh.points[:, 1], mesh.cells)
     fig, ax = plt.subplots(figsize=(6, 6))
-    colors = np.where(phys_tags == 2, 1.0, 0.0)
-    ax.tripcolor(tri, facecolors=colors, cmap="coolwarm", alpha=0.5)
-    ax.triplot(tri, "k-", lw=0.2)
-    _add_circle(ax)
-    ax.set_aspect("equal"); ax.set_title("Mesh and material phases")
-    fig.savefig(os.path.join(fig_dir, "mesh.png"), dpi=150,
-                bbox_inches="tight")
+    tc = ax.tripcolor(tri, facecolors=facecolors, cmap=cmap)
+    fig.colorbar(tc, ax=ax, label=label)
+    ax.add_patch(Circle((cx, cy), R, fill=False, ec="k", lw=1.0, ls="--"))
+    ax.set_aspect("equal")
+    ax.set_title(title)
+    fig.savefig(fig_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
-    # ── Fluctuation displacement magnitude ───────────────────────────
-    u_mag = np.sqrt(sol[:, 0]**2 + sol[:, 1]**2)
+
+def plot_stress_strain_curve(eps_history, sigma_history, fig_path):
+    """Plot volume-averaged stress-strain curve."""
+    eps_xx = [e[0, 0] for e in eps_history]
+    sig_xx = [s[0, 0] for s in sigma_history]
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(eps_xx, sig_xx, "o-", lw=1.5, markersize=3)
+    ax.set_xlabel(r"$\langle\varepsilon_{xx}\rangle$")
+    ax.set_ylabel(r"$\langle\sigma_{xx}\rangle$ [MPa]")
+    ax.set_title("Effective stress-strain curve")
+    ax.grid(True, alpha=0.3)
+    fig.savefig(fig_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_results(mesh, sol, phys_tags, sigma_cell, L, R, cx, cy,
+                 nu_mat, nu_agg, fig_dir, step_label=""):
+    """Save overview plots to *fig_dir*."""
+    os.makedirs(fig_dir, exist_ok=True)
+    sigma_cells_np = np.array(sigma_cell)
+
+    prefix = f"step{step_label}_" if step_label else ""
+
+    # Stress sigma_xx
+    plot_field(mesh, sigma_cells_np[:, 0, 0], phys_tags, L, R, cx, cy,
+               r"Stress $\sigma_{xx}$", r"$\sigma_{xx}$  [MPa]", "RdBu_r",
+               os.path.join(fig_dir, f"{prefix}stress_xx.png"))
+
+    # Stress sigma_yy
+    plot_field(mesh, sigma_cells_np[:, 1, 1], phys_tags, L, R, cx, cy,
+               r"Stress $\sigma_{yy}$", r"$\sigma_{yy}$  [MPa]", "RdBu_r",
+               os.path.join(fig_dir, f"{prefix}stress_yy.png"))
+
+    # Von Mises
+    vm = compute_von_mises_from_cell(sigma_cells_np, phys_tags, nu_mat, nu_agg)
+    plot_field(mesh, vm, phys_tags, L, R, cx, cy,
+               "von Mises stress", r"$\sigma_\mathrm{vM}$  [MPa]", "hot",
+               os.path.join(fig_dir, f"{prefix}stress_vonmises.png"))
+
+    # Displacement magnitude
+    sol_np = np.array(sol)
+    u_mag = np.sqrt(sol_np[:, 0]**2 + sol_np[:, 1]**2)
+    tri = mtri.Triangulation(mesh.points[:, 0], mesh.points[:, 1], mesh.cells)
     fig, ax = plt.subplots(figsize=(6, 6))
     tc = ax.tripcolor(tri, u_mag, shading="gouraud", cmap="viridis")
     fig.colorbar(tc, ax=ax, label=r"$|\tilde{u}|$")
-    _add_circle(ax)
-    ax.set_aspect("equal"); ax.set_title("Fluctuation displacement")
-    fig.savefig(os.path.join(fig_dir, "displacement.png"), dpi=150,
+    ax.add_patch(Circle((cx, cy), R, fill=False, ec="k", lw=1.0, ls="--"))
+    ax.set_aspect("equal")
+    ax.set_title("Fluctuation displacement")
+    fig.savefig(os.path.join(fig_dir, f"{prefix}displacement.png"), dpi=150,
                 bbox_inches="tight")
     plt.close(fig)
-
-    # ── Stress sigma_xx ──────────────────────────────────────────────
-    fig, ax = plt.subplots(figsize=(6, 6))
-    tc = ax.tripcolor(tri, facecolors=sigma_cells[:, 0, 0], cmap="RdBu_r")
-    fig.colorbar(tc, ax=ax, label=r"$\sigma_{xx}$  [MPa]")
-    _add_circle(ax)
-    ax.set_aspect("equal"); ax.set_title(r"Stress $\sigma_{xx}$")
-    fig.savefig(os.path.join(fig_dir, "stress_xx.png"), dpi=150,
-                bbox_inches="tight")
-    plt.close(fig)
-
-    # ── Stress sigma_yy ──────────────────────────────────────────────
-    fig, ax = plt.subplots(figsize=(6, 6))
-    tc = ax.tripcolor(tri, facecolors=sigma_cells[:, 1, 1], cmap="RdBu_r")
-    fig.colorbar(tc, ax=ax, label=r"$\sigma_{yy}$  [MPa]")
-    _add_circle(ax)
-    ax.set_aspect("equal"); ax.set_title(r"Stress $\sigma_{yy}$")
-    fig.savefig(os.path.join(fig_dir, "stress_yy.png"), dpi=150,
-                bbox_inches="tight")
-    plt.close(fig)
-
-    # ── Von Mises stress ─────────────────────────────────────────────
-    fig, ax = plt.subplots(figsize=(6, 6))
-    tc = ax.tripcolor(tri, facecolors=vm, cmap="hot")
-    fig.colorbar(tc, ax=ax, label=r"$\sigma_\mathrm{vM}$  [MPa]")
-    _add_circle(ax)
-    ax.set_aspect("equal"); ax.set_title("von Mises stress")
-    fig.savefig(os.path.join(fig_dir, "stress_vonmises.png"), dpi=150,
-                bbox_inches="tight")
-    plt.close(fig)
-
-    # ── Strain eps_xx ────────────────────────────────────────────────
-    fig, ax = plt.subplots(figsize=(6, 6))
-    tc = ax.tripcolor(tri, facecolors=eps_cells[:, 0, 0], cmap="RdBu_r")
-    fig.colorbar(tc, ax=ax, label=r"$\varepsilon_{xx}$")
-    _add_circle(ax)
-    ax.set_aspect("equal"); ax.set_title(r"Total strain $\varepsilon_{xx}$")
-    fig.savefig(os.path.join(fig_dir, "strain_xx.png"), dpi=150,
-                bbox_inches="tight")
-    plt.close(fig)
-
-    print(f"  Figures saved to {fig_dir}/")
 
 
 # ── 6. Main ─────────────────────────────────────────────────────────────
 
 def main():
+    parser = argparse.ArgumentParser(description="2D RVE with J2 plasticity")
+    parser.add_argument("--n-steps", type=int, default=20,
+                        help="Number of load steps (default: 20)")
+    parser.add_argument("--eps-xx", type=float, default=1e-3,
+                        help="Final macroscopic eps_xx (default: 5e-3)")
+    parser.add_argument("--eps-yy", type=float, default=0.0,
+                        help="Final macroscopic eps_yy (default: 0)")
+    parser.add_argument("--gamma-xy", type=float, default=0.0,
+                        help="Final macroscopic gamma_xy (default: 0)")
+    parser.add_argument("--plot-every", type=int, default=0,
+                        help="Plot fields every N steps (0 = final only)")
+    args = parser.parse_args()
+
     ele_type = "TRI3"
     data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
     fig_dir  = os.path.join(data_dir, "figures")
     os.makedirs(data_dir, exist_ok=True)
 
-    # 1. Mesh
+    # ── Material properties ──────────────────────────────────────────
+    mat_props = dict(
+        E_matrix=30e3,           # Young's modulus, matrix  [MPa]
+        nu_matrix=0.2,           # Poisson ratio, matrix
+        E_aggregate=60e3,        # Young's modulus, aggregate [MPa]
+        nu_aggregate=0.2,        # Poisson ratio, aggregate
+        sigma_y_matrix=20.0,     # yield stress, matrix [MPa]
+        H_matrix=1e3,            # hardening modulus, matrix [MPa]
+        sigma_y_aggregate=1e10,  # effectively elastic
+        H_aggregate=0.0,         # irrelevant (never yields)
+    )
+
+    eps_macro_final = np.array([args.eps_xx, args.eps_yy, args.gamma_xy])
+    n_steps = args.n_steps
+
+    # ── 1. Mesh ──────────────────────────────────────────────────────
     print("Generating mesh ...")
     mesh, phys_tags = generate_rve_mesh(
         L, R, cx, cy, mesh_size, data_dir, ele_type,
@@ -488,66 +392,116 @@ def main():
     print(f"  {len(mesh.points)} nodes, {len(mesh.cells)} elements "
           f"({n_matrix} matrix, {n_agg} aggregate)")
 
-    # 2. Periodic constraints
+    # ── 2. Periodic constraints ──────────────────────────────────────
     print("Building periodic constraint matrix ...")
     P_mat = build_periodic_pmat(mesh, L, vec=2)
     print(f"  full DOFs: {P_mat.shape[0]},  reduced DOFs: {P_mat.shape[1]}")
 
-    # 3. Assemble problem
+    # ── 3. Create problem ────────────────────────────────────────────
     print("Setting up problem ...")
-    problem = make_rve_problem(
-        mesh, phys_tags, eps_macro_voigt,
-        E_matrix, nu_matrix, E_aggregate, nu_aggregate,
-        ele_type=ele_type,
+    problem = PlaneStrainRVE(
+        mesh, vec=2, dim=2, ele_type=ele_type,
+        additional_info=(phys_tags, mat_props),
     )
     problem.P_mat = P_mat
 
-    # 4. Solve
-    print("Solving ...")
-    sol_list = solver(problem)
-    sol = np.array(sol_list[0])          # (num_nodes, 2)
-    u_max = np.max(np.linalg.norm(sol, axis=1))
-    print(f"  max |u_tilde| = {u_max:.6e}")
+    nc = len(problem.fe.cells)
+    nq = problem.fe.num_quads
 
-    # 5. Post-process
-    print("Post-processing ...")
-    centroids, eps_cells, sigma_cells = compute_cell_stress_strain(
-        mesh, sol, phys_tags, eps_macro_voigt,
-        E_matrix, nu_matrix, E_aggregate, nu_aggregate,
-    )
-    vm = compute_von_mises(sigma_cells, phys_tags, nu_matrix, nu_aggregate)
+    # ── 4. Load stepping ─────────────────────────────────────────────
+    print(f"\nLoad stepping: {n_steps} steps, "
+          f"eps_final = [{eps_macro_final[0]:.2e}, {eps_macro_final[1]:.2e}, "
+          f"{eps_macro_final[2]:.2e}]")
+    print(f"  sigma_y (matrix) = {mat_props['sigma_y_matrix']:.1f} MPa, "
+          f"H (matrix) = {mat_props['H_matrix']:.1f} MPa\n")
 
-    # Volume-averaged quantities (cell area as weight)
-    coords = mesh.points[mesh.cells]
-    areas = 0.5 * np.abs(
-        (coords[:, 1, 0] - coords[:, 0, 0]) * (coords[:, 2, 1] - coords[:, 0, 1])
-      - (coords[:, 2, 0] - coords[:, 0, 0]) * (coords[:, 1, 1] - coords[:, 0, 1])
-    )
-    total_area = areas.sum()
-    sig_avg = np.einsum("c,cij->ij", areas, sigma_cells) / total_area
-    eps_avg = np.einsum("c,cij->ij", areas, eps_cells)   / total_area
+    # Extract material constants from internal_vars (set by custom_init)
+    E_q, nu_q, sigma_y_q, H_q, eps_p_q, alpha_q, _ = problem.internal_vars
 
-    print(f"\n  Volume-averaged stress [MPa]:")
-    print(f"    sigma_xx = {sig_avg[0,0]:.4f}   sigma_yy = {sig_avg[1,1]:.4f}"
-          f"   sigma_xy = {sig_avg[0,1]:.4f}")
-    print(f"  Volume-averaged strain:")
-    print(f"    eps_xx   = {eps_avg[0,0]:.6f}   eps_yy   = {eps_avg[1,1]:.6f}"
-          f"   eps_xy   = {eps_avg[0,1]:.6f}")
+    # Initialise
+    sol_list = None  # no initial guess for first step
+    eps_history = []
+    sigma_history = []
 
-    C_eff_xxxx = sig_avg[0, 0] / eps_avg[0, 0] if eps_avg[0, 0] != 0 else 0
-    print(f"\n  Effective stiffness  C_xxxx = <sigma_xx> / <eps_xx>"
-          f" = {C_eff_xxxx:.1f} MPa")
-    print(f"  (Matrix stiffness = {E_matrix:.0f},  "
-          f"aggregate stiffness = {E_aggregate:.0f})")
+    for k in range(1, n_steps + 1):
+        # Incremental macroscopic strain
+        frac = k / n_steps
+        eps_mac_k = frac * eps_macro_final
+        eps_macro_q = make_eps_macro_q(eps_mac_k, nc, nq)
 
-    # 6. Plots
-    plot_results(mesh, sol, phys_tags, eps_cells, sigma_cells, vm,
-                 L, R, cx, cy, fig_dir)
+        # Update parameters
+        params = [E_q, nu_q, sigma_y_q, H_q, eps_p_q, alpha_q, eps_macro_q]
+        problem.set_params(params)
 
-    # 7. VTK output
+        # Solve (use previous solution as initial guess in reduced space)
+        # The solver with P_mat expects dofs in reduced space (M,).
+        # sol_list is in full space (N,) — project back via P_mat.T.
+        solver_opts = {}
+        if sol_list is not None:
+            full_dofs = jax.flatten_util.ravel_pytree(sol_list)[0]
+            reduced_dofs = P_mat.T @ np.array(full_dofs)
+            solver_opts['initial_guess'] = [jnp.array(reduced_dofs)]
+        sol_list = solver(problem, solver_options=solver_opts)
+
+        # Record stress *before* updating state
+        sigma_avg, sigma_cell = problem.compute_avg_stress(
+            sol_list[0], problem.internal_vars)
+
+        # Update plastic state
+        eps_p_q, alpha_q = problem.update_int_vars_gp(
+            sol_list[0], problem.internal_vars)
+
+        # Store history
+        eps_macro_tensor = jnp.array([
+            [eps_mac_k[0],       0.5 * eps_mac_k[2]],
+            [0.5 * eps_mac_k[2], eps_mac_k[1]],
+        ])
+
+        eps_history.append(eps_macro_tensor)
+        sigma_history.append(sigma_avg)
+
+        # Print progress
+        alpha_max = float(jnp.max(alpha_q))
+        n_yielded = int(jnp.sum(alpha_q > 0))
+        total_qp = nc * nq
+        print(f"  Step {k:3d}/{n_steps}  |  "
+              f"<sig_xx>={float(sigma_avg[0,0]):8.2f}  "
+              f"<sig_yy>={float(sigma_avg[1,1]):8.2f}  |  "
+              f"alpha_max={alpha_max:.4e}  "
+              f"yielded={n_yielded}/{total_qp} qp")
+
+        # Intermediate plots
+        if args.plot_every > 0 and k % args.plot_every == 0:
+            plot_results(mesh, sol_list[0], phys_tags, sigma_cell,
+                         L, R, cx, cy,
+                         mat_props['nu_matrix'], mat_props['nu_aggregate'],
+                         fig_dir, step_label=f"{k:03d}")
+
+    print(f"\n Eps hist: {[float(e[0,0]) for e in eps_history]}")
+    print(f" Sigma hist: {[float(s[0,0]) for s in sigma_history]}")
+
+    # ── 5. Final post-processing ─────────────────────────────────────
+    print("\nFinal results:")
+    print(f"  <sigma_xx> = {float(sigma_history[-1][0,0]):.4f} MPa")
+    print(f"  <sigma_yy> = {float(sigma_history[-1][1,1]):.4f} MPa")
+    print(f"  <sigma_xy> = {float(sigma_history[-1][0,1]):.4f} MPa")
+
+    # Plot final fields
+    plot_results(mesh, sol_list[0], phys_tags, sigma_cell,
+                 L, R, cx, cy,
+                 mat_props['nu_matrix'], mat_props['nu_aggregate'],
+                 fig_dir, step_label="final")
+
+    # Stress-strain curve
+    plot_stress_strain_curve(
+        eps_history, sigma_history,
+        os.path.join(fig_dir, "stress_strain_curve.png"))
+    print(f"  Figures saved to {fig_dir}/")
+
+    # VTK output (final step)
     vtk_dir = os.path.join(data_dir, "vtk")
     os.makedirs(vtk_dir, exist_ok=True)
-    vtk_path = os.path.join(vtk_dir, "rve.vtu")
+    vtk_path = os.path.join(vtk_dir, "rve_final.vtu")
     save_sol(problem.fes[0], sol_list[0], vtk_path)
     print(f"  VTK saved to {vtk_path}")
 
