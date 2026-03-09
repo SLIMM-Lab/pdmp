@@ -19,15 +19,15 @@ import jax.numpy as jnp
 
 from jax_fem.solver import ad_wrapper
 
-from solve import (
+from pdmp.rve_utils import (
     generate_multi_fiber_rve_mesh,
     build_periodic_pmat,
     compute_distance_to_nearest_fiber,
     make_eps_macro_q,
     validate_fiber_placement,
-    DEFAULT_FIBERS, L, E_inf, E_fiber, nu_matrix, nu_fiber, mesh_size,
+    LinearElasticRVE,
 )
-from rve_model import LinearElasticRVE
+from solve import DEFAULT_FIBERS, L, E_inf, E_fiber, nu_matrix, nu_fiber, mesh_size
 
 jax.config.update("jax_enable_x64", True)
 
