@@ -683,9 +683,6 @@ class MultivariateLogNormal(Distribution):
     logDet_: float
     """The log determinant of the covariance matrix."""
 
-    mean: np.ndarray
-    """The mean of the log-normal distribution."""
-
     def __init__(self,
                  mean: np.ndarray,
                  cov: np.ndarray,
@@ -697,7 +694,7 @@ class MultivariateLogNormal(Distribution):
         self.covL_ = np.linalg.cholesky(self.cov_normal_)
         self.logDet_ = np.log(self.covL_.diagonal()).sum()
 
-        self.mean = np.exp(mean + np.diagonal(cov) / 2)
+        self._mean_ln = np.exp(mean + np.diagonal(cov) / 2)
         mu_i = np.repeat(mean[:, None], 2, axis=1)
         sig_ii = np.repeat(np.diag(cov)[:, None], 2, axis=1)
         # self.cov = np.exp(mu_i + mu_i.transpose() + 0.5 * (sig_ii + sig_ii.transpose())) @ (np.exp(cov) - 1)
@@ -718,6 +715,18 @@ class MultivariateLogNormal(Distribution):
     @property
     def dim(self) -> int:
         return self._dim
+
+    @property
+    def mean(self) -> np.ndarray:
+        return self._mean_ln
+
+    @override
+    def get_sample(self, n: int = 1) -> np.ndarray:
+        z = self.rng.standard_normal(size=(n, self._dim))
+        samples = np.exp(z @ self.covL_.T + self.mean_normal_)
+        if n == 1:
+            return samples[0]
+        return samples
 
     @override
     def log_density(self, x: np.ndarray) -> Union[float, np.ndarray]:
