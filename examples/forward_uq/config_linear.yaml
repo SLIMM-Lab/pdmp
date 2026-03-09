@@ -1,0 +1,16 @@
+model:
+  name: Linear
+  A: [[1.0, 2.0], [3.0, 4.0]]
+  b: [0.0, 0.0]
+
+distribution:
+  name: MultivariateNormal
+  mean: [0.0, 0.0]
+  cov: [[1.0, 0.0], [0.0, 1.0]]
+
+forward_uq:
+  n_samples: 1000
+  seed: 42
+
+output:
+  dir: ./results_forward_uq
