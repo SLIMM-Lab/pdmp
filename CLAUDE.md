@@ -102,3 +102,8 @@ output:
 ### FEM integration
 
 `JaxFemModel` wraps jax-fem PDE solvers. Mesh files live in `msh/`. Sensor placement and boundary face naming conventions are documented in `docs/sensor_configuration.md` and `docs/exponential_recovery_field.md`.
+
+**jax-fem local installation:** The jax-fem library is installed from a local clone at `/home/leon/Nextcloud/Documents/projects/gradient_samplers/jax-fem`. Source files and example applications live there — read them directly when debugging or understanding jax-fem internals:
+
+- Core source: `/home/leon/Nextcloud/Documents/projects/gradient_samplers/jax-fem/jax-fem/jax_fem/`
+- Example applications: `/home/leon/Nextcloud/Documents/projects/gradient_samplers/jax-fem/jax-fem/applications/`
