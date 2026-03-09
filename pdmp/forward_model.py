@@ -434,6 +434,8 @@ def get_model(config: dict, field=None):
         return LinearModel.from_dict(config)
     elif config['name'] == 'JaxFem':
         return JaxFemModel.from_dict(config, field=field)
+    elif config['name'] == 'RVE':
+        return RVEModel.from_dict(config)
     else:
         raise ValueError(f"Model {config['name']} not recognized.")
 
@@ -1230,3 +1232,228 @@ if __name__ == '__main__':
     fig, ax = plt.subplots(1, 1, figsize=(10, 5))
     ax.contourf(X, Y, Z, 100)
     plt.show()
+
+
+class RVEModel:
+    """2D RVE with exponential recovery E-field for forward UQ.
+
+    Not a subclass of Model — designed for propagating parameter samples
+    and collecting multiple named output quantities.
+
+    Parameters
+    ----------
+    fibers : list of (cx, cy, R)
+        Fiber center coordinates and radii.
+    L : float
+        RVE side length.
+    mesh_size : float
+        Characteristic element length.
+    ele_type : str
+        Element type (default 'TRI3').
+    E_inf : float
+        Far-field matrix Young's modulus.
+    E_fiber : float
+        Fiber Young's modulus.
+    nu_matrix : float
+        Matrix Poisson ratio.
+    nu_fiber : float
+        Fiber Poisson ratio.
+    eps_macro : tuple of float
+        Macroscopic strain (eps_xx, eps_yy, gamma_xy).
+    quantities : list of str
+        Output quantities to compute.
+    msh_file : str or None
+        Path to pre-existing .msh file. If None, generates mesh.
+    data_dir : str or None
+        Directory for mesh generation output.
+    """
+
+    SUPPORTED_QUANTITIES = {
+        'avg_stress', 'avg_strain', 'cell_stresses', 'cell_strains',
+        'displacements', 'max_von_mises', 'max_stress', 'max_strain',
+    }
+
+    def __init__(self, fibers, L=1.0, mesh_size=0.03, ele_type='TRI3',
+                 E_inf=30e3, E_fiber=200e3, nu_matrix=0.35, nu_fiber=0.2,
+                 eps_macro=(1e-3, 0.0, 0.0),
+                 quantities=None, msh_file=None, data_dir=None):
+        from pdmp.rve_utils import (
+            validate_fiber_placement,
+            generate_multi_fiber_rve_mesh,
+            build_periodic_pmat,
+            compute_distance_to_nearest_fiber,
+            make_eps_macro_q,
+            LinearElasticRVE,
+        )
+        from jax_fem.solver import ad_wrapper
+        import meshio
+        from jax_fem.generate_mesh import Mesh, get_meshio_cell_type
+
+        if quantities is None:
+            quantities = ['avg_stress', 'max_von_mises']
+        unknown = set(quantities) - self.SUPPORTED_QUANTITIES
+        if unknown:
+            raise ValueError(f"Unknown quantities: {unknown}")
+
+        self.fibers = list(fibers)
+        self.L = L
+        self.E_inf = E_inf
+        self.E_fiber = E_fiber
+        self.nu_matrix = nu_matrix
+        self.nu_fiber = nu_fiber
+        self.quantities = list(quantities)
+        self.eps_macro_voigt = np.array(eps_macro, dtype=np.float64)
+
+        # Build or load mesh
+        if msh_file is not None:
+            cell_type = get_meshio_cell_type(ele_type)
+            meshio_mesh = meshio.read(msh_file)
+            points = meshio_mesh.points[:, :2]
+            cells = meshio_mesh.cells_dict[cell_type]
+            phys_tags = meshio_mesh.cell_data_dict["gmsh:physical"][cell_type]
+            mesh = Mesh(points, cells, ele_type=ele_type)
+        else:
+            validate_fiber_placement(self.fibers, L, mesh_size)
+            if data_dir is None:
+                import tempfile
+                data_dir = tempfile.mkdtemp(prefix="rve_")
+            mesh, phys_tags = generate_multi_fiber_rve_mesh(
+                L, self.fibers, mesh_size, data_dir, ele_type=ele_type)
+
+        # Periodic constraints
+        P_mat = build_periodic_pmat(mesh, L, vec=2)
+
+        # Create jax-fem problem
+        mat_props = dict(
+            E_matrix=E_inf, nu_matrix=nu_matrix,
+            E_aggregate=E_fiber, nu_aggregate=nu_fiber,
+        )
+        self._problem = LinearElasticRVE(
+            mesh, vec=2, dim=2, ele_type=ele_type,
+            additional_info=(phys_tags, mat_props),
+        )
+        self._problem.P_mat = P_mat
+        self._mesh = mesh
+
+        nc = len(self._problem.fe.cells)
+        nq = self._problem.fe.num_quads
+
+        # Precompute distance field and phase masks
+        quad_points = np.array(self._problem.physical_quad_points)
+        distances = compute_distance_to_nearest_fiber(quad_points, self.fibers)
+        self._distances_jnp = jnp.array(distances)
+
+        is_fiber = (phys_tags == 2)
+        self._is_fiber_q = jnp.array(
+            np.broadcast_to(is_fiber[:, None], (nc, nq)))
+
+        self._nu_q = jnp.array(np.where(
+            is_fiber[:, None], nu_fiber, nu_matrix,
+        ) * np.ones((nc, nq)))
+
+        self._eps_macro_q = make_eps_macro_q(self.eps_macro_voigt, nc, nq)
+
+        # Precompute cell-averaged nu for von Mises
+        JxW = np.array(self._problem.fe.JxW)
+        w = JxW / JxW.sum(axis=1, keepdims=True)
+        nu_q_np = np.array(self._nu_q)
+        self._nu_cell = np.sum(nu_q_np * w, axis=1)
+
+        # AD wrapper for solving
+        self._fwd_pred = ad_wrapper(
+            self._problem, adjoint_solver_options={"umfpack_solver": {}})
+
+    def eval(self, params):
+        """Evaluate the RVE model for given exponential recovery parameters.
+
+        Parameters
+        ----------
+        params : array-like of shape (2,)
+            [rho, l_scale] — recovery ratio and length scale.
+
+        Returns
+        -------
+        dict
+            Requested output quantities as numpy arrays.
+        """
+        from pdmp.rve_utils import compute_von_mises_from_cell
+
+        params = np.asarray(params, dtype=np.float64)
+        rho = jnp.float64(params[0])
+        l_scale = jnp.float64(params[1])
+
+        # Compute E field from parameters
+        E_matrix_q = self.E_inf * (
+            1.0 - (1.0 - rho) * jnp.exp(-self._distances_jnp / l_scale))
+        E_q = jnp.where(self._is_fiber_q, self.E_fiber, E_matrix_q)
+
+        fem_params = [E_q, self._nu_q, self._eps_macro_q]
+        self._problem.set_params(fem_params)
+        sol = self._fwd_pred(fem_params)[0]
+
+        result = {}
+        needs_stress = any(q in self.quantities for q in
+                          ['avg_stress', 'cell_stresses', 'max_von_mises',
+                           'max_stress'])
+        needs_strain = any(q in self.quantities for q in
+                          ['avg_strain', 'cell_strains', 'max_strain'])
+
+        sigma_avg = sigma_cell = None
+        if needs_stress:
+            sigma_avg, sigma_cell = self._problem.compute_avg_stress(
+                sol, fem_params)
+
+        eps_cell = None
+        if needs_strain:
+            eps_cell = self._problem.compute_avg_strain(
+                sol, self._eps_macro_q)
+
+        for q in self.quantities:
+            if q == 'avg_stress':
+                result[q] = np.array(sigma_avg)
+            elif q == 'avg_strain':
+                eps_qp_avg = self._problem.compute_avg_strain(
+                    sol, self._eps_macro_q) if eps_cell is None else eps_cell
+                # Volume-average over cells
+                JxW = self._problem.fe.JxW
+                cell_vols = jnp.sum(JxW, axis=1)
+                total_vol = jnp.sum(cell_vols)
+                avg = jnp.sum(
+                    eps_qp_avg * cell_vols[:, None, None], axis=0) / total_vol
+                result[q] = np.array(avg)
+            elif q == 'cell_stresses':
+                result[q] = np.array(sigma_cell)
+            elif q == 'cell_strains':
+                result[q] = np.array(eps_cell)
+            elif q == 'displacements':
+                result[q] = np.array(sol)
+            elif q == 'max_von_mises':
+                sigma_cell_np = np.array(sigma_cell)
+                vm = compute_von_mises_from_cell(sigma_cell_np, self._nu_cell)
+                result[q] = float(np.max(vm))
+            elif q == 'max_stress':
+                result[q] = float(np.max(np.abs(np.array(sigma_cell))))
+            elif q == 'max_strain':
+                result[q] = float(np.max(np.abs(np.array(eps_cell))))
+
+        return result
+
+    @staticmethod
+    def from_dict(config):
+        """Construct an RVEModel from a configuration dictionary."""
+        fibers = [tuple(f) for f in config['fibers']]
+        eps_macro = tuple(config.get('eps_macro', (1e-3, 0.0, 0.0)))
+        return RVEModel(
+            fibers=fibers,
+            L=config.get('L', 1.0),
+            mesh_size=config.get('mesh_size', 0.03),
+            ele_type=config.get('ele_type', 'TRI3'),
+            E_inf=config.get('E_inf', 30e3),
+            E_fiber=config.get('E_fiber', 200e3),
+            nu_matrix=config.get('nu_matrix', 0.35),
+            nu_fiber=config.get('nu_fiber', 0.2),
+            eps_macro=eps_macro,
+            quantities=config.get('quantities', ['avg_stress', 'max_von_mises']),
+            msh_file=config.get('msh_file', None),
+            data_dir=config.get('data_dir', None),
+        )
