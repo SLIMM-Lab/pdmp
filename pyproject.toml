@@ -1,4 +1,5 @@
 [tool.pytest.ini_options]
+testpaths = ["tests"]
 filterwarnings = [
     "ignore::DeprecationWarning:matplotlib.*",
     # torch.jit.script deprecation (triggered by gpytorch/botorch internals)
