@@ -28,6 +28,7 @@ from pdmp.plotting_utils import get_2d_despined_figure
 from pdmp.forward_model import JaxFemModel
 from pdmp.utils import central_moment_from_skeleton, sample_equidistant_along_path
 
+from pdmp.logger_setup import suppress_external_loggers
 
 # ============================================================================
 # Configuration
@@ -52,9 +53,9 @@ N_GRID_L = 50    # Grid points for l
 N_RWM_SAMPLES = 50  # RWM samples
 T_MAX_ZZS = 10.0     # ZigZag max time
 
-# for testing
-N_GRID_RHO = 10  # Grid points for rho
-N_GRID_L = 10    # Grid points for l
+# # for testing
+# N_GRID_RHO = 10  # Grid points for rho
+# N_GRID_L = 10    # Grid points for l
 # ============================================================================
 # Enable/Disable Samplers (set to False to skip sampling)
 # ============================================================================
@@ -187,6 +188,8 @@ def evaluate_posterior_grid(target, rng: np.random.Generator, force: bool = Fals
     # l in (0, inf) -> xi_l in [-inf, inf], focus on [-1, 1.5] (covers ~0.37 to 4.48)
     xi_rho_min, xi_rho_max = 0.0, 1.4
     xi_l_min, xi_l_max = -1.0, 2.5
+    xi_rho_min, xi_rho_max = -4.0, 4.0
+    xi_l_min, xi_l_max = -2.0, 3.5
 
     xi_rho_vals = np.linspace(xi_rho_min, xi_rho_max, N_GRID_RHO)
     xi_l_vals = np.linspace(xi_l_min, xi_l_max, N_GRID_L)
@@ -441,6 +444,9 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
     rho_min, rho_max = rho_grid.min(), rho_grid.max()
     l_min, l_max = l_grid.min(), l_grid.max()
 
+    rho_min = 0.0
+    rho_max = 1.0
+
     fig2, ax2 = get_2d_despined_figure(
         plot_limits=([rho_min, rho_max], [l_min, l_max]),
         figsize=(4., 4.),
@@ -452,10 +458,10 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
     # Plot prior contours first (if available)
     if prior_original_norm is not None:
         ax2.contour(rho_grid, l_grid, prior_original_norm, levels=20,
-                    zorder=1, alpha=0.3, cmap=cmap_prior, linestyles='dashed')
+                    zorder=1, alpha=1.0, cmap=cmap_prior, linestyles='dashed')
 
     # Plot posterior contours
-    ax2.contour(rho_grid, l_grid, post_original_norm, levels=20,
+    ax2.contour(rho_grid, l_grid, post_original_norm, levels=10,
                 zorder=2, alpha=0.6, cmap=cmap_post)
 
     # Convert samples to original space
@@ -633,15 +639,15 @@ def plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
     fig1, ax1 = get_2d_despined_figure(
         plot_limits=([xi_rho_min, xi_rho_max], [xi_l_min, xi_l_max]),
         figsize=(4., 4.),
-        axes_label=(r'\xi_\rho', r'\xi_l'),
+        axes_label=(r'\eta_\rho', r'\eta_l'),
         equal_axes=False,
         keep_ticks=True
     )
 
-    # Plot prior contours first (if available)
-    if log_prior_grid is not None:
-        ax1.contour(xi_rho_grid, xi_l_grid, prior_norm, levels=20,
-                    zorder=1, alpha=0.3, cmap=cmap_prior, linestyles='-')
+    # # Plot prior contours first (if available)
+    # if log_prior_grid is not None:
+    #     ax1.contour(xi_rho_grid, xi_l_grid, prior_norm, levels=20,
+    #                 zorder=1, alpha=0.3, cmap=cmap_prior, linestyles='-')
 
     # Plot posterior contours
     ax1.contour(xi_rho_grid, xi_l_grid, post_norm, levels=20,
@@ -693,6 +699,10 @@ def plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
     rho_min, rho_max = rho_grid.min(), rho_grid.max()
     l_min, l_max = l_grid.min(), l_grid.max()
 
+    rho_min = 0.0
+    rho_max = 1.0
+    l_max = 12
+
     fig2, ax2 = get_2d_despined_figure(
         plot_limits=([rho_min, rho_max], [l_min, l_max]),
         figsize=(4., 4.),
@@ -733,6 +743,27 @@ def plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
     fig2.savefig(fig_path, bbox_inches='tight')
     print(f"  ✓ Saved figure: {fig_path}")
     plt.close(fig2)
+
+    # ========================================================================
+    # Plot 3: Prior only in original space (rho, l)
+    # ========================================================================
+
+    if prior_original_norm is not None:
+        fig3, ax3 = get_2d_despined_figure(
+            plot_limits=([rho_min, rho_max], [l_min, l_max]),
+            figsize=(4., 4.),
+            axes_label=(r'\rho', r'l'),
+            equal_axes=False,
+            keep_ticks=True
+        )
+
+        ax3.contour(rho_grid, l_grid, prior_original_norm, levels=20,
+                    zorder=1, alpha=0.6, cmap=cmap_prior)
+
+        fig_path = os.path.join(FIG_DIR, 'prior_2d_original.pdf')
+        fig3.savefig(fig_path, bbox_inches='tight')
+        print(f"  ✓ Saved figure: {fig_path}")
+        plt.close(fig3)
 
     return None
 
@@ -808,6 +839,8 @@ def main():
     target = get_target(config, rng=rng)
     print(f"  Target dimension: {target.dim}")
     print("  ✓ Target loaded successfully")
+
+    suppress_external_loggers()
 
     # Evaluate posterior grid
     xi_rho_grid, xi_l_grid, log_post_grid = evaluate_posterior_grid(

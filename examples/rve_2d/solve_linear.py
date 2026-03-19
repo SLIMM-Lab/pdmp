@@ -81,7 +81,7 @@ def main():
 
     print(f"Solving for eps = [{eps_macro_voigt[0]:.2e}, "
           f"{eps_macro_voigt[1]:.2e}, {eps_macro_voigt[2]:.2e}] ...")
-    sol_list = solver(problem)
+    sol_list = solver(problem, {'tol': 1e-8})
 
     sigma_avg, sigma_cell = problem.compute_avg_stress(
         sol_list[0], problem.internal_vars)
