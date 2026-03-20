@@ -30,7 +30,7 @@ NU_MAP = {}
 # Voxel geometry
 VOXEL_SIZE = 2.0   # µm
 Z_THRES = 110.0    # µm — load applied above this z-coordinate
-TRACTION = 0.01    # GPa traction on y_max face above Z_THRES
+TOTAL_FORCE = 40.0  # mN (GPa·µm² consistent units) — total y-force on load face
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -108,13 +108,15 @@ for phase, E_val in E_MAP.items():
 
 
 # ── 7. Problem class ─────────────────────────────────────────────────────────
+_traction_y = [0.0]  # computed after problem construction
+
 class LinearElasticity(Problem):
     def custom_init(self):
         self.fe = self.fes[0]
 
     def get_tensor_map(self):
         def stress(u_grad, E):
-            nu = 0.3
+            nu = NU
             mu = E / (2. * (1. + nu))
             lmbda = E * nu / ((1. + nu) * (1. - 2. * nu))
             epsilon = 0.5 * (u_grad + u_grad.T)
@@ -124,7 +126,7 @@ class LinearElasticity(Problem):
 
     def get_surface_maps(self):
         def surface_map(u, x):
-            return np.array([0., TRACTION, 0.])
+            return np.array([0., _traction_y[0], 0.])
         return [surface_map]
 
     def set_params(self, params):
@@ -159,14 +161,61 @@ problem = LinearElasticity(
     location_fns=location_fns,
 )
 
+A_loaded = float(onp.sum(problem.nanson_scale[0][:, 0, :]))
+_traction_y[0] = TOTAL_FORCE / A_loaded
+print(f"Load surface area: {A_loaded:.2f} µm², traction: {_traction_y[0]:.6e} GPa")
+
 num_quads = problem.fe.num_quads
 E_arr = np.repeat(E_per_element[:, None], num_quads, axis=1)
 
 fwd_pred = ad_wrapper(problem)
 sol_list = fwd_pred(E_arr)
 
+# ── 10. Post-process: strains, stresses, von Mises ──────────────────────────
+# u_grads: (num_cells, num_quads, 3, 3)
+u_grads = problem.fe.sol_to_grad(sol_list[0])
+
+# Strain (symmetric part of grad u): (num_cells, num_quads, 3, 3)
+epsilon = 0.5 * (u_grads + np.swapaxes(u_grads, -1, -2))
+
+# Per-quad Lamé parameters from element E and constant NU
+lmbda = E_arr * NU / ((1. + NU) * (1. - 2. * NU))   # (num_cells, num_quads)
+mu    = E_arr / (2. * (1. + NU))                      # (num_cells, num_quads)
+
+# Stress: (num_cells, num_quads, 3, 3)
+tr_eps = epsilon[:, :, 0, 0] + epsilon[:, :, 1, 1] + epsilon[:, :, 2, 2]
+sigma = (lmbda[:, :, None, None] * tr_eps[:, :, None, None] * np.eye(3)
+         + 2. * mu[:, :, None, None] * epsilon)
+
+# JxW-weighted cell averages
+JxW = problem.fe.JxW                                  # (num_cells, num_quads)
+w   = JxW / JxW.sum(axis=1, keepdims=True)            # normalised weights
+
+eps_cell   = onp.array(np.sum(epsilon * w[:, :, None, None], axis=1))  # (nc, 3, 3)
+sigma_cell = onp.array(np.sum(sigma   * w[:, :, None, None], axis=1))  # (nc, 3, 3)
+
+s11, s22, s33 = sigma_cell[:, 0, 0], sigma_cell[:, 1, 1], sigma_cell[:, 2, 2]
+s12, s13, s23 = sigma_cell[:, 0, 1], sigma_cell[:, 0, 2], sigma_cell[:, 1, 2]
+von_mises = onp.sqrt(0.5 * ((s11-s22)**2 + (s22-s33)**2 + (s33-s11)**2
+                             + 6. * (s12**2 + s13**2 + s23**2)))
+
 vtk_path = os.path.join(DATA_DIR, 'vtk', 'itz.vtu')
 save_sol(problem.fe, sol_list[0], vtk_path,
-         cell_infos=[('phase', cell_phases.astype(onp.float32)),
-                     ('E', E_per_element.astype(onp.float32))])
+         cell_infos=[
+             ('phase',      cell_phases.astype(onp.float32)),
+             ('E',          E_per_element.astype(onp.float32)),
+             ('stress_xx',  s11.astype(onp.float32)),
+             ('stress_yy',  s22.astype(onp.float32)),
+             ('stress_zz',  s33.astype(onp.float32)),
+             ('stress_xy',  s12.astype(onp.float32)),
+             ('stress_xz',  s13.astype(onp.float32)),
+             ('stress_yz',  s23.astype(onp.float32)),
+             ('von_mises',  von_mises.astype(onp.float32)),
+             ('strain_xx',  eps_cell[:, 0, 0].astype(onp.float32)),
+             ('strain_yy',  eps_cell[:, 1, 1].astype(onp.float32)),
+             ('strain_zz',  eps_cell[:, 2, 2].astype(onp.float32)),
+             ('strain_xy',  (2. * eps_cell[:, 0, 1]).astype(onp.float32)),
+             ('strain_xz',  (2. * eps_cell[:, 0, 2]).astype(onp.float32)),
+             ('strain_yz',  (2. * eps_cell[:, 1, 2]).astype(onp.float32)),
+         ])
 print(f"Solution saved to {vtk_path}")
