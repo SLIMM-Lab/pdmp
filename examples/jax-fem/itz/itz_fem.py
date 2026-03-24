@@ -14,6 +14,8 @@ from jax_fem.solver import ad_wrapper
 from jax_fem.utils import save_sol
 from jax_fem.generate_mesh import Mesh
 
+from pdmp.forward_model import build_sensor_interpolants, evaluate_sensor_displacements
+
 # ── Phase definitions ────────────────────────────────────────────────────────
 PORE = 1
 OUTER_CSH = 2
@@ -37,7 +39,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 GEOM_FILE = os.path.join(SCRIPT_DIR, 'itz_geom.npy')
 DATA_DIR = os.path.join(SCRIPT_DIR, 'data')
 
-# ── 1. Load geometry ─────────────────────────────────────────────────────────
+# ── 1. Load geometry ────────────────────────────────────────────────────────
 geom = onp.load(GEOM_FILE)  # (Nx, Ny, Nz), dtype uint8
 Nx, Ny, Nz = geom.shape
 domain_x = Nx * VOXEL_SIZE
@@ -145,6 +147,14 @@ def zero_dirichlet_val(point):
 def load_face(point):
     return np.isclose(point[1], domain_y, atol=1e-3) * (point[2] > Z_THRES)
 
+def side_faces(point):
+    return (np.isclose(point[0], 0., atol=1e-5) +
+            np.isclose(point[0], domain_x, atol=1e-5) +
+            np.isclose(point[1], 0., atol=1e-5) +
+            np.isclose(point[1], domain_y, atol=1e-5))
+
+def top_face(point):
+    return np.isclose(point[2], domain_z, atol=1e-5)
 
 dirichlet_bc_info = [
     [bottom, bottom, bottom],
@@ -153,6 +163,19 @@ dirichlet_bc_info = [
 ]
 location_fns = [load_face]
 
+location_fn_map = {
+    'side_faces': side_faces,
+    'top_face': top_face,
+}
+
+sensor_specs = [
+    {"name": "sensor_left_center", "location_fn": "side_faces",
+     "points": onp.array([[0, 0.5*domain_y, 0.5*domain_z],
+                        [0, 0.2*domain_y, 0.8*domain_z]])},
+    {"name": "sensor_top", "location_fn": "top_face",
+     "point": onp.array([0.4*domain_x, 0.3*domain_y, domain_z])},
+]
+
 # ── 9. Create mesh, solve, save VTK ─────────────────────────────────────────
 mesh = Mesh(points, cells, ele_type='HEX8')
 problem = LinearElasticity(
@@ -160,6 +183,10 @@ problem = LinearElasticity(
     dirichlet_bc_info=dirichlet_bc_info,
     location_fns=location_fns,
 )
+
+sensor_interpolants = build_sensor_interpolants(
+    problem.fe, sensor_specs, location_fn_map
+) if sensor_specs else []
 
 A_loaded = float(onp.sum(problem.nanson_scale[0][:, 0, :]))
 _traction_y[0] = TOTAL_FORCE / A_loaded
@@ -218,4 +245,11 @@ save_sol(problem.fe, sol_list[0], vtk_path,
              ('strain_xz',  (2. * eps_cell[:, 0, 2]).astype(onp.float32)),
              ('strain_yz',  (2. * eps_cell[:, 1, 2]).astype(onp.float32)),
          ])
+
+if sensor_interpolants:
+    sensor_readings = evaluate_sensor_displacements(sol_list[0], sensor_interpolants)
+    print("Sensor displacements (ux, uy, uz):")
+    for reading in sensor_readings:
+        print(f"  {reading['name']} @ {reading['points']} -> {reading['u']}")
+
 print(f"Solution saved to {vtk_path}")
