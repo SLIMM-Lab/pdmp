@@ -996,6 +996,163 @@ def test_dirichlet_boundary_sensors_near_zero():
     print("✓ Dirichlet boundary sensor test passed!\n")
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Tests for total_load feature
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_total_load_mutual_exclusivity():
+    """Specifying both traction and total_load must raise ValueError."""
+    import pytest
+    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field = JaxConstantField(field_dist)
+    sensors = [{"name": "s", "location_fn": "side_faces", "point": np.array([0., 0.5, 1.25])}]
+
+    with pytest.raises(ValueError, match="traction.*total_load|total_load.*traction"):
+        JaxFemModel(
+            d_x=1.0, d_y=1.0, d_z=2.5, h=0.25,
+            traction=[0., 0.015, 0.],
+            total_load=[0., 40., 0.],
+            sensors=sensors,
+        )
+
+
+def test_total_load_surface_area_computed():
+    """total_load mode stores a positive surface_area on the model instance."""
+    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field = JaxConstantField(field_dist)
+    sensors = [{"name": "s", "location_fn": "side_faces", "point": np.array([0., 0.5, 1.25])}]
+
+    model = JaxFemModel(
+        d_x=1.0, d_y=1.0, d_z=2.5, h=0.25,
+        total_load=[0., 40., 0.],
+        sensors=sensors,
+        field=field,
+    )
+
+    assert hasattr(model, '_surface_area'), "Model should expose _surface_area after total_load construction"
+    assert model._surface_area > 0, f"Surface area must be positive, got {model._surface_area}"
+    print(f"  surface_area = {model._surface_area:.6f}")
+
+
+def test_total_load_traction_equals_load_over_area():
+    """The derived traction must equal total_load / surface_area component-wise."""
+    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field = JaxConstantField(field_dist)
+    sensors = [{"name": "s", "location_fn": "side_faces", "point": np.array([0., 0.5, 1.25])}]
+
+    total_load = np.array([0., 40., 0.])
+
+    model = JaxFemModel(
+        d_x=1.0, d_y=1.0, d_z=2.5, h=0.25, indenter_loc=0.5,
+        total_load=total_load,
+        sensors=sensors,
+        field=field,
+    )
+
+    # Re-derive expected traction
+    import numpy as onp
+    surface_area = float(onp.sum(model.problem.nanson_scale[0][:, 0, :]))
+    expected_traction = total_load / surface_area
+
+    # Build a model with that explicit traction and check both produce the same output
+    model_explicit = JaxFemModel(
+        d_x=1.0, d_y=1.0, d_z=2.5, h=0.25, indenter_loc=0.5,
+        traction=expected_traction.tolist(),
+        sensors=sensors,
+        field=field,
+    )
+
+    params = np.array([12.])
+    y_load = model.eval(params)
+    y_explicit = model_explicit.eval(params)
+
+    print(f"  total_load output   : {y_load}")
+    print(f"  explicit traction   : {y_explicit}")
+    assert np.allclose(y_load, y_explicit, rtol=1e-6), (
+        f"total_load and equivalent explicit traction must give same output.\n"
+        f"  total_load: {y_load}\n"
+        f"  explicit  : {y_explicit}"
+    )
+
+
+def test_total_load_from_dict():
+    """JaxFemModel.from_dict must accept total_load as a config key."""
+    import numpy as onp
+
+    field_config = {'name': 'JaxConstantField', 'mean': 10, 'std': 2}
+    field = get_jax_field(field_config)
+
+    config = {
+        'name': 'JaxFem',
+        'd_x': 1.0, 'd_y': 1.0, 'd_z': 2.5,
+        'h': 0.25, 'nu': 0.3,
+        'total_load': [0., 40., 0.],
+        'sensors': [{"name": "s", "location_fn": "side_faces", "point": [0., 0.5, 1.25]}],
+    }
+
+    model = JaxFemModel.from_dict(config, field=field)
+
+    assert hasattr(model, '_surface_area'), "from_dict with total_load should set _surface_area"
+    assert model._surface_area > 0
+
+    # Forward pass should run without error
+    y = model.eval(np.array([12.]))
+    assert y.shape == (3,), f"Expected shape (3,), got {y.shape}"
+    print(f"  from_dict total_load output: {y}")
+
+
+def test_total_load_produces_nonzero_displacement():
+    """A non-zero total_load should produce a non-zero displacement at a free sensor."""
+    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field = JaxConstantField(field_dist)
+    sensors = [{"name": "s", "location_fn": "side_faces", "point": np.array([0., 0.5, 1.25])}]
+
+    model = JaxFemModel(
+        d_x=1.0, d_y=1.0, d_z=2.5, h=0.25,
+        total_load=[0., 40., 0.],
+        sensors=sensors,
+        field=field,
+    )
+
+    y = model.eval(np.array([12.]))
+    assert np.max(np.abs(y)) > 1e-10, (
+        f"Non-zero total_load should yield non-zero sensor displacement, got {y}"
+    )
+    print(f"  sensor displacement under total_load: {y}")
+
+
+def test_total_load_default_unchanged():
+    """With neither traction nor total_load, the default traction [0, 0.015, 0] is used."""
+    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field = JaxConstantField(field_dist)
+    sensors = [{"name": "s", "location_fn": "side_faces", "point": np.array([0., 0.5, 1.25])}]
+
+    # Model with no load arguments — uses default traction
+    model_default = JaxFemModel(
+        d_x=1.0, d_y=1.0, d_z=2.5, h=0.25,
+        sensors=sensors, field=field,
+    )
+    # Model with explicit default traction
+    model_explicit = JaxFemModel(
+        d_x=1.0, d_y=1.0, d_z=2.5, h=0.25,
+        traction=[0., 0.015, 0.],
+        sensors=sensors, field=field,
+    )
+
+    params = np.array([12.])
+    y_default = model_default.eval(params)
+    y_explicit = model_explicit.eval(params)
+
+    assert np.allclose(y_default, y_explicit, rtol=1e-10), (
+        f"Default traction and explicit [0, 0.015, 0] should give same output.\n"
+        f"  default : {y_default}\n"
+        f"  explicit: {y_explicit}"
+    )
+    assert not hasattr(model_default, '_surface_area'), (
+        "_surface_area should not be set when total_load is not used"
+    )
+
+
 if __name__ == '__main__':
     # ── Unit tests (no FEM model needed) ──────────────────────────────────────
     test_quad_weights_at_nodes()

@@ -732,8 +732,16 @@ class JaxFemModel(Model):
         Mesh size parameter (default 0.5).
     d_u : float, optional
         Dirichlet boundary displacement value (default -0.1).
+    indenter_loc: float, optional
+        z-coordinate of the indenter location on the top surface (default is mid-height).
     traction : list, optional
         Traction vector on boundary (default [0., 0.015, 0.]).
+        Mutually exclusive with ``total_load``.
+    total_load : list or array-like, optional
+        Total force vector [Fx, Fy, Fz] applied on the loaded boundary
+        (location_fns[0]).  The constant traction is derived as
+        total_load / surface_area, where surface_area is computed from the
+        mesh after Problem construction.  Mutually exclusive with ``traction``.
     obs_loc : np.ndarray, optional
         Legacy observation locations (deprecated, use sensors instead).
     n_params : int, optional
@@ -761,14 +769,31 @@ class JaxFemModel(Model):
                    "point": [0, 0.5*d_y, 0.5*d_z]}]
     """
     def __init__(self, d_x: float, d_y: float, d_z: float, ele_type: str = 'HEX8', nu: float = 0.3, h: float = 0.5,
-                 d_u: float = -0.1, traction=None, obs_loc: np.ndarray = None, n_params: int = 1, d_obs: int = 1,
-                 field=None, sensors=None):
+                 d_u: float = -0.1, indenter_loc: float = None, traction=None, total_load=None, obs_loc: np.ndarray = None, n_params: int = 1,
+                 d_obs: int = 1, field=None, sensors=None):
         super().__init__()
 
         # todo: remove obs_loc and d_obs in favor of sensors for specifying observation setup
 
-        if traction is None:
-            traction = [0., .015, 0.]
+        if traction is not None and total_load is not None:
+            raise ValueError(
+                "Cannot specify both 'traction' and 'total_load'. "
+                "Use 'traction' for a direct traction vector or "
+                "'total_load' for a total force divided by surface area."
+            )
+
+        # Mutable list so the get_surface_maps() closure sees updates
+        if traction is not None:
+            _traction = list(traction)
+        elif total_load is not None:
+            _traction = [0., 0., 0.]  # placeholder; computed after Problem construction
+        else:
+            _traction = [0., .015, 0.]
+
+        if indenter_loc is None:
+            indenter_loc = 0.5 * d_z
+
+        self._total_load = total_load
         self._h = h
         self._obs_loc = obs_loc
 
@@ -801,7 +826,7 @@ class JaxFemModel(Model):
 
             def get_surface_maps(self):
                 def surface_map(u, x):
-                    return jnp.array(traction)
+                    return jnp.array(_traction)
 
                 return [surface_map]
 
@@ -823,7 +848,7 @@ class JaxFemModel(Model):
             return jnp.isclose(point[2], 0., atol=1e-5)
 
         def indenter(point):
-            return (point[2] > 2.0) * jnp.isclose(point[1], d_y, atol=1e-5)
+            return (point[2] > indenter_loc) * jnp.isclose(point[1], d_y, atol=1e-5)
             # return ((point[0] - d_x / 2.) ** 2 + (point[2] - d_z - 0.75) ** 2 > 1.8
             #         * jnp.isclose(point[1], d_y, atol=1e-5))
 
@@ -875,6 +900,27 @@ class JaxFemModel(Model):
             dirichlet_bc_info=dirichlet_bc_info,
             location_fns=location_fns
         )
+
+        # Derive traction from total load and computed surface area
+        if total_load is not None:
+            total_load = np.asarray(total_load, dtype=float)
+            # nanson_scale[0] corresponds to location_fns[0] (loaded boundary)
+            # shape: (num_selected_faces, num_vars, num_face_quads)
+            surface_area = float(np.sum(self.problem.nanson_scale[0][:, 0, :]))
+            if surface_area < 1e-15:
+                raise ValueError(
+                    f"Computed surface area is effectively zero ({surface_area:.2e}). "
+                    "Check that the load location function selects boundary faces."
+                )
+            derived = total_load / surface_area
+            _traction[0] = float(derived[0])
+            _traction[1] = float(derived[1])
+            _traction[2] = float(derived[2])
+            self._surface_area = surface_area
+            logger.info(
+                f"total_load={total_load.tolist()}, surface_area={surface_area:.6f}, "
+                f"traction={list(_traction)}"
+            )
 
         self.sensor_interpolants = build_sensor_interpolants(self.problem.fe, sensors, location_fn_map) if sensors else []
 
@@ -1114,7 +1160,9 @@ class JaxFemModel(Model):
         nu = float(config.get('nu', 0.3))
         h = float(config.get('h', 0.5))
         d_u = float(config.get('d_u', -0.1))
+        indenter_loc = config.get('indenter_loc', None)
         traction = config.get('traction', None)
+        total_load = config.get('total_load', None)
         obs_loc = config.get('obs_loc', None)
         if obs_loc is not None:
             obs_loc = np.array(obs_loc)
@@ -1150,9 +1198,9 @@ class JaxFemModel(Model):
                 sensors.append(sensor)
 
         return cls(
-            d_x=d_x, d_y=d_y, d_z=d_z,
+            d_x=d_x, d_y=d_y, d_z=d_z, indenter_loc=indenter_loc,
             ele_type=ele_type, nu=nu, h=h, d_u=d_u,
-            traction=traction, obs_loc=obs_loc,
+            traction=traction, total_load=total_load, obs_loc=obs_loc,
             n_params=n_params, d_obs=d_obs,
             field=field, sensors=sensors,
         )
