@@ -730,8 +730,6 @@ class JaxFemModel(Model):
         Poisson's ratio (default 0.3).
     h : float, optional
         Mesh size parameter (default 0.5).
-    d_u : float, optional
-        Dirichlet boundary displacement value (default -0.1).
     indenter_loc: float, optional
         z-coordinate of the indenter location on the top surface (default is mid-height).
     traction : list, optional
@@ -742,12 +740,8 @@ class JaxFemModel(Model):
         (location_fns[0]).  The constant traction is derived as
         total_load / surface_area, where surface_area is computed from the
         mesh after Problem construction.  Mutually exclusive with ``traction``.
-    obs_loc : np.ndarray, optional
-        Legacy observation locations (deprecated, use sensors instead).
     n_params : int, optional
         Number of parameters (default 1), overridden if field is provided.
-    d_obs : int, optional
-        Number of observations (default 1), automatically inferred from sensors.
     field : JaxRandomField, optional
         Random field mapping coefficients to material properties.
         If provided, determines n_params from field.dim.
@@ -769,8 +763,8 @@ class JaxFemModel(Model):
                    "point": [0, 0.5*d_y, 0.5*d_z]}]
     """
     def __init__(self, d_x: float, d_y: float, d_z: float, ele_type: str = 'HEX8', nu: float = 0.3, h: float = 0.5,
-                 d_u: float = -0.1, indenter_loc: float = None, traction=None, total_load=None, obs_loc: np.ndarray = None, n_params: int = 1,
-                 d_obs: int = 1, field=None, sensors=None):
+                 indenter_loc: float = None, traction=None, total_load=None, n_params: int = 1,
+                 field=None, sensors=None):
         super().__init__()
 
         # todo: remove obs_loc and d_obs in favor of sensors for specifying observation setup
@@ -795,7 +789,6 @@ class JaxFemModel(Model):
 
         self._total_load = total_load
         self._h = h
-        self._obs_loc = obs_loc
 
         # Store field and determine parameter dimension
         self.field = field
@@ -803,7 +796,6 @@ class JaxFemModel(Model):
             self._n_params = int(self.field.dim)
         else:
             self._n_params = n_params
-
 
         from jax_fem.problem import Problem
         from jax_fem.solver import ad_wrapper
@@ -833,13 +825,6 @@ class JaxFemModel(Model):
             def set_params(self, params):
                 E  = params[0]
                 self.internal_vars = [E]
-                # self.fe.dirichlet_bc_info[-1][-1] = get_dirichlet_top()
-                # self.fe.update_Dirichlet_boundary_conditions(self.fe.dirichlet_bc_info)
-
-        def get_dirichlet_top():
-            def dirichlet_top(point):
-                return d_u
-            return dirichlet_top
 
         def zero_dirichlet_val(point):
             return 0.
@@ -924,10 +909,6 @@ class JaxFemModel(Model):
 
         self.sensor_interpolants = build_sensor_interpolants(self.problem.fe, sensors, location_fn_map) if sensors else []
 
-        # rho = 0.5*jnp.ones((self.problem.fe.num_cells, self.problem.fe.num_quads))
-        E = 1.e6
-        params = [E]
-
         # Use UMFPACK (direct solver) for the adjoint.  The default JAX BiCGStab
         # starts from a zero initial guess and can hit a numerical breakdown
         # (ρ → 0 in the BiCGStab recurrence) for certain RHS vectors, causing
@@ -937,14 +918,10 @@ class JaxFemModel(Model):
         # BiCGStab only caused problems at the MAP so far, expected to work for the rest of domain
         self.fwd_pred = ad_wrapper(self.problem, adjoint_solver_options={"umfpack_solver": {}})
 
-        # infer observed dimension from sensor setup (if any)
-        if self.sensor_interpolants:
-            # total observed dofs = total point-wise displacements from all sensors
-            sample_sol = jnp.zeros((self.problem.fe.num_total_nodes, 3))
-            sample_readings = evaluate_sensor_displacements(sample_sol, self.sensor_interpolants)
-            self._d_obs = sum(int(r["u"].size) for r in sample_readings)
-        else:
-            self._d_obs = d_obs
+        # total observed dofs = total point-wise displacements from all sensors
+        sample_sol = jnp.zeros((self.problem.fe.num_total_nodes, 3))
+        sample_readings = evaluate_sensor_displacements(sample_sol, self.sensor_interpolants)
+        self._d_obs = sum(int(r["u"].size) for r in sample_readings)
 
     @override
     def get_dim_in(self) -> int:
@@ -1159,21 +1136,15 @@ class JaxFemModel(Model):
         ele_type = config.get('ele_type', 'HEX8')
         nu = float(config.get('nu', 0.3))
         h = float(config.get('h', 0.5))
-        d_u = float(config.get('d_u', -0.1))
         indenter_loc = config.get('indenter_loc', None)
         traction = config.get('traction', None)
         total_load = config.get('total_load', None)
-        obs_loc = config.get('obs_loc', None)
-        if obs_loc is not None:
-            obs_loc = np.array(obs_loc)
 
         # Determine n_params from field if available
         if field is not None:
             n_params = field.dim
         else:
             n_params = int(config.get('n_params', 1))
-
-        d_obs = int(config.get('d_obs', 1))
 
         # Parse sensors configuration
         sensors = None
@@ -1199,87 +1170,10 @@ class JaxFemModel(Model):
 
         return cls(
             d_x=d_x, d_y=d_y, d_z=d_z, indenter_loc=indenter_loc,
-            ele_type=ele_type, nu=nu, h=h, d_u=d_u,
-            traction=traction, total_load=total_load, obs_loc=obs_loc,
-            n_params=n_params, d_obs=d_obs,
-            field=field, sensors=sensors,
+            ele_type=ele_type, nu=nu, h=h,
+            traction=traction, total_load=total_load,
+            n_params=n_params, field=field, sensors=sensors,
         )
-
-if __name__ == '__main__':
-
-    # Use non-interactive backend if display may not be available
-    try:
-        import matplotlib
-        matplotlib.use('Agg')
-    except Exception:  # pragma: no cover
-        pass
-
-    # Example piecewise constant model
-    F = np.array([1., 2.])
-    x_obs = np.array([0.1, 0.2])
-    n_params = 2
-    model = PiecewiseConstantModel(F, n_params, x_obs)
-    print(
-        model.eval_E(np.array([0.1, 0.2]), np.array([0.1, 0.2, 0.3, 0.6, 1.1])))
-
-    # x = np.linspace(0, 1, 100)
-    x = np.array([0.1, 0.2, 0.3, 0.6, 1.0])
-    # params = np.array([0.1, 0.2])
-    params_all = np.linspace(1, 5, 100)
-    params_all = np.vstack((params_all, np.ones_like(params_all))).T
-    # grads = model.eval_grad(np.array(x), np.array([0.1, 0.2]))
-
-    for j in range(len(F)):
-        grads = np.zeros((params_all.shape[0], len(x)))
-        u = np.zeros((params_all.shape[0], len(x)))
-        for i, params in enumerate(params_all):
-            grads[i] = model.eval_grad(params, x, j)[:, 1]
-            u[i] = model.eval(params, x, j)
-
-        fig, ax = plt.subplots(1, 1, figsize=(10, 5))
-
-        # ax.plot(params_all[:, 0], grads[:, 0], label='dE/dp_0')
-        # ax.plot(params_all[:, 0], grads[:, 4], label='dE/dp_0')
-        for i in range(len(x)):
-            ax.plot(params_all[:, 0], u[:, i], label=f'u(x={x[i]})')
-        ax.legend()
-        plt.show()
-
-    print('Done!')
-
-    # Example linear model
-    rng = np.random.default_rng(0)
-
-    n = 2
-    m = 3
-    A = rng.random((m, n))
-    b = rng.random(m)
-    model = LinearModel(A, b)
-    # model = get_linear_model()
-    # n = model.get_dim()
-    # m = n
-
-    x_true = rng.random(n)
-    y_true = model.eval(x_true)
-    print(f"True output: {y_true}")
-
-    # # create a noisy observation
-    # noise = 0.1 * np.random.randn(m)
-    # y_obs = y_true + noise
-    # print(f"Noisy observation: {y_obs}")
-
-    # evaluate the model on a grid and plot contours
-    x = np.linspace(0, 1, 100)
-    y = np.linspace(0, 1, 100)
-    X, Y = np.meshgrid(x, y)
-    Z = np.zeros_like(X)
-    for i in range(len(x)):
-        for j in range(len(y)):
-            Z[j, i] = model.eval(np.array([x[i], y[j]]))[0]
-
-    fig, ax = plt.subplots(1, 1, figsize=(10, 5))
-    ax.contourf(X, Y, Z, 100)
-    plt.show()
 
 
 class RVEModel:
@@ -1505,3 +1399,80 @@ class RVEModel:
             msh_file=config.get('msh_file', None),
             data_dir=config.get('data_dir', None),
         )
+
+if __name__ == '__main__':
+
+    # Use non-interactive backend if display may not be available
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+    except Exception:  # pragma: no cover
+        pass
+
+    # Example piecewise constant model
+    F = np.array([1., 2.])
+    x_obs = np.array([0.1, 0.2])
+    n_params = 2
+    model = PiecewiseConstantModel(F, n_params, x_obs)
+    print(
+        model.eval_E(np.array([0.1, 0.2]), np.array([0.1, 0.2, 0.3, 0.6, 1.1])))
+
+    # x = np.linspace(0, 1, 100)
+    x = np.array([0.1, 0.2, 0.3, 0.6, 1.0])
+    # params = np.array([0.1, 0.2])
+    params_all = np.linspace(1, 5, 100)
+    params_all = np.vstack((params_all, np.ones_like(params_all))).T
+    # grads = model.eval_grad(np.array(x), np.array([0.1, 0.2]))
+
+    for j in range(len(F)):
+        grads = np.zeros((params_all.shape[0], len(x)))
+        u = np.zeros((params_all.shape[0], len(x)))
+        for i, params in enumerate(params_all):
+            grads[i] = model.eval_grad(params, x, j)[:, 1]
+            u[i] = model.eval(params, x, j)
+
+        fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+
+        # ax.plot(params_all[:, 0], grads[:, 0], label='dE/dp_0')
+        # ax.plot(params_all[:, 0], grads[:, 4], label='dE/dp_0')
+        for i in range(len(x)):
+            ax.plot(params_all[:, 0], u[:, i], label=f'u(x={x[i]})')
+        ax.legend()
+        plt.show()
+
+    print('Done!')
+
+    # Example linear model
+    rng = np.random.default_rng(0)
+
+    n = 2
+    m = 3
+    A = rng.random((m, n))
+    b = rng.random(m)
+    model = LinearModel(A, b)
+    # model = get_linear_model()
+    # n = model.get_dim()
+    # m = n
+
+    x_true = rng.random(n)
+    y_true = model.eval(x_true)
+    print(f"True output: {y_true}")
+
+    # # create a noisy observation
+    # noise = 0.1 * np.random.randn(m)
+    # y_obs = y_true + noise
+    # print(f"Noisy observation: {y_obs}")
+
+    # evaluate the model on a grid and plot contours
+    x = np.linspace(0, 1, 100)
+    y = np.linspace(0, 1, 100)
+    X, Y = np.meshgrid(x, y)
+    Z = np.zeros_like(X)
+    for i in range(len(x)):
+        for j in range(len(y)):
+            Z[j, i] = model.eval(np.array([x[i], y[j]]))[0]
+
+    fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+    ax.contourf(X, Y, Z, 100)
+    plt.show()
+
