@@ -84,7 +84,6 @@ def test_jax_fem_model_with_field():
         d_x=1.0, d_y=1.0, d_z=2.5,
         h=0.5,  # coarse mesh for testing
         n_params=1,
-        d_obs=1,
         field=field
     )
 
