@@ -22,9 +22,9 @@ class TestCompositeTransformation:
         """Test basic composite transformation with explicit indices."""
         # Create a composite: sigmoid on [0,1], exponential on [2,3,4]
         trans = CompositeTransformation(
-            [SigmoidTransformation(0, 1), ExponentialTransformation()],
-            [np.array([0, 1]), np.array([2, 3, 4])]
-        )
+            [SigmoidTransformation(0, 1),
+             ExponentialTransformation()],
+            [np.array([0, 1]), np.array([2, 3, 4])])
 
         xi = np.array([0.0, 1.0, 0.0, 0.5, -0.5])
 
@@ -46,9 +46,9 @@ class TestCompositeTransformation:
     def test_inverse_transform(self):
         """Test that inverse transform is correct."""
         trans = CompositeTransformation(
-            [SigmoidTransformation(-1, 2), ExponentialTransformation()],
-            [np.array([0, 1]), np.array([2, 3])]
-        )
+            [SigmoidTransformation(-1, 2),
+             ExponentialTransformation()],
+            [np.array([0, 1]), np.array([2, 3])])
 
         xi = np.array([0.5, -0.5, 1.0, -1.0])
         x = trans.transform(xi)
@@ -59,9 +59,9 @@ class TestCompositeTransformation:
     def test_jacobian_block_diagonal(self):
         """Test that Jacobian has correct block-diagonal structure."""
         trans = CompositeTransformation(
-            [SigmoidTransformation(0, 1), ExponentialTransformation()],
-            [np.array([0, 1]), np.array([2, 3, 4])]
-        )
+            [SigmoidTransformation(0, 1),
+             ExponentialTransformation()],
+            [np.array([0, 1]), np.array([2, 3, 4])])
 
         xi = np.array([0.0, 0.5, 0.0, 0.5, -0.5])
         J = trans.jacobian(xi)
@@ -80,9 +80,9 @@ class TestCompositeTransformation:
     def test_log_det_jacobian(self):
         """Test log determinant calculation."""
         trans = CompositeTransformation(
-            [SigmoidTransformation(0, 1), ExponentialTransformation()],
-            [np.array([0, 1]), np.array([2])]
-        )
+            [SigmoidTransformation(0, 1),
+             ExponentialTransformation()],
+            [np.array([0, 1]), np.array([2])])
 
         xi = np.array([0.0, 0.5, 1.0])
 
@@ -92,19 +92,17 @@ class TestCompositeTransformation:
         # Compute manually
         sigmoid_trans = SigmoidTransformation(0, 1)
         exp_trans = ExponentialTransformation()
-        log_det_manual = (
-            sigmoid_trans.log_det_jacobian(xi[0:2]) +
-            exp_trans.log_det_jacobian(xi[2:3])
-        )
+        log_det_manual = (sigmoid_trans.log_det_jacobian(xi[0:2]) +
+                          exp_trans.log_det_jacobian(xi[2:3]))
 
         assert np.allclose(log_det, log_det_manual)
 
     def test_grad_log_det_jacobian(self):
         """Test gradient of log determinant."""
         trans = CompositeTransformation(
-            [SigmoidTransformation(0, 1), ExponentialTransformation()],
-            [np.array([0, 1]), np.array([2, 3])]
-        )
+            [SigmoidTransformation(0, 1),
+             ExponentialTransformation()],
+            [np.array([0, 1]), np.array([2, 3])])
 
         xi = np.array([0.0, 0.5, 1.0, -0.5])
         grad = trans.grad_log_det_jacobian(xi)
@@ -120,19 +118,17 @@ class TestCompositeTransformation:
             xi_plus[i] += eps
             xi_minus = xi.copy()
             xi_minus[i] -= eps
-            grad_numerical[i] = (
-                trans.log_det_jacobian(xi_plus) -
-                trans.log_det_jacobian(xi_minus)
-            ) / (2 * eps)
+            grad_numerical[i] = (trans.log_det_jacobian(xi_plus) -
+                                 trans.log_det_jacobian(xi_minus)) / (2 * eps)
 
         assert np.allclose(grad, grad_numerical, atol=1e-5)
 
     def test_hessian_log_det_jacobian(self):
         """Test Hessian of log determinant has block-diagonal structure."""
         trans = CompositeTransformation(
-            [SigmoidTransformation(0, 1), ExponentialTransformation()],
-            [np.array([0, 1]), np.array([2, 3])]
-        )
+            [SigmoidTransformation(0, 1),
+             ExponentialTransformation()],
+            [np.array([0, 1]), np.array([2, 3])])
 
         xi = np.array([0.0, 0.5, 1.0, -0.5])
         H = trans.hessian_log_det_jacobian(xi)
@@ -147,18 +143,18 @@ class TestCompositeTransformation:
     def test_with_slices(self):
         """Test that slice notation works for indices."""
         trans = CompositeTransformation(
-            [SigmoidTransformation(0, 1), ExponentialTransformation()],
-            [slice(0, 2), slice(2, 5)]
-        )
+            [SigmoidTransformation(0, 1),
+             ExponentialTransformation()],
+            [slice(0, 2), slice(2, 5)])
 
         xi = np.array([0.0, 1.0, 0.0, 0.5, -0.5])
         x = trans.transform(xi)
 
         # Should work the same as array indices
         trans2 = CompositeTransformation(
-            [SigmoidTransformation(0, 1), ExponentialTransformation()],
-            [np.array([0, 1]), np.array([2, 3, 4])]
-        )
+            [SigmoidTransformation(0, 1),
+             ExponentialTransformation()],
+            [np.array([0, 1]), np.array([2, 3, 4])])
         x2 = trans2.transform(xi)
 
         assert np.allclose(x, x2)
@@ -167,14 +163,16 @@ class TestCompositeTransformation:
         """Test that overlapping indices raise an error."""
         with pytest.raises(ValueError, match="disjoint"):
             CompositeTransformation(
-                [SigmoidTransformation(0, 1), ExponentialTransformation()],
+                [SigmoidTransformation(0, 1),
+                 ExponentialTransformation()],
                 [np.array([0, 1, 2]), np.array([2, 3])]  # 2 appears twice
             )
 
     def test_validation_incomplete_indices(self):
         """Test that incomplete indices raise an error."""
         trans = CompositeTransformation(
-            [SigmoidTransformation(0, 1), ExponentialTransformation()],
+            [SigmoidTransformation(0, 1),
+             ExponentialTransformation()],
             [np.array([0, 1]), np.array([3, 4])]  # Missing index 2
         )
 
@@ -190,14 +188,12 @@ class TestCompositeTransformation:
         M = np.array([[2.0, 0.5], [0.5, 1.0]])
         b = np.array([1.0, -1.0])
 
-        trans = CompositeTransformation(
-            [
-                SigmoidTransformation(0, 1),
-                ExponentialTransformation(),
-                AffineTransformation(M, b)
-            ],
-            [np.array([0, 1]), np.array([2]), np.array([3, 4])]
-        )
+        trans = CompositeTransformation([
+            SigmoidTransformation(0, 1),
+            ExponentialTransformation(),
+            AffineTransformation(M, b)
+        ], [np.array([0, 1]),
+            np.array([2]), np.array([3, 4])])
 
         xi = np.array([0.0, 0.5, 1.0, 0.0, 0.0])
         x = trans.transform(xi)
@@ -228,7 +224,8 @@ class TestCompositeWithDistributions:
         params = {
             'transformation': COMPOSITE,
             'transformations': [EXPONENTIAL, SIGMOID],
-            'indices': [np.array([0, 1, 2]), np.array([3, 4])]
+            'indices': [np.array([0, 1, 2]),
+                        np.array([3, 4])]
         }
 
         trans_dist = TransformedDistribution(base_dist, params)
@@ -242,7 +239,7 @@ class TestCompositeWithDistributions:
 
         # Test gradient
         grad = trans_dist.grad_log_density(xi)
-        assert grad.shape == (5,)
+        assert grad.shape == (5, )
         assert np.all(np.isfinite(grad))
 
     def test_joint_distribution_automatic_indices(self):
@@ -257,18 +254,14 @@ class TestCompositeWithDistributions:
         # Apply composite transformation (indices should be auto-generated)
         params = {
             'transformation': COMPOSITE,
-            'transformations': [
-                EXPONENTIAL,
-                SIGMOID,
-                EXPONENTIAL
-            ]
+            'transformations': [EXPONENTIAL, SIGMOID, EXPONENTIAL]
         }
 
         trans_dist = TransformedDistribution(joint, params)
 
         # Use manually created xi in unconstrained space instead of sampling
         xi = np.array([0.0, 0.5, 0.0, 0.5, -0.5, 1.0])
-        assert xi.shape == (6,)
+        assert xi.shape == (6, )
 
         log_p = trans_dist.log_density(xi)
         assert np.isfinite(log_p)
@@ -278,11 +271,15 @@ class TestCompositeWithDistributions:
         base_dist = MultivariateNormal(np.zeros(4), np.eye(4))
 
         params = {
-            'transformation': COMPOSITE,
-            'transformations': [
-                {'type': SIGMOID, 'a': -1, 'b': 2},
-                {'type': EXPONENTIAL}
-            ],
+            'transformation':
+            COMPOSITE,
+            'transformations': [{
+                'type': SIGMOID,
+                'a': -1,
+                'b': 2
+            }, {
+                'type': EXPONENTIAL
+            }],
             'indices': [np.array([0, 1]), np.array([2, 3])]
         }
 
@@ -290,7 +287,7 @@ class TestCompositeWithDistributions:
 
         # Use manually created xi in unconstrained space
         xi = np.array([0.5, -0.5, 1.0, -1.0])
-        assert xi.shape == (4,)
+        assert xi.shape == (4, )
 
         # Check that transformation was applied correctly
         x = trans_dist._transformation.transform(xi)
@@ -318,7 +315,7 @@ class TestCompositeWithDistributions:
 
         # Use manually created xi in unconstrained space
         xi = np.array([0.0, 1.0, -0.5])
-        assert xi.shape == (3,)
+        assert xi.shape == (3, )
 
         x = trans_dist._transformation.transform(xi)
         assert 0 <= x[0] <= 10
@@ -351,14 +348,11 @@ class TestCompositeWithDistributions:
             xi_plus[i] += eps
             xi_minus = xi.copy()
             xi_minus[i] -= eps
-            grad_numerical[i] = (
-                trans_dist.log_density(xi_plus) -
-                trans_dist.log_density(xi_minus)
-            ) / (2 * eps)
+            grad_numerical[i] = (trans_dist.log_density(xi_plus) -
+                                 trans_dist.log_density(xi_minus)) / (2 * eps)
 
         assert np.allclose(grad, grad_numerical, atol=1e-4)
 
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

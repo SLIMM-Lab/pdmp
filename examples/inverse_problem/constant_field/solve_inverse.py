@@ -45,11 +45,7 @@ config = {
     }
 }
 
-surrogate_config = {
-    'name': 'Laplace',
-    'mean': [0.0],
-    'cov': [[1.0]]
-}
+surrogate_config = {'name': 'Laplace', 'mean': [0.0], 'cov': [[1.0]]}
 
 zig_zag_config = {
     'name': 'ZigZag',
@@ -76,7 +72,8 @@ if __name__ == "__main__":
     theta_true = np.array([1.1])
 
     # check if observation file exists, if not generate it
-    if generate_observations and not os.path.exists(config['likelihood']['likelihood']['observation_file']):
+    if generate_observations and not os.path.exists(
+            config['likelihood']['likelihood']['observation_file']):
 
         # First, generate synthetic observations
         print("=" * 70)
@@ -86,7 +83,8 @@ if __name__ == "__main__":
         model = JaxFemModel.from_dict(config['model'])
 
         # Create a simple model to generate observations
-        y_obs = model.eval(np.exp(theta_true)) + rng.standard_normal(model.get_dim_out()) * config['likelihood']['likelihood']['sigma']
+        y_obs = model.eval(np.exp(theta_true)) + rng.standard_normal(
+            model.get_dim_out()) * config['likelihood']['likelihood']['sigma']
 
         # Write observations to file
         file_name = 'observations.dat'
@@ -103,7 +101,9 @@ if __name__ == "__main__":
     target = get_target(config, rng=rng)
     print("Loaded target distribution:")
 
-    fig, ax = get_2d_despined_figure(figsize=(5, 3), equal_axes=False, keep_ticks=True)
+    fig, ax = get_2d_despined_figure(figsize=(5, 3),
+                                     equal_axes=False,
+                                     keep_ticks=True)
     ax.set_xlabel(r'$\theta$')
     ax.set_ylabel(r'$p(\theta)$')
 
@@ -116,7 +116,10 @@ if __name__ == "__main__":
     transform: Transformation = trans_target._transformation
 
     surrogate = get_surrogate(surrogate_config, target=trans_target, rng=rng)
-    zig_zag = get_sampler(zig_zag_config, target=trans_target, rng=rng, surrogate=surrogate)
+    zig_zag = get_sampler(zig_zag_config,
+                          target=trans_target,
+                          rng=rng,
+                          surrogate=surrogate)
     zig_zag.run()
     zig_zag.write_data(folder='zig-zag_data')
     pos = zig_zag.positions
@@ -141,7 +144,6 @@ if __name__ == "__main__":
     sampler = get_sampler(sampler_config, target=target, rng=rng)
     sampler.run()
     samples = sampler.chain
-
 
     x_min = 0.9
     x_max = 1.25
@@ -178,6 +180,7 @@ if __name__ == "__main__":
     ax.legend()
 
     if save_fig:
-        fig.savefig(os.path.join(fig_path, 'zz_rwm_post.pdf'), bbox_inches='tight')
+        fig.savefig(os.path.join(fig_path, 'zz_rwm_post.pdf'),
+                    bbox_inches='tight')
 
     fig.show()

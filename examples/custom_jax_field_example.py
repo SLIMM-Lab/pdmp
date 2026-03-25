@@ -50,7 +50,9 @@ class JaxLayeredField:
         """
         coeffs = jnp.atleast_1d(coeffs)
         if coeffs.shape[0] != self.n_layers:
-            raise ValueError(f"Expected {self.n_layers} coefficients, got {coeffs.shape[0]}")
+            raise ValueError(
+                f"Expected {self.n_layers} coefficients, got {coeffs.shape[0]}"
+            )
 
         # Extract z-coordinates
         x = jnp.atleast_2d(x)
@@ -70,14 +72,19 @@ class JaxLayeredField:
         # Look up coefficient for each point's layer
         return coeffs[layer_indices]
 
-    def coefficient_distribution(self, rng: Optional[np.random.Generator] = None) -> MultivariateNormal:
+    def coefficient_distribution(
+            self,
+            rng: Optional[np.random.Generator] = None) -> MultivariateNormal:
         """Return independent Normal priors for each layer."""
         mean_vec = np.full(self.n_layers, self.mean)
-        cov_mat = (self.std ** 2) * np.eye(self.n_layers)
+        cov_mat = (self.std**2) * np.eye(self.n_layers)
         return MultivariateNormal(mean_vec, cov_mat, rng=rng)
 
     @classmethod
-    def from_dict(cls, config: Dict[str, Any], *, rng: Optional[np.random.Generator] = None):
+    def from_dict(cls,
+                  config: Dict[str, Any],
+                  *,
+                  rng: Optional[np.random.Generator] = None):
         """Construct from configuration dictionary.
 
         Expected keys:
@@ -88,7 +95,8 @@ class JaxLayeredField:
             std: scalar standard deviation (default 2e5)
         """
         if config.get('name', None) != 'JaxLayeredField':
-            raise ValueError("JaxLayeredField config must have name 'JaxLayeredField'.")
+            raise ValueError(
+                "JaxLayeredField config must have name 'JaxLayeredField'.")
 
         n_layers = int(config.get('n_layers', 3))
         z_bounds = tuple(config.get('z_bounds', [0.0, 2.5]))
@@ -115,9 +123,11 @@ if __name__ == '__main__':
     coeffs = jnp.array([8e5, 1e6, 1.2e6])  # Stiffness increases with height
 
     # Evaluate at various z-coordinates
-    z_coords = jnp.array([[0.0, 0.0, 0.5],   # Layer 0
-                          [0.0, 0.0, 1.5],   # Layer 1
-                          [0.0, 0.0, 2.5]])  # Layer 2
+    z_coords = jnp.array([
+        [0.0, 0.0, 0.5],  # Layer 0
+        [0.0, 0.0, 1.5],  # Layer 1
+        [0.0, 0.0, 2.5]
+    ])  # Layer 2
 
     values = field.evaluate(coeffs, z_coords)
 

@@ -114,7 +114,8 @@ class ZigZagSampler(Sampler):
         # if not specified draw iid standard normal samples as inital position
         if x_0 is None:
             if x_0_lap:
-                lap = LaplaceSurrogate.from_dict(target=self.target, rng=self._rng)
+                lap = LaplaceSurrogate.from_dict(target=self.target,
+                                                 rng=self._rng)
                 self.positions[0] = lap.get_samples(1)
             else:
                 self.positions[0] = self._rng.normal(0, 1, self._dim)
@@ -213,7 +214,8 @@ class ZigZagSampler(Sampler):
         if self._thinning:
             self.surrogate.add_data(x=x, y=log_p, dy_dx=grad)
 
-        rates = np.maximum(-grad * self.velocities[self._iter], 0) + self._gamma
+        rates = np.maximum(-grad * self.velocities[self._iter],
+                           0) + self._gamma
 
         if idx_d is None:
             return rates
@@ -318,8 +320,9 @@ class ZigZagSampler(Sampler):
         # get the linear approximation of the rates
         a = self.velocities[self._iter] * (
             self.surrogate.gaussian.inv_C @ self.velocities[self._iter])
-        b = (self.velocities[self._iter] * (self.surrogate.gaussian.inv_C @ (
-            self.positions[self._iter] - self.surrogate.gaussian.mean)) +
+        b = (self.velocities[self._iter] *
+             (self.surrogate.gaussian.inv_C
+              @ (self.positions[self._iter] - self.surrogate.gaussian.mean)) +
              self.offset)
 
         # compute root
@@ -358,7 +361,7 @@ class ZigZagSampler(Sampler):
         j = np.argmin(taus)
         return taus[j], j
 
-    def _inverse_cdf_constant(self) -> tuple[np.floating , np.integer]:
+    def _inverse_cdf_constant(self) -> tuple[np.floating, np.integer]:
         """Generate event times using analytical formula for constant surrogate rates.
 
         For constant surrogate models, the rates are constant (offset + gamma),
@@ -434,7 +437,8 @@ class ZigZagSampler(Sampler):
                 f"      ...increasing offset {j} by {delta_offset:.4e} to: {self.offset[j]:.4f}"
             )
         elif u < (m / M):
-            self.velocities[self._iter + 1, j] = -self.velocities[self._iter, j]
+            self.velocities[self._iter + 1,
+                            j] = -self.velocities[self._iter, j]
             self._n_accepted += 1
             self._accepted_iters[self._n_accepted] = self._iter + 1
             self._s = None

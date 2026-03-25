@@ -12,7 +12,6 @@ from pdmp.logger_setup import setup_file_handler, suppress_external_loggers
 from pdmp.loader import get_target, get_sampler, get_surrogate, get_config, save_config
 
 
-
 def parse_args():
     """Parse the command line arguments.
 

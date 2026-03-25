@@ -69,7 +69,11 @@ def test_composite_transformation():
     params = {
         'transformation': COMPOSITE,
         'transformations': [
-            {'type': SIGMOID, 'a': 0.0, 'b': 1.0},
+            {
+                'type': SIGMOID,
+                'a': 0.0,
+                'b': 1.0
+            },
             EXPONENTIAL,
         ],
         'indices': [np.array([0]), np.array([1])],
@@ -107,13 +111,19 @@ def test_composite_with_dict_specs():
 
     # Mix string and dict specifications
     params = {
-        'transformation': COMPOSITE,
+        'transformation':
+        COMPOSITE,
         'transformations': [
             SIGMOID,  # String spec
-            {'type': LOGIT, 'a': 0.0, 'b': 2.0},  # Dict spec
+            {
+                'type': LOGIT,
+                'a': 0.0,
+                'b': 2.0
+            },  # Dict spec
             EXPONENTIAL,  # String spec
         ],
-        'indices': [np.array([0]), np.array([1]), np.array([2])],
+        'indices': [np.array([0]), np.array([1]),
+                    np.array([2])],
     }
 
     transformed = TransformedLikelihood(likelihood, params)
@@ -135,4 +145,3 @@ if __name__ == "__main__":
     test_composite_transformation()
     test_composite_with_dict_specs()
     print("All tests passed! ✓")
-

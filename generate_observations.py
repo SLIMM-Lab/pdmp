@@ -16,7 +16,6 @@ from pdmp.random_field import get_field
 from pdmp.logger_setup import suppress_external_loggers
 
 
-
 def parse_args():
     """Parse the command line arguments.
 

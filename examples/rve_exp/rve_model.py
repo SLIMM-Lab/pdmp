@@ -23,10 +23,10 @@ import numpy as np
 
 from jax_fem.problem import Problem
 
-
 # ---------------------------------------------------------------------------
 # Shared base
 # ---------------------------------------------------------------------------
+
 
 class _PlaneStrainRVEBase(Problem):
     """Shared utilities for plane-strain RVE models."""
@@ -38,8 +38,8 @@ class _PlaneStrainRVEBase(Problem):
         -------
         u_grads : (num_cells, num_quads, vec, dim)
         """
-        u_grads = (jnp.take(sol, self.fe.cells, axis=0)[:, None, :, :, None]
-                   * self.fe.shape_grads[:, :, :, None, :])
+        u_grads = (jnp.take(sol, self.fe.cells, axis=0)[:, None, :, :, None] *
+                   self.fe.shape_grads[:, :, :, None, :])
         return jnp.sum(u_grads, axis=2)
 
     def set_params(self, params):
@@ -61,8 +61,8 @@ class _PlaneStrainRVEBase(Problem):
         u_grads = self._compute_u_grads(sol)
         eps_qp = 0.5 * (u_grads + jnp.swapaxes(u_grads, -1, -2)) + eps_macro_q
         JxW = self.fe.JxW
-        return (jnp.sum(eps_qp * JxW[:, :, None, None], axis=1)
-                / jnp.sum(JxW, axis=1)[:, None, None])
+        return (jnp.sum(eps_qp * JxW[:, :, None, None], axis=1) /
+                jnp.sum(JxW, axis=1)[:, None, None])
 
     def compute_avg_stress(self, sol, params):
         """Volume-averaged Cauchy stress over the RVE.
@@ -86,17 +86,18 @@ class _PlaneStrainRVEBase(Problem):
         sigma_qp = vmap_tensor_map(u_grads, *params)
 
         JxW = self.fe.JxW
-        sigma_cell = (jnp.sum(sigma_qp * JxW[:, :, None, None], axis=1)
-                      / jnp.sum(JxW, axis=1)[:, None, None])
-        sigma_avg = (jnp.sum(sigma_qp.reshape(-1, 2, 2)
-                             * JxW.reshape(-1)[:, None, None], axis=0)
-                     / jnp.sum(JxW))
+        sigma_cell = (jnp.sum(sigma_qp * JxW[:, :, None, None], axis=1) /
+                      jnp.sum(JxW, axis=1)[:, None, None])
+        sigma_avg = (jnp.sum(
+            sigma_qp.reshape(-1, 2, 2) * JxW.reshape(-1)[:, None, None],
+            axis=0) / jnp.sum(JxW))
         return sigma_avg, sigma_cell
 
 
 # ---------------------------------------------------------------------------
 # Linear elastic
 # ---------------------------------------------------------------------------
+
 
 class LinearElasticRVE(_PlaneStrainRVEBase):
     """2-D plane-strain RVE with isotropic linear elasticity.

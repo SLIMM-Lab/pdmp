@@ -29,11 +29,7 @@ def example_1_basic_composite():
             SigmoidTransformation(a=0, b=1),
             ExponentialTransformation()
         ],
-        indices=[
-            np.array([0, 1]),
-            np.array([2, 3, 4])
-        ]
-    )
+        indices=[np.array([0, 1]), np.array([2, 3, 4])])
 
     # Transform
     xi = np.array([0.0, 1.0, 0.0, 0.5, -0.5])
@@ -89,10 +85,17 @@ def example_2_with_distribution():
     # Apply composite transformation
     # Indices will be automatically inferred: [0,1,2] and [3,4]
     params = {
-        'transformation': COMPOSITE,
+        'transformation':
+        COMPOSITE,
         'transformations': [
-            {'type': 'Exponential'},  # x[0:3] = exp(ξ[0:3])
-            {'type': 'Sigmoid', 'a': 0, 'b': 1}  # x[3:5] = sigmoid(ξ[3:5])
+            {
+                'type': 'Exponential'
+            },  # x[0:3] = exp(ξ[0:3])
+            {
+                'type': 'Sigmoid',
+                'a': 0,
+                'b': 1
+            }  # x[3:5] = sigmoid(ξ[3:5])
         ]
     }
 
@@ -158,11 +161,20 @@ def example_3_joint_distribution():
     # Log: inverse_transform(x) = exp(x), so Gaussian x → positive ξ
     # Logit: inverse_transform(x) = sigmoid(x), so Gaussian x → [a,b] ξ
     params = {
-        'transformation': COMPOSITE,
+        'transformation':
+        COMPOSITE,
         'transformations': [
-            {'type': 'Log'},                      # x (Gaussian) → ξ = exp(x) > 0
-            {'type': 'Logit', 'a': 0, 'b': 10},  # x (Gaussian) → ξ = sigmoid(x) ∈ [0,10]
-            {'type': 'Log'}                       # x (Gaussian) → ξ = exp(x) > 0
+            {
+                'type': 'Log'
+            },  # x (Gaussian) → ξ = exp(x) > 0
+            {
+                'type': 'Logit',
+                'a': 0,
+                'b': 10
+            },  # x (Gaussian) → ξ = sigmoid(x) ∈ [0,10]
+            {
+                'type': 'Log'
+            }  # x (Gaussian) → ξ = exp(x) > 0
         ]
     }
 
@@ -204,11 +216,10 @@ def example_4_three_way():
             AffineTransformation(M, b)
         ],
         indices=[
-            np.array([0, 1]),    # Sigmoid
-            np.array([2]),       # Exponential
-            np.array([3, 4])     # Affine
-        ]
-    )
+            np.array([0, 1]),  # Sigmoid
+            np.array([2]),  # Exponential
+            np.array([3, 4])  # Affine
+        ])
 
     xi = np.array([0.5, -0.5, 1.0, 0.0, 0.0])
     x = trans.transform(xi)
@@ -239,20 +250,35 @@ def example_5_physics_model():
     # - Reaction rate (positive, small): centered at 0.1
 
     # Create base distributions with appropriate support
-    temp_dist = MultivariateNormal(mean=np.array([300.0]), cov=np.array([[100.0]]))
-    conc_dist = MultivariateNormal(mean=np.array([0.5]), cov=np.array([[0.05]]))
-    diff_dist = MultivariateNormal(mean=np.array([0.01]), cov=np.array([[0.001]]))
-    rate_dist = MultivariateNormal(mean=np.array([0.1]), cov=np.array([[0.01]]))
+    temp_dist = MultivariateNormal(mean=np.array([300.0]),
+                                   cov=np.array([[100.0]]))
+    conc_dist = MultivariateNormal(mean=np.array([0.5]),
+                                   cov=np.array([[0.05]]))
+    diff_dist = MultivariateNormal(mean=np.array([0.01]),
+                                   cov=np.array([[0.001]]))
+    rate_dist = MultivariateNormal(mean=np.array([0.1]),
+                                   cov=np.array([[0.01]]))
 
     base = JointDistribution([temp_dist, conc_dist, diff_dist, rate_dist])
 
     params = {
-        'transformation': COMPOSITE,
+        'transformation':
+        COMPOSITE,
         'transformations': [
-            {'type': 'Exponential'},              # Temperature: x = exp(ξ)
-            {'type': 'Sigmoid', 'a': 0, 'b': 1},  # Concentration: x = sigmoid(ξ)
-            {'type': 'Exponential'},              # Diffusion: x = exp(ξ)
-            {'type': 'Exponential'}               # Reaction rate: x = exp(ξ)
+            {
+                'type': 'Exponential'
+            },  # Temperature: x = exp(ξ)
+            {
+                'type': 'Sigmoid',
+                'a': 0,
+                'b': 1
+            },  # Concentration: x = sigmoid(ξ)
+            {
+                'type': 'Exponential'
+            },  # Diffusion: x = exp(ξ)
+            {
+                'type': 'Exponential'
+            }  # Reaction rate: x = exp(ξ)
         ]
         # Indices automatically inferred from JointDistribution: [0], [1], [2], [3]
     }
@@ -324,7 +350,9 @@ def example_6_log_transformation_demo():
         print()
 
     print("Key insight:")
-    print("  - LogTransformation: transform(x) = log(x), inverse_transform(ξ) = exp(ξ)")
+    print(
+        "  - LogTransformation: transform(x) = log(x), inverse_transform(ξ) = exp(ξ)"
+    )
     print("  - With Gaussian base in x: samples x, returns ξ = exp(x) > 0")
     print("  - This avoids taking log of negative values!")
     print()
@@ -341,4 +369,3 @@ if __name__ == "__main__":
     print("=" * 70)
     print("All examples completed successfully!")
     print("=" * 70)
-

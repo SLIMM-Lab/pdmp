@@ -11,11 +11,10 @@ from pdmp.distributions import (
 )
 from pdmp.forward_model import LinearModel
 
-
 # Example 1: LOGIT transformation (1D)
-print("="*60)
+print("=" * 60)
 print("Example 1: LOGIT Transformation")
-print("="*60)
+print("=" * 60)
 
 rng = np.random.default_rng(42)
 A = np.array([[1.0]])
@@ -35,11 +34,10 @@ print(f"log_density: {transformed_logit.log_density(xi, idx=0):.4f}")
 print(f"grad shape: {transformed_logit.grad_log_density(xi, idx=0).shape}")
 print()
 
-
 # Example 2: COMPOSITE transformation (3D)
-print("="*60)
+print("=" * 60)
 print("Example 2: COMPOSITE Transformation (3D)")
-print("="*60)
+print("=" * 60)
 
 A3d = np.eye(3)
 b3d = np.zeros(3)
@@ -52,10 +50,19 @@ likelihood3d = GaussianLikelihood(model3d, y_obs3d, sigma=0.1, rng=rng)
 # - Dimension 1: LOGIT (bounded to [0, 2])
 # - Dimension 2: EXPONENTIAL (positive)
 params_composite = {
-    'transformation': COMPOSITE,
+    'transformation':
+    COMPOSITE,
     'transformations': [
-        {'type': SIGMOID, 'a': 0.0, 'b': 1.0},
-        {'type': LOGIT, 'a': 0.0, 'b': 2.0},
+        {
+            'type': SIGMOID,
+            'a': 0.0,
+            'b': 1.0
+        },
+        {
+            'type': LOGIT,
+            'a': 0.0,
+            'b': 2.0
+        },
         EXPONENTIAL,  # String spec
     ],
     'indices': [
@@ -70,11 +77,13 @@ transformed_composite = TransformedLikelihood(likelihood3d, params_composite)
 xi3d = np.array([0.0, 0.5, 0.0])
 print(f"xi (transformed space): {xi3d}")
 print(f"log_density: {transformed_composite.log_density(xi3d, idx=0):.4f}")
-print(f"grad shape: {transformed_composite.grad_log_density(xi3d, idx=0).shape}")
-print(f"hessian shape: {transformed_composite.hessian_log_density(xi3d, idx=0).shape}")
+print(
+    f"grad shape: {transformed_composite.grad_log_density(xi3d, idx=0).shape}")
+print(
+    f"hessian shape: {transformed_composite.hessian_log_density(xi3d, idx=0).shape}"
+)
 print()
 
-print("="*60)
+print("=" * 60)
 print("✓ All examples completed successfully!")
-print("="*60)
-
+print("=" * 60)

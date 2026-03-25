@@ -16,8 +16,8 @@ from jax_fem.problem import Problem
 from jax_fem.generate_mesh import Mesh, get_meshio_cell_type
 from jax_fem.basis import get_elements
 
-
 # ── Validation ───────────────────────────────────────────────────────────
+
 
 def validate_fiber_placement(fibers, L, mesh_size):
     """Check that fibers don't overlap each other or intersect boundaries."""
@@ -36,15 +36,19 @@ def validate_fiber_placement(fibers, L, mesh_size):
             dist = np.sqrt((cx_i - cx_j)**2 + (cy_i - cy_j)**2)
             min_dist = R_i + R_j + mesh_size
             if dist < min_dist:
-                raise ValueError(
-                    f"Fibers {i} and {j} overlap or too close: "
-                    f"dist={dist:.4f} < {min_dist:.4f}")
+                raise ValueError(f"Fibers {i} and {j} overlap or too close: "
+                                 f"dist={dist:.4f} < {min_dist:.4f}")
 
 
 # ── Mesh generation ─────────────────────────────────────────────────────
 
-def generate_multi_fiber_rve_mesh(L, fibers, mesh_size, data_dir,
-                                  l_scale=0.1, ele_type="TRI3"):
+
+def generate_multi_fiber_rve_mesh(L,
+                                  fibers,
+                                  mesh_size,
+                                  data_dir,
+                                  l_scale=0.1,
+                                  ele_type="TRI3"):
     """Square RVE [0,L]^2 with multiple circular fibers — periodic-ready mesh.
 
     Returns
@@ -72,9 +76,9 @@ def generate_multi_fiber_rve_mesh(L, fibers, mesh_size, data_dir,
     p4 = gmsh.model.geo.addPoint(0, L, 0, mesh_size)
 
     l_bottom = gmsh.model.geo.addLine(p1, p2)
-    l_right  = gmsh.model.geo.addLine(p2, p3)
-    l_top    = gmsh.model.geo.addLine(p3, p4)
-    l_left   = gmsh.model.geo.addLine(p4, p1)
+    l_right = gmsh.model.geo.addLine(p2, p3)
+    l_top = gmsh.model.geo.addLine(p3, p4)
+    l_left = gmsh.model.geo.addLine(p4, p1)
 
     square_loop = gmsh.model.geo.addCurveLoop(
         [l_bottom, l_right, l_top, l_left])
@@ -85,7 +89,7 @@ def generate_multi_fiber_rve_mesh(L, fibers, mesh_size, data_dir,
     all_fiber_curves = []
 
     for cx, cy, R in fibers:
-        pc  = gmsh.model.geo.addPoint(cx, cy, 0, mesh_size)
+        pc = gmsh.model.geo.addPoint(cx, cy, 0, mesh_size)
         pa1 = gmsh.model.geo.addPoint(cx + R, cy, 0, mesh_size)
         pa2 = gmsh.model.geo.addPoint(cx, cy + R, 0, mesh_size)
         pa3 = gmsh.model.geo.addPoint(cx - R, cy, 0, mesh_size)
@@ -101,8 +105,7 @@ def generate_multi_fiber_rve_mesh(L, fibers, mesh_size, data_dir,
         all_fiber_curves.extend([c1, c2, c3, c4])
 
     # Matrix = square minus all circles
-    s_matrix = gmsh.model.geo.addPlaneSurface(
-        [square_loop] + circle_loops)
+    s_matrix = gmsh.model.geo.addPlaneSurface([square_loop] + circle_loops)
 
     # Each fiber interior
     for cl in circle_loops:
@@ -136,12 +139,16 @@ def generate_multi_fiber_rve_mesh(L, fibers, mesh_size, data_dir,
 
     # Periodic meshing
     gmsh.model.mesh.setPeriodic(
-        1, [l_right], [l_left],
-        [1, 0, 0, L,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1],
+        1,
+        [l_right],
+        [l_left],
+        [1, 0, 0, L, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
     )
     gmsh.model.mesh.setPeriodic(
-        1, [l_top], [l_bottom],
-        [1, 0, 0, 0,  0, 1, 0, L,  0, 0, 1, 0,  0, 0, 0, 1],
+        1,
+        [l_top],
+        [l_bottom],
+        [1, 0, 0, 0, 0, 1, 0, L, 0, 0, 1, 0, 0, 0, 0, 1],
     )
 
     gmsh.model.mesh.generate(2)
@@ -152,13 +159,14 @@ def generate_multi_fiber_rve_mesh(L, fibers, mesh_size, data_dir,
     # Read back with meshio
     meshio_mesh = meshio.read(msh_file)
     points = meshio_mesh.points[:, :2]
-    cells  = meshio_mesh.cells_dict[cell_type]
+    cells = meshio_mesh.cells_dict[cell_type]
     phys_tags = meshio_mesh.cell_data_dict["gmsh:physical"][cell_type]
 
     return Mesh(points, cells, ele_type=ele_type), phys_tags
 
 
 # ── Periodic constraint matrix ──────────────────────────────────────────
+
 
 def build_periodic_pmat(mesh, L, vec):
     """Sparse P_mat that enforces full periodicity on [0, L]^2.
@@ -168,55 +176,55 @@ def build_periodic_pmat(mesh, L, vec):
     """
     points = mesh.points
     num_nodes = len(points)
-    num_dofs  = num_nodes * vec
+    num_dofs = num_nodes * vec
     EPS = 1e-5
 
-    left   = np.where(np.abs(points[:, 0])     < EPS)[0]
-    right  = np.where(np.abs(points[:, 0] - L) < EPS)[0]
-    bottom = np.where(np.abs(points[:, 1])     < EPS)[0]
-    top    = np.where(np.abs(points[:, 1] - L) < EPS)[0]
+    left = np.where(np.abs(points[:, 0]) < EPS)[0]
+    right = np.where(np.abs(points[:, 0] - L) < EPS)[0]
+    bottom = np.where(np.abs(points[:, 1]) < EPS)[0]
+    top = np.where(np.abs(points[:, 1] - L) < EPS)[0]
 
-    bl = np.intersect1d(left,  bottom)
+    bl = np.intersect1d(left, bottom)
     br = np.intersect1d(right, bottom)
-    tl = np.intersect1d(left,  top)
+    tl = np.intersect1d(left, top)
     tr = np.intersect1d(right, top)
     corners = np.concatenate([bl, br, tl, tr])
 
-    left_int   = np.setdiff1d(left,   corners)
-    right_int  = np.setdiff1d(right,  corners)
+    left_int = np.setdiff1d(left, corners)
+    right_int = np.setdiff1d(right, corners)
     bottom_int = np.setdiff1d(bottom, corners)
-    top_int    = np.setdiff1d(top,    corners)
+    top_int = np.setdiff1d(top, corners)
 
-    slave_nodes  = []
+    slave_nodes = []
     master_nodes = []
 
     for ri in right_int:
         dists = np.abs(points[left_int, 1] - points[ri, 1])
-        best  = np.argmin(dists)
+        best = np.argmin(dists)
         assert dists[best] < EPS, f"No left match for right node {ri}"
         slave_nodes.append(ri)
         master_nodes.append(left_int[best])
 
     for ti in top_int:
         dists = np.abs(points[bottom_int, 0] - points[ti, 0])
-        best  = np.argmin(dists)
+        best = np.argmin(dists)
         assert dists[best] < EPS, f"No bottom match for top node {ti}"
         slave_nodes.append(ti)
         master_nodes.append(bottom_int[best])
 
-    slave_nodes  = np.array(slave_nodes)
+    slave_nodes = np.array(slave_nodes)
     master_nodes = np.array(master_nodes)
 
-    slave_dofs  = np.concatenate([slave_nodes  * vec + v for v in range(vec)])
+    slave_dofs = np.concatenate([slave_nodes * vec + v for v in range(vec)])
     master_dofs = np.concatenate([master_nodes * vec + v for v in range(vec)])
 
     pinned_dofs = np.concatenate([corners * vec + v for v in range(vec)])
 
-    is_slave  = np.zeros(num_dofs, dtype=bool)
+    is_slave = np.zeros(num_dofs, dtype=bool)
     is_pinned = np.zeros(num_dofs, dtype=bool)
     master_of = np.zeros(num_dofs, dtype=int)
 
-    is_slave[slave_dofs]   = True
+    is_slave[slave_dofs] = True
     is_pinned[pinned_dofs] = True
     for s, m in zip(slave_dofs, master_dofs):
         master_of[s] = m
@@ -249,16 +257,18 @@ def build_periodic_pmat(mesh, L, vec):
 
 # ── Helper: broadcast eps_macro to quad-point shape ─────────────────────
 
+
 def make_eps_macro_q(eps_macro_voigt, nc, nq):
     """Convert Voigt strain vector to (num_cells, num_quads, 2, 2)."""
     eps_macro = jnp.array([
-        [eps_macro_voigt[0],       0.5 * eps_macro_voigt[2]],
+        [eps_macro_voigt[0], 0.5 * eps_macro_voigt[2]],
         [0.5 * eps_macro_voigt[2], eps_macro_voigt[1]],
     ])
     return jnp.broadcast_to(eps_macro[None, None, :, :], (nc, nq, 2, 2))
 
 
 # ── Distance field computation ──────────────────────────────────────────
+
 
 def compute_distance_to_nearest_fiber(quad_points, fibers):
     """Compute minimum distance from each quad point to nearest fiber surface.
@@ -277,8 +287,8 @@ def compute_distance_to_nearest_fiber(quad_points, fibers):
     distances = np.full((nc, nq), np.inf)
 
     for cx, cy, R in fibers:
-        d = np.sqrt((quad_points[:, :, 0] - cx)**2
-                    + (quad_points[:, :, 1] - cy)**2) - R
+        d = np.sqrt((quad_points[:, :, 0] - cx)**2 +
+                    (quad_points[:, :, 1] - cy)**2) - R
         distances = np.minimum(distances, d)
 
     return np.maximum(distances, 0.0)
@@ -286,18 +296,20 @@ def compute_distance_to_nearest_fiber(quad_points, fibers):
 
 # ── Post-processing ────────────────────────────────────────────────────
 
+
 def compute_von_mises_from_cell(sigma_cells, nu_cell):
     """Von Mises stress accounting for plane-strain sigma_zz."""
     s11 = sigma_cells[:, 0, 0]
     s22 = sigma_cells[:, 1, 1]
     s12 = sigma_cells[:, 0, 1]
     s33 = nu_cell * (s11 + s22)
-    vm = np.sqrt(0.5 * ((s11 - s22)**2 + (s22 - s33)**2
-                         + (s33 - s11)**2 + 6.0 * s12**2))
+    vm = np.sqrt(0.5 * ((s11 - s22)**2 + (s22 - s33)**2 +
+                        (s33 - s11)**2 + 6.0 * s12**2))
     return vm
 
 
 # ── LinearElasticRVE problem ───────────────────────────────────────────
+
 
 class _PlaneStrainRVEBase(Problem):
     """Shared utilities for plane-strain RVE models."""
@@ -309,8 +321,8 @@ class _PlaneStrainRVEBase(Problem):
         -------
         u_grads : (num_cells, num_quads, vec, dim)
         """
-        u_grads = (jnp.take(sol, self.fe.cells, axis=0)[:, None, :, :, None]
-                   * self.fe.shape_grads[:, :, :, None, :])
+        u_grads = (jnp.take(sol, self.fe.cells, axis=0)[:, None, :, :, None] *
+                   self.fe.shape_grads[:, :, :, None, :])
         return jnp.sum(u_grads, axis=2)
 
     def set_params(self, params):
@@ -332,8 +344,8 @@ class _PlaneStrainRVEBase(Problem):
         u_grads = self._compute_u_grads(sol)
         eps_qp = 0.5 * (u_grads + jnp.swapaxes(u_grads, -1, -2)) + eps_macro_q
         JxW = self.fe.JxW
-        return (jnp.sum(eps_qp * JxW[:, :, None, None], axis=1)
-                / jnp.sum(JxW, axis=1)[:, None, None])
+        return (jnp.sum(eps_qp * JxW[:, :, None, None], axis=1) /
+                jnp.sum(JxW, axis=1)[:, None, None])
 
     def compute_avg_stress(self, sol, params):
         """Volume-averaged Cauchy stress over the RVE.
@@ -357,11 +369,11 @@ class _PlaneStrainRVEBase(Problem):
         sigma_qp = vmap_tensor_map(u_grads, *params)
 
         JxW = self.fe.JxW
-        sigma_cell = (jnp.sum(sigma_qp * JxW[:, :, None, None], axis=1)
-                      / jnp.sum(JxW, axis=1)[:, None, None])
-        sigma_avg = (jnp.sum(sigma_qp.reshape(-1, 2, 2)
-                             * JxW.reshape(-1)[:, None, None], axis=0)
-                     / jnp.sum(JxW))
+        sigma_cell = (jnp.sum(sigma_qp * JxW[:, :, None, None], axis=1) /
+                      jnp.sum(JxW, axis=1)[:, None, None])
+        sigma_avg = (jnp.sum(
+            sigma_qp.reshape(-1, 2, 2) * JxW.reshape(-1)[:, None, None],
+            axis=0) / jnp.sum(JxW))
         return sigma_avg, sigma_cell
 
 

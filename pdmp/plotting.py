@@ -113,16 +113,17 @@ def plot_trace(samples: np.ndarray,
     return fig, ax
 
 
-def plot_pdf_grad_contours(target: Union[Distribution, SurrogateModel],
-                           ax: plt.Axes,
-                           plot_limits: tuple[list[float], list[float]],
-                           idx: int = 0,
-                           n_grid: int = 100,
-                           alpha: float = 0.6,
-                           levels: Union[int, np.ndarray] = None,
-                           cmap: matplotlib.colors.Colormap = sns.color_palette(
-                               'rocket', as_cmap=True),
-                           transformation: Transformation = None) -> plt.Axes:
+def plot_pdf_grad_contours(
+        target: Union[Distribution, SurrogateModel],
+        ax: plt.Axes,
+        plot_limits: tuple[list[float], list[float]],
+        idx: int = 0,
+        n_grid: int = 100,
+        alpha: float = 0.6,
+        levels: Union[int, np.ndarray] = None,
+        cmap: matplotlib.colors.Colormap = sns.color_palette('rocket',
+                                                             as_cmap=True),
+        transformation: Transformation = None) -> plt.Axes:
     """Plot the probability density function (PDF) contours of a distribution.
 
     Args:

@@ -165,8 +165,8 @@ class RandomConstantSurrogate(SurrogateModel):
                                      0.5 * self._var,
                                      size=len(x))
         else:
-            return np.array(self._rng.uniform(-0.5 * self._var,
-                                              0.5 * self._var))
+            return np.array(
+                self._rng.uniform(-0.5 * self._var, 0.5 * self._var))
 
 
 class LaplaceSurrogate(SurrogateModel):
@@ -367,8 +367,8 @@ class NeuralNetwork(SurrogateModel):
         if idx is None:
             return gradients.detach().numpy() + self._laplace.grad(x)
         else:
-            return gradients[idx].detach().numpy() + self._laplace.grad(x,
-                                                                        idx=idx)
+            return gradients[idx].detach().numpy() + self._laplace.grad(
+                x, idx=idx)
 
     @override
     def add_data(self,
@@ -577,8 +577,7 @@ class _BoTorchGPWrapper(BoTorchModel):
     def num_outputs(self) -> int:
         return self._num_outputs
 
-    def __init__(self, gp_model: ExactGP,
-                 likelihood: _GaussianLikelihoodBase):
+    def __init__(self, gp_model: ExactGP, likelihood: _GaussianLikelihoodBase):
         super().__init__()
         self._gp = gp_model
         self._lik = likelihood
@@ -608,8 +607,7 @@ class _BoTorchDerivGPWrapper(BoTorchModel):
     def num_outputs(self) -> int:
         return self._num_outputs
 
-    def __init__(self, gp_model: ExactGP,
-                 likelihood: _GaussianLikelihoodBase):
+    def __init__(self, gp_model: ExactGP, likelihood: _GaussianLikelihoodBase):
         super().__init__()
         self._gp = gp_model
         self._lik = likelihood
@@ -624,7 +622,7 @@ class _BoTorchDerivGPWrapper(BoTorchModel):
               gpytorch.settings.fast_computations(False, False, False)):
             dist = self._gp(X)
         # Extract function-value task (index 0) from MultitaskMultivariateNormal.
-        mean_f = dist.mean[..., 0]   # [..., n]
+        mean_f = dist.mean[..., 0]  # [..., n]
         var_f = dist.variance[..., 0]  # [..., n]
         f_dist = gpyMultivariateNormal(mean_f, DiagLinearOperator(var_f))
         return GPyTorchPosterior(distribution=f_dist)
@@ -657,10 +655,8 @@ class _WeightedVarianceAcquisition(AcquisitionFunction):
     """
 
     def __init__(self, model: BoTorchModel, laplace_mean: torch.Tensor,
-                 laplace_inv_cov: torch.Tensor,
-                 laplace_constant: torch.Tensor,
-                 laplace_log_det: torch.Tensor,
-                 laplace_delta: torch.Tensor):
+                 laplace_inv_cov: torch.Tensor, laplace_constant: torch.Tensor,
+                 laplace_log_det: torch.Tensor, laplace_delta: torch.Tensor):
         super().__init__(model=model)
         self.register_buffer('laplace_mean', laplace_mean)
         self.register_buffer('laplace_inv_cov', laplace_inv_cov)
@@ -685,12 +681,13 @@ class _WeightedVarianceAcquisition(AcquisitionFunction):
         # X: [batch_shape, 1, d]
         X_sq = X.squeeze(-2)  # [batch_shape, d]
         posterior = self.model.posterior(X_sq)
-        mean = posterior.mean.squeeze(-1)   # [batch_shape]
+        mean = posterior.mean.squeeze(-1)  # [batch_shape]
         var = posterior.variance.squeeze(-1)  # [batch_shape]
         laplace_offset = self._laplace_log_density(X_sq)  # [batch_shape]
         total_log_density = mean + laplace_offset
         # Normalise across batch to avoid overflow; detach for stability.
-        total_log_density = total_log_density - total_log_density.max().detach()
+        total_log_density = total_log_density - total_log_density.max().detach(
+        )
         weights = torch.exp(total_log_density)
         return var * weights
 
@@ -710,10 +707,8 @@ class _ExponentiatedVarianceAcquisition(AcquisitionFunction):
     """
 
     def __init__(self, model: BoTorchModel, laplace_mean: torch.Tensor,
-                 laplace_inv_cov: torch.Tensor,
-                 laplace_constant: torch.Tensor,
-                 laplace_log_det: torch.Tensor,
-                 laplace_delta: torch.Tensor):
+                 laplace_inv_cov: torch.Tensor, laplace_constant: torch.Tensor,
+                 laplace_log_det: torch.Tensor, laplace_delta: torch.Tensor):
         super().__init__(model=model)
         self.register_buffer('laplace_mean', laplace_mean)
         self.register_buffer('laplace_inv_cov', laplace_inv_cov)
@@ -738,22 +733,29 @@ class _ExponentiatedVarianceAcquisition(AcquisitionFunction):
         # X: [batch_shape, 1, d]
         X_sq = X.squeeze(-2)  # [batch_shape, d]
         posterior = self.model.posterior(X_sq)
-        mean = posterior.mean.squeeze(-1)   # [batch_shape]
+        mean = posterior.mean.squeeze(-1)  # [batch_shape]
         var = posterior.variance.squeeze(-1)  # [batch_shape]
         laplace_offset = self._laplace_log_density(X_sq)  # [batch_shape]
         total_log_density = mean + laplace_offset
         # Normalise across batch to avoid overflow; detach for stability.
-        total_log_density = total_log_density - total_log_density.max().detach()
+        total_log_density = total_log_density - total_log_density.max().detach(
+        )
         # weights = torch.exp(total_log_density)
         # return var * weights
-        var_clamped = torch.clamp(var, max=10.0)  # Prevent overflow in exp(var).
-        return (torch.exp(var_clamped) - 1) * torch.exp(2 * total_log_density + var_clamped)
+        var_clamped = torch.clamp(var,
+                                  max=10.0)  # Prevent overflow in exp(var).
+        return (torch.exp(var_clamped) - 1) * torch.exp(2 * total_log_density +
+                                                        var_clamped)
+
 
 class ExactGPModel(ExactGP):
     """Exact Gaussian process model based on GPyTorch."""
 
-    def __init__(self, likelihood: _GaussianLikelihoodBase, ard_num_dims: int,
-                 train_x: torch.Tensor = None, train_y: torch.Tensor = None,
+    def __init__(self,
+                 likelihood: _GaussianLikelihoodBase,
+                 ard_num_dims: int,
+                 train_x: torch.Tensor = None,
+                 train_y: torch.Tensor = None,
                  kernel: str = 'rbf'):
         """Initialize the exact Gaussian process model.
 
@@ -946,9 +948,9 @@ class GaussianProcessBase(SurrogateModel, ABC):
         mll = ExactMarginalLogLikelihood(self._likelihood, self._model)
 
         # disable tqdm if running on a cluster
-        disable_tqdm = ('PBS_ENVIRONMENT' in os.environ or
-                        'SLURM_JOB_ID' in os.environ or
-                        'GIO_LAUNCHED_DESKTOP_FILE' in os.environ)
+        disable_tqdm = ('PBS_ENVIRONMENT' in os.environ
+                        or 'SLURM_JOB_ID' in os.environ
+                        or 'GIO_LAUNCHED_DESKTOP_FILE' in os.environ)
         warnings.simplefilter("ignore", category=NumericalWarning)
 
         # get hyperparameter initialisations
@@ -987,12 +989,13 @@ class GaussianProcessBase(SurrogateModel, ABC):
                 train_losses = []
 
                 # init optimizer and scheduler
-                optimizer = torch.optim.LBFGS(self._model.parameters(),
-                                              lr=lr,
-                                              max_iter=1,
-                                              tolerance_grad=tolerance_grad,
-                                              tolerance_change=tolerance_change,
-                                              line_search_fn='strong_wolfe')
+                optimizer = torch.optim.LBFGS(
+                    self._model.parameters(),
+                    lr=lr,
+                    max_iter=1,
+                    tolerance_grad=tolerance_grad,
+                    tolerance_change=tolerance_change,
+                    line_search_fn='strong_wolfe')
 
                 def closure():
                     optimizer.zero_grad()
@@ -1033,7 +1036,8 @@ class GaussianProcessBase(SurrogateModel, ABC):
                             pbar.clear()
                             logger.debug(f"   Iter {i}/{lbfgs_steps}" +
                                          f" Loss: {loss.item():.3f}," +
-                                         self._log_state_dict(end_of_line=', '))
+                                         self._log_state_dict(
+                                             end_of_line=', '))
                             pbar.refresh()
 
                     # check if current model is best
@@ -1087,7 +1091,9 @@ class GaussianProcessBase(SurrogateModel, ABC):
         if self._figure_path:
             if not os.path.exists(self._figure_path):
                 os.makedirs(self._figure_path)
-            fig.savefig(os.path.join(self._figure_path, f'mll_{self._x_data.shape[0]}.pdf'))
+            fig.savefig(
+                os.path.join(self._figure_path,
+                             f'mll_{self._x_data.shape[0]}.pdf'))
 
         # set model into evaluation mode
         self._model.eval()
@@ -1154,7 +1160,9 @@ class GaussianProcessBase(SurrogateModel, ABC):
         """
         raise NotImplementedError
 
-    def _grad_mean_plus_std(self, x: np.ndarray, idx: int = None) -> np.ndarray:
+    def _grad_mean_plus_std(self,
+                            x: np.ndarray,
+                            idx: int = None) -> np.ndarray:
         """Compute the gradient of the mean of the Gaussian process model plus the standard deviation.
 
         Args:
@@ -1229,17 +1237,17 @@ class GaussianProcessBase(SurrogateModel, ABC):
         raise NotImplementedError
 
     def _train_bayesian_optimization(
-            self,
-            target: Distribution,
-            n_init: int = 10,
-            n_bo_iter: int = 50,
-            acquisition: str = 'weighted_variance',
-            bo_bounds_scale: float = 4.0,
-            bo_retrain_interval: int = 5,
-            bo_num_restarts: int = 5,
-            bo_raw_samples: int = 256,
-            bo_proximity_tol: float = 1e-3,
-            bo_data_padding: float = 0.5,
+        self,
+        target: Distribution,
+        n_init: int = 10,
+        n_bo_iter: int = 50,
+        acquisition: str = 'weighted_variance',
+        bo_bounds_scale: float = 4.0,
+        bo_retrain_interval: int = 5,
+        bo_num_restarts: int = 5,
+        bo_raw_samples: int = 256,
+        bo_proximity_tol: float = 1e-3,
+        bo_data_padding: float = 0.5,
     ) -> None:
         """Train the GP by sequentially selecting informative training points.
 
@@ -1295,7 +1303,9 @@ class GaussianProcessBase(SurrogateModel, ABC):
         # --- 1. Initial batch from the Laplace approximation ---------------
         samples = self._laplace.get_samples(n_init)
         self._x_data = torch.tensor(samples, dtype=dtype)
-        y_list = [self._bo_query_point(target, samples[i]) for i in range(n_init)]
+        y_list = [
+            self._bo_query_point(target, samples[i]) for i in range(n_init)
+        ]
         self._y_data = torch.stack(y_list)
 
         # --- 2. Train GP on the initial batch ------------------------------
@@ -1304,16 +1314,19 @@ class GaussianProcessBase(SurrogateModel, ABC):
 
         # --- 3. Pre-compute Laplace tensors for WeightedVariance -----------
         laplace_mean = torch.tensor(self._laplace._mean, dtype=dtype)
-        laplace_inv_cov = torch.tensor(self._laplace.gaussian.inv_C, dtype=dtype)
-        laplace_constant = torch.tensor(self._laplace.gaussian.constant, dtype=dtype)
-        laplace_log_det = torch.tensor(self._laplace.gaussian.log_det, dtype=dtype)
+        laplace_inv_cov = torch.tensor(self._laplace.gaussian.inv_C,
+                                       dtype=dtype)
+        laplace_constant = torch.tensor(self._laplace.gaussian.constant,
+                                        dtype=dtype)
+        laplace_log_det = torch.tensor(self._laplace.gaussian.log_det,
+                                       dtype=dtype)
         laplace_delta = torch.tensor(self._laplace._delta, dtype=dtype)
 
         laplace_bounds = self._get_bo_bounds(bo_bounds_scale)
 
         # --- 4. BO loop ----------------------------------------------------
-        disable_tqdm = ('PBS_ENVIRONMENT' in os.environ or
-                        'SLURM_JOB_ID' in os.environ)
+        disable_tqdm = ('PBS_ENVIRONMENT' in os.environ
+                        or 'SLURM_JOB_ID' in os.environ)
 
         with tqdm(total=n_bo_iter,
                   desc='Bayesian optimisation',
@@ -1378,8 +1391,8 @@ class GaussianProcessBase(SurrogateModel, ABC):
                 for idx in order:
                     cand = candidates[idx].squeeze(0)
                     if bo_proximity_tol > 0:
-                        min_dist = torch.norm(
-                            self._x_data - cand, dim=-1).min().item()
+                        min_dist = torch.norm(self._x_data - cand,
+                                              dim=-1).min().item()
                         if min_dist < bo_proximity_tol:
                             logger.info(
                                 f"BO iter {iteration + 1}: rejecting candidate "
@@ -1410,17 +1423,17 @@ class GaussianProcessBase(SurrogateModel, ABC):
                         (self._y_data, y_new.unsqueeze(0)))
 
                 # Retrain or just push new data into the GP
-                retrain = (bo_retrain_interval > 0 and
-                           (iteration + 1) % bo_retrain_interval == 0)
+                retrain = (bo_retrain_interval > 0
+                           and (iteration + 1) % bo_retrain_interval == 0)
                 if retrain:
-                    logger.info(
-                        f"BO iter {iteration + 1}: retraining GP "
-                        f"({len(self._x_data)} points).")
+                    logger.info(f"BO iter {iteration + 1}: retraining GP "
+                                f"({len(self._x_data)} points).")
                     self.train(**self._training_params)
                 else:
                     self._model.train()
-                    self._model.set_train_data(
-                        self._x_data, self._y_data, strict=False)
+                    self._model.set_train_data(self._x_data,
+                                               self._y_data,
+                                               strict=False)
                     self._model.eval()
                     self._likelihood.eval()
 
@@ -1457,11 +1470,11 @@ class GaussianProcessBase(SurrogateModel, ABC):
         """
 
         model_params = torch.load(os.path.join(path, 'model_params.th'))
-        self._x_data = torch.tensor(np.loadtxt(os.path.join(path,
-                                                            'x_data.dat')),
+        self._x_data = torch.tensor(np.loadtxt(os.path.join(
+            path, 'x_data.dat')),
                                     dtype=dtype)
-        self._y_data = torch.tensor(np.loadtxt(os.path.join(path,
-                                                            'y_data.dat')),
+        self._y_data = torch.tensor(np.loadtxt(os.path.join(
+            path, 'y_data.dat')),
                                     dtype=dtype)
 
         self._model.load_state_dict(model_params)
@@ -1537,7 +1550,8 @@ class GaussianProcess(GaussianProcessBase):
 
         # define likelihood, get model, and set optimizer
         self.__likelihood = GaussianLikelihood()
-        self.__model = ExactGPModel(self.__likelihood, target.dim,
+        self.__model = ExactGPModel(self.__likelihood,
+                                    target.dim,
                                     kernel=kernel)
 
         self._x_data = torch.empty(0, target.dim, dtype=dtype)
@@ -1637,7 +1651,8 @@ class GaussianProcess(GaussianProcessBase):
                     self.train(**self._training_params)
                 else:
                     logger.info(
-                        f'Updating model with {len(self._x_data)} data points.')
+                        f'Updating model with {len(self._x_data)} data points.'
+                    )
                     self._model.train()
                     self._model.set_train_data(self._x_data,
                                                self._y_data,
@@ -1685,7 +1700,8 @@ class GaussianProcess(GaussianProcessBase):
                                 requires_grad=True)
 
         with gpytorch.settings.skip_posterior_variances(
-                True), gpytorch.settings.fast_computations(False, False, False):
+                True), gpytorch.settings.fast_computations(
+                    False, False, False):
             y_tensor = self._model(x_tensor).mean
             gradients = grad(outputs=y_tensor,
                              inputs=x_tensor,
@@ -1723,8 +1739,11 @@ class GaussianProcess(GaussianProcessBase):
 class DerivativeGPModel(ExactGP):
     """Gaussian process model based on GPyTorch that also observes gradients."""
 
-    def __init__(self, likelihood: _GaussianLikelihoodBase, ard_num_dims: int,
-                 train_x: torch.Tensor = None, train_y: torch.Tensor = None):
+    def __init__(self,
+                 likelihood: _GaussianLikelihoodBase,
+                 ard_num_dims: int,
+                 train_x: torch.Tensor = None,
+                 train_y: torch.Tensor = None):
         """Initialize the Gaussian process model.
 
         Args:
@@ -1796,7 +1815,8 @@ class DerivativeGaussianProcess(GaussianProcessBase):
         super().__init__(target, rng, *args, n_samples=n_samples, **kwargs)
 
         # define likelihood, get model, and set optimizer
-        self.__likelihood = MultitaskGaussianLikelihood(num_tasks=target.dim + 1)
+        self.__likelihood = MultitaskGaussianLikelihood(num_tasks=target.dim +
+                                                        1)
         self.__model = DerivativeGPModel(self.__likelihood, target.dim)
 
         self._y_data = torch.empty(0, target.dim + 1, dtype=dtype)
@@ -1861,8 +1881,8 @@ class DerivativeGaussianProcess(GaussianProcessBase):
                       self._laplace.eval(x_new, delta=True))
         residual_g = (target.grad_log_density(x_new) -
                       self._laplace.grad(x_new))
-        return torch.tensor(
-            np.concatenate([[residual_f], residual_g]), dtype=dtype)
+        return torch.tensor(np.concatenate([[residual_f], residual_g]),
+                            dtype=dtype)
 
     @override
     def _add_data_on(self,
@@ -1955,7 +1975,8 @@ class DerivativeGaussianProcess(GaussianProcessBase):
                                 dtype=dtype,
                                 requires_grad=True)
 
-        with (torch.no_grad(), gpytorch.settings.skip_posterior_variances(True),
+        with (torch.no_grad(),
+              gpytorch.settings.skip_posterior_variances(True),
               gpytorch.settings.fast_computations(False, False, False)):
             gradient = self._model(
                 x_tensor).mean[:, 1:].squeeze().detach().numpy()
@@ -1967,7 +1988,9 @@ class DerivativeGaussianProcess(GaussianProcessBase):
             return gradient[idx] + self._laplace.grad(x, idx=idx)
 
     @override
-    def _grad_mean_plus_std(self, x: np.ndarray, idx: int = None) -> np.ndarray:
+    def _grad_mean_plus_std(self,
+                            x: np.ndarray,
+                            idx: int = None) -> np.ndarray:
 
         x_tensor = torch.tensor(np.atleast_2d(x),
                                 dtype=dtype,

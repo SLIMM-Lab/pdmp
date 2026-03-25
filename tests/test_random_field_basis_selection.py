@@ -9,7 +9,10 @@ def test_default_basis_piecewise_constant():
         'name': 'GaussianRandomField',
         'dim': 4,
         'mean': 0.0,
-        'kernel_params': {'sigma': 1.0, 'l': 0.2},
+        'kernel_params': {
+            'sigma': 1.0,
+            'l': 0.2
+        },
     }
     field = get_field(cfg)
     assert isinstance(field, GaussianRandomField)
@@ -23,7 +26,10 @@ def test_norm_piecewise_constant_basis():
         'dim': 5,
         'mean': 1.0,
         'basis': 'NormPiecewiseConstant',
-        'kernel_params': {'sigma': 1.0, 'l': 0.5},
+        'kernel_params': {
+            'sigma': 1.0,
+            'l': 0.5
+        },
     }
     field = get_field(cfg)
     assert isinstance(field, GaussianRandomField)
@@ -39,7 +45,10 @@ def test_invalid_basis_name():
         'dim': 3,
         'mean': 0.0,
         'basis': 'UnknownBasis',
-        'kernel_params': {'sigma': 1.0, 'l': 0.3},
+        'kernel_params': {
+            'sigma': 1.0,
+            'l': 0.3
+        },
     }
     try:
         get_field(cfg)
@@ -47,4 +56,3 @@ def test_invalid_basis_name():
         assert 'Unsupported basis' in str(e)
     else:
         raise AssertionError('Expected ValueError for invalid basis name')
-

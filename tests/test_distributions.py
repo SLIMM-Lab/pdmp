@@ -4,7 +4,8 @@ from scipy.optimize import minimize
 
 from pdmp.distributions import (MultivariateNormal, CubicDistribution,
                                 GaussianLikelihood, TemperedLikelihood,
-                                FlatLikelihood, Posterior, ExponentialTransformation,
+                                FlatLikelihood, Posterior,
+                                ExponentialTransformation,
                                 TransformedDistribution)
 from pdmp.utils import grad_fd, hessian_fd
 from pdmp.forward_model import LinearModel
@@ -102,7 +103,7 @@ def test_likelihood():
     y_true = model.eval(x_true)
     sig_obs = 0.5
     noise = rng.normal(0, sig_obs, size=(n_obs, n))
-    y_obs = np.vstack(n_obs * (y_true,)) + noise
+    y_obs = np.vstack(n_obs * (y_true, )) + noise
 
     # prior
     prior_mean = rng.random(m)

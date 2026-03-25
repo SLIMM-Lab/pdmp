@@ -3,12 +3,8 @@ import numpy as np
 import jax.numpy as jnp
 import pytest
 
-from pdmp.random_field import (
-    JaxRandomFieldBase,
-    JaxGaussianRandomField,
-    JaxConstantField,
-    get_jax_field
-)
+from pdmp.random_field import (JaxRandomFieldBase, JaxGaussianRandomField,
+                               JaxConstantField, get_jax_field)
 from pdmp.distributions import MultivariateNormal
 
 
@@ -44,12 +40,12 @@ def test_jax_random_field_base_with_gaussian():
 
     # Sample coefficients
     coeffs = jnp.array(dist.get_sample())
-    assert coeffs.shape == (5,)
+    assert coeffs.shape == (5, )
 
     # Evaluate field
     x = jnp.linspace(0, 1, 10)
     field_values = field.evaluate(coeffs, x)
-    assert field_values.shape == (10,)
+    assert field_values.shape == (10, )
 
     print(f"✓ JaxRandomFieldBase test passed")
     print(f"  Field dimension: {field.dim}")
@@ -68,7 +64,10 @@ def test_jax_gaussian_random_field_with_kernel():
         'dim': 10,
         'mean': 0.0,
         'interval': [0.0, 1.0],
-        'kernel_params': {'sigma': 1.0, 'l': 0.3},
+        'kernel_params': {
+            'sigma': 1.0,
+            'l': 0.3
+        },
         'basis': 'PiecewiseConstant'
     }
 
@@ -86,12 +85,12 @@ def test_jax_gaussian_random_field_with_kernel():
 
     # Sample coefficients
     coeffs = jnp.array(dist.get_sample())
-    assert coeffs.shape == (10,)
+    assert coeffs.shape == (10, )
 
     # Evaluate field
     x = jnp.linspace(0, 1, 20)
     field_values = field.evaluate(coeffs, x)
-    assert field_values.shape == (20,)
+    assert field_values.shape == (20, )
 
     print(f"✓ JaxGaussianRandomField test passed")
     print(f"  Field dimension: {field.dim}")
@@ -106,11 +105,7 @@ def test_constant_field_still_works():
     print("Testing JaxConstantField (backward compatibility)")
     print("=" * 70)
 
-    config = {
-        'name': 'JaxConstantField',
-        'mean': 100.0,
-        'std': 20.0
-    }
+    config = {'name': 'JaxConstantField', 'mean': 100.0, 'std': 20.0}
 
     field = get_jax_field(config)
 
@@ -126,8 +121,9 @@ def test_constant_field_still_works():
     # Evaluate field
     x = jnp.linspace(0, 1, 10)
     field_values = field.evaluate(coeff, x)
-    assert field_values.shape == (10,)
-    assert jnp.allclose(field_values, field_values[0])  # All values should be constant
+    assert field_values.shape == (10, )
+    assert jnp.allclose(field_values,
+                        field_values[0])  # All values should be constant
 
     print(f"✓ JaxConstantField test passed")
     print(f"  Constant value: {field_values[0]}")
@@ -144,7 +140,10 @@ def test_jax_gaussian_field_matches_basis_projection():
         'dim': 15,
         'mean': 5.0,
         'interval': [0.0, 1.0],  # Smaller domain to avoid covariance issues
-        'kernel_params': {'sigma': 2.0, 'l': 0.15},
+        'kernel_params': {
+            'sigma': 2.0,
+            'l': 0.15
+        },
         'basis': 'PiecewiseConstant'
     }
 
@@ -185,7 +184,10 @@ def test_field_evaluation_is_jax_differentiable():
         'dim': 5,
         'mean': 0.0,
         'interval': [0.0, 1.0],
-        'kernel_params': {'sigma': 1.0, 'l': 0.3},
+        'kernel_params': {
+            'sigma': 1.0,
+            'l': 0.3
+        },
         'basis': 'PiecewiseConstant'
     }
 
@@ -201,7 +203,7 @@ def test_field_evaluation_is_jax_differentiable():
 
     # Compute gradient w.r.t. coefficients
     grad_coeffs = jax.grad(eval_sum)(coeffs)
-    assert grad_coeffs.shape == (5,)
+    assert grad_coeffs.shape == (5, )
     assert not jnp.allclose(grad_coeffs, 0.0), "Gradient should be non-zero"
 
     print(f"✓ JAX differentiability test passed")
@@ -224,7 +226,8 @@ def test_invalid_config_raises_error():
         JaxRandomFieldBase.from_dict({'name': 'WrongName'})
 
     # Wrong name for JaxGaussianRandomField
-    with pytest.raises(ValueError, match="must have name 'JaxGaussianRandomField'"):
+    with pytest.raises(ValueError,
+                       match="must have name 'JaxGaussianRandomField'"):
         JaxGaussianRandomField.from_dict({'name': 'WrongName'})
 
     print(f"✓ Error handling test passed")

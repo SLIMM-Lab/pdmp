@@ -20,10 +20,16 @@ print("EXAMPLE 1: Sensors on the same boundary")
 print("=" * 70)
 
 sensors_same = [
-    {"name": "sensor_left",  "location_fn": "side_faces",
-     "point": np.array([0.0, 0.5, 1.25])},
-    {"name": "sensor_right", "location_fn": "side_faces",
-     "point": np.array([1.0, 0.5, 1.25])},
+    {
+        "name": "sensor_left",
+        "location_fn": "side_faces",
+        "point": np.array([0.0, 0.5, 1.25])
+    },
+    {
+        "name": "sensor_right",
+        "location_fn": "side_faces",
+        "point": np.array([1.0, 0.5, 1.25])
+    },
     {
         "name": "sensor_array",
         "location_fn": "side_faces",
@@ -43,7 +49,6 @@ for s in sensors_same:
     print(f"  - {s['name']} ({s['location_fn']}): {n} point(s)")
 total_obs = (1 + 1 + 3) * 3
 print(f"  Total observation dimensions: {total_obs}")
-
 
 print("\n" + "=" * 70)
 print("EXAMPLE 2: Sensors on different boundaries")
@@ -76,7 +81,6 @@ for s in sensors_mixed:
 total_obs = (2 + 1 + 1) * 3
 print(f"  Total observation dimensions: {total_obs}")
 
-
 print("\n" + "=" * 70)
 print("EXAMPLE 3: Loading from configuration dict (YAML-compatible)")
 print("=" * 70)
@@ -101,14 +105,31 @@ print("=" * 70)
 #     point: [0.5, 0.5, 2.5]
 
 config = {
-    'd_x': 1.0, 'd_y': 1.0, 'd_z': 2.5,
-    'h': 0.5, 'ele_type': 'HEX8', 'nu': 0.3,
-    'n_params': 2,
+    'd_x':
+    1.0,
+    'd_y':
+    1.0,
+    'd_z':
+    2.5,
+    'h':
+    0.5,
+    'ele_type':
+    'HEX8',
+    'nu':
+    0.3,
+    'n_params':
+    2,
     'sensors': [
-        {'name': 'sensor_left',  'location_fn': 'side_faces',
-         'point': [0.0, 0.5, 1.25]},
-        {'name': 'sensor_right', 'location_fn': 'side_faces',
-         'point': [1.0, 0.5, 1.25]},
+        {
+            'name': 'sensor_left',
+            'location_fn': 'side_faces',
+            'point': [0.0, 0.5, 1.25]
+        },
+        {
+            'name': 'sensor_right',
+            'location_fn': 'side_faces',
+            'point': [1.0, 0.5, 1.25]
+        },
         {
             'name': 'sensor_array',
             'location_fn': 'side_faces',
@@ -118,8 +139,11 @@ config = {
                 [0.5, 0.0, 2.0],
             ]
         },
-        {'name': 'top_sensor', 'location_fn': 'top_surface',
-         'point': [0.5, 0.5, 2.5]},
+        {
+            'name': 'top_sensor',
+            'location_fn': 'top_surface',
+            'point': [0.5, 0.5, 2.5]
+        },
     ],
 }
 
@@ -131,22 +155,29 @@ for s in config['sensors']:
     n = 1 if 'point' in s else len(s['points'])
     print(f"  - {s['name']} ({s['location_fn']}): {n} point(s)")
 
-
 print("\n" + "=" * 70)
 print("EXAMPLE 4: Custom callable sensor location function")
 print("=" * 70)
 
 import jax.numpy as jnp
 
+
 def left_face_only(point):
     """Only match the x=0 face."""
     return jnp.isclose(point[0], 0.0, atol=1e-5)
 
+
 sensors_custom = [
-    {"name": "x0_sensor_1", "location_fn": left_face_only,
-     "point": np.array([0.0, 0.25, 1.0])},
-    {"name": "x0_sensor_2", "location_fn": left_face_only,
-     "point": np.array([0.0, 0.75, 1.5])},
+    {
+        "name": "x0_sensor_1",
+        "location_fn": left_face_only,
+        "point": np.array([0.0, 0.25, 1.0])
+    },
+    {
+        "name": "x0_sensor_2",
+        "location_fn": left_face_only,
+        "point": np.array([0.0, 0.75, 1.5])
+    },
 ]
 
 # model_4 = JaxFemModel(d_x=1.0, d_y=1.0, d_z=2.5, h=0.5, sensors=sensors_custom)
@@ -154,7 +185,6 @@ sensors_custom = [
 print("✓ Custom callable location function defined (x=0 face only)")
 for s in sensors_custom:
     print(f"  - {s['name']}: {s['point']}")
-
 
 print("\n" + "=" * 70)
 print("Summary of Sensor Configuration Options")

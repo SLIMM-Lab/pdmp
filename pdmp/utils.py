@@ -179,7 +179,8 @@ def running_mean_at_queries(t: np.ndarray, x: np.ndarray, v: np.ndarray,
     return results
 
 
-def running_variance(t: np.ndarray, x: np.ndarray, v: np.ndarray) -> np.ndarray:
+def running_variance(t: np.ndarray, x: np.ndarray,
+                     v: np.ndarray) -> np.ndarray:
     """Compute the running variance of the process at each recorded time.
 
     For a process with raw moments
@@ -347,6 +348,7 @@ def running_sample_mean(samples: np.ndarray) -> np.ndarray:
 
     return running_means
 
+
 def running_sample_variance(samples: np.ndarray) -> np.ndarray:
     """Compute the running sample variance of a set of samples at each recorded time.
 
@@ -366,19 +368,18 @@ def running_sample_variance(samples: np.ndarray) -> np.ndarray:
     for i in range(1, n_samples):
         delta = samples[i] - running_means[i - 1]
         running_means[i] = running_means[i - 1] + delta / (i + 1)
-        running_vars[i] = (
-            (i - 1) * running_vars[i - 1] + delta * (samples[i] - running_means[i])
-        ) / i
+        running_vars[i] = ((i - 1) * running_vars[i - 1] + delta *
+                           (samples[i] - running_means[i])) / i
 
     return running_vars
 
 
 def compute_ess_zigzag(
-        t: np.ndarray,
-        x: np.ndarray,
-        v: np.ndarray,
-        num_batches: int = 1000,
-        avg: bool = False
+    t: np.ndarray,
+    x: np.ndarray,
+    v: np.ndarray,
+    num_batches: int = 1000,
+    avg: bool = False
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Compute the effective sample size (ESS) of a zigzag process.
 
@@ -473,8 +474,12 @@ def compute_ess_zigzag(
     else:
         return ess, autocorrelation, mean_pi, var_pi
 
-def sample_equidistant_along_path(positions: np.ndarray, velocities: np.ndarray,
-                                  times: np.ndarray, t_k: float = None, N: int = 1000) -> np.ndarray:
+
+def sample_equidistant_along_path(positions: np.ndarray,
+                                  velocities: np.ndarray,
+                                  times: np.ndarray,
+                                  t_k: float = None,
+                                  N: int = 1000) -> np.ndarray:
     """N samples uniformly spaced along the path corresponting to interval [0,t_k].
 
     Args:
@@ -498,10 +503,12 @@ def sample_equidistant_along_path(positions: np.ndarray, velocities: np.ndarray,
         positions)[seg_idx] + dt[:, None] * np.asarray(velocities)[seg_idx]
     return x  # shape (N,d)
 
-def compute_ess_zigzag_from_samples(t: np.ndarray,
-                                    x: np.ndarray,
-                                    v: np.ndarray,
-                                    n_samples: int = None) -> tuple[np.ndarray, np.ndarray]:
+
+def compute_ess_zigzag_from_samples(
+        t: np.ndarray,
+        x: np.ndarray,
+        v: np.ndarray,
+        n_samples: int = None) -> tuple[np.ndarray, np.ndarray]:
     """Compute the effective sample size (ESS) of a zigzag process from samples.
 
     Args:
@@ -526,6 +533,7 @@ def compute_ess_zigzag_from_samples(t: np.ndarray,
     autocorr = len(samples) / ess
 
     return ess, autocorr
+
 
 def grad_fd(f: callable,
             x: np.ndarray,

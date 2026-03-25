@@ -22,6 +22,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 import matplotlib
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.tri as mtri
@@ -42,7 +43,7 @@ from pdmp.rve_utils import (
 
 # ── Default parameters ────────────────────────────────────────────────────
 
-L = 1.0           # RVE side length
+L = 1.0  # RVE side length
 mesh_size = 0.03  # Characteristic element length
 
 # Default fiber layout: (cx, cy, R)
@@ -53,13 +54,13 @@ DEFAULT_FIBERS = [
     (0.75, 0.70, 0.12),
 ]
 
-E_inf = 30e3       # Far-field matrix E [MPa]
-E_fiber = 200e3    # Fiber E [MPa]
-nu_matrix = 0.35   # Matrix Poisson ratio
-nu_fiber = 0.2     # Fiber Poisson ratio
-
+E_inf = 30e3  # Far-field matrix E [MPa]
+E_fiber = 200e3  # Fiber E [MPa]
+nu_matrix = 0.35  # Matrix Poisson ratio
+nu_fiber = 0.2  # Fiber Poisson ratio
 
 # ── E-field computation ──────────────────────────────────────────────────
+
 
 def compute_E_field(distances, E_inf, rho, l_scale):
     """Exponential recovery E-field: E(d) = E_inf * (1 - (1-rho) * exp(-d/l))."""
@@ -68,8 +69,8 @@ def compute_E_field(distances, E_inf, rho, l_scale):
 
 # ── Visualisation ────────────────────────────────────────────────────────
 
-def plot_field(mesh, facecolors, fibers, L,
-               title, label, cmap, fig_path):
+
+def plot_field(mesh, facecolors, fibers, L, title, label, cmap, fig_path):
     """Plot a per-cell scalar field on the RVE mesh with multiple fiber circles."""
     tri = mtri.Triangulation(mesh.points[:, 0], mesh.points[:, 1], mesh.cells)
     fig, ax = plt.subplots(figsize=(6, 6))
@@ -96,26 +97,40 @@ def plot_displacement(mesh, sol, fibers, L, fig_dir, prefix=""):
     ax.set_aspect("equal")
     ax.set_title("Fluctuation displacement")
     fig.savefig(os.path.join(fig_dir, f"{prefix}displacement.png"),
-                dpi=150, bbox_inches="tight")
+                dpi=150,
+                bbox_inches="tight")
     plt.close(fig)
 
 
 # ── Main ─────────────────────────────────────────────────────────────────
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="2D RVE with exponential recovery E-field")
-    parser.add_argument("--rho", type=float, default=0.3,
+    parser.add_argument("--rho",
+                        type=float,
+                        default=0.3,
                         help="Recovery ratio (default: 0.3)")
-    parser.add_argument("--l-scale", type=float, default=0.1,
+    parser.add_argument("--l-scale",
+                        type=float,
+                        default=0.1,
                         help="Recovery length scale (default: 0.1)")
-    parser.add_argument("--eps-xx", type=float, default=1e-3,
+    parser.add_argument("--eps-xx",
+                        type=float,
+                        default=1e-3,
                         help="Macroscopic eps_xx (default: 1e-3)")
-    parser.add_argument("--eps-yy", type=float, default=0.0,
+    parser.add_argument("--eps-yy",
+                        type=float,
+                        default=0.0,
                         help="Macroscopic eps_yy (default: 0)")
-    parser.add_argument("--gamma-xy", type=float, default=0.0,
+    parser.add_argument("--gamma-xy",
+                        type=float,
+                        default=0.0,
                         help="Macroscopic gamma_xy (default: 0)")
-    parser.add_argument("--mesh-size", type=float, default=mesh_size,
+    parser.add_argument("--mesh-size",
+                        type=float,
+                        default=mesh_size,
                         help=f"Mesh size (default: {mesh_size})")
     args = parser.parse_args()
 
@@ -126,7 +141,7 @@ def main():
 
     ele_type = "TRI3"
     data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-    fig_dir  = os.path.join(data_dir, "figures")
+    fig_dir = os.path.join(data_dir, "figures")
     os.makedirs(fig_dir, exist_ok=True)
 
     # ── 1. Validate fiber placement ──────────────────────────────────
@@ -137,10 +152,14 @@ def main():
 
     # ── 2. Mesh ──────────────────────────────────────────────────────
     print("\nGenerating mesh ...")
-    mesh, phys_tags = generate_multi_fiber_rve_mesh(
-        L, fibers, ms, data_dir, l_scale=l_scale, ele_type=ele_type)
+    mesh, phys_tags = generate_multi_fiber_rve_mesh(L,
+                                                    fibers,
+                                                    ms,
+                                                    data_dir,
+                                                    l_scale=l_scale,
+                                                    ele_type=ele_type)
     n_matrix = np.sum(phys_tags == 1)
-    n_fiber  = np.sum(phys_tags == 2)
+    n_fiber = np.sum(phys_tags == 2)
     print(f"  {len(mesh.points)} nodes, {len(mesh.cells)} elements "
           f"({n_matrix} matrix, {n_fiber} fiber)")
 
@@ -157,7 +176,10 @@ def main():
         nu_aggregate=nu_fiber,
     )
     problem = LinearElasticRVE(
-        mesh, vec=2, dim=2, ele_type=ele_type,
+        mesh,
+        vec=2,
+        dim=2,
+        ele_type=ele_type,
         additional_info=(phys_tags, mat_props),
     )
     problem.P_mat = P_mat
@@ -208,8 +230,8 @@ def main():
     sol_list = solver(problem)
 
     # ── 8. Post-processing ───────────────────────────────────────────
-    sigma_avg, sigma_cell = problem.compute_avg_stress(
-        sol_list[0], problem.internal_vars)
+    sigma_avg, sigma_cell = problem.compute_avg_stress(sol_list[0],
+                                                       problem.internal_vars)
 
     print(f"\nVolume-averaged stress:")
     print(f"  <sigma_xx> = {float(sigma_avg[0,0]):.4f} MPa")
@@ -223,13 +245,12 @@ def main():
     dist_cell = np.sum(distances * w, axis=1)
     E_cell = np.sum(E_q_np * w, axis=1)
 
-    plot_field(mesh, dist_cell, fibers, L,
-               "Distance to nearest fiber", "distance", "viridis",
+    plot_field(mesh, dist_cell, fibers, L, "Distance to nearest fiber",
+               "distance", "viridis",
                os.path.join(fig_dir, "distance_field.png"))
 
-    plot_field(mesh, E_cell, fibers, L,
-               "Young's modulus E", "E [MPa]", "viridis",
-               os.path.join(fig_dir, "E_field.png"))
+    plot_field(mesh, E_cell, fibers, L, "Young's modulus E", "E [MPa]",
+               "viridis", os.path.join(fig_dir, "E_field.png"))
 
     sigma_cell_np = np.array(sigma_cell)
     nu_cell_arr = np.sum(nu_q_np * w, axis=1)
@@ -243,8 +264,8 @@ def main():
                os.path.join(fig_dir, "stress_yy.png"))
 
     vm = compute_von_mises_from_cell(sigma_cell_np, nu_cell_arr)
-    plot_field(mesh, vm, fibers, L,
-               "von Mises stress", r"$\sigma_\mathrm{vM}$ [MPa]", "hot",
+    plot_field(mesh, vm, fibers, L, "von Mises stress",
+               r"$\sigma_\mathrm{vM}$ [MPa]", "hot",
                os.path.join(fig_dir, "stress_vonmises.png"))
 
     plot_displacement(mesh, sol_list[0], fibers, L, fig_dir)
@@ -257,24 +278,27 @@ def main():
     s22 = sigma_cell_np[:, 1, 1]
     s12 = sigma_cell_np[:, 0, 1]
     s33 = nu_cell_arr * (s11 + s22)
-    von_mises = np.sqrt(0.5 * ((s11 - s22)**2 + (s22 - s33)**2
-                                + (s33 - s11)**2 + 6.0 * s12**2))
+    von_mises = np.sqrt(0.5 * ((s11 - s22)**2 + (s22 - s33)**2 +
+                               (s33 - s11)**2 + 6.0 * s12**2))
 
     vtk_dir = os.path.join(data_dir, "vtk")
     os.makedirs(vtk_dir, exist_ok=True)
     vtk_path = os.path.join(vtk_dir, "rve_exp.vtu")
-    save_sol(problem.fes[0], sol_list[0], vtk_path, cell_infos=[
-        ('E_field',    E_cell),
-        ('distance',   dist_cell),
-        ('stress_xx',  s11),
-        ('stress_yy',  s22),
-        ('stress_xy',  s12),
-        ('von_mises',  von_mises),
-        ('strain_xx',  eps_cell[:, 0, 0]),
-        ('strain_yy',  eps_cell[:, 1, 1]),
-        ('strain_xy',  2.0 * eps_cell[:, 0, 1]),
-        ('phys_tag',   phys_tags.astype(np.float64)),
-    ])
+    save_sol(problem.fes[0],
+             sol_list[0],
+             vtk_path,
+             cell_infos=[
+                 ('E_field', E_cell),
+                 ('distance', dist_cell),
+                 ('stress_xx', s11),
+                 ('stress_yy', s22),
+                 ('stress_xy', s12),
+                 ('von_mises', von_mises),
+                 ('strain_xx', eps_cell[:, 0, 0]),
+                 ('strain_yy', eps_cell[:, 1, 1]),
+                 ('strain_xy', 2.0 * eps_cell[:, 0, 1]),
+                 ('phys_tag', phys_tags.astype(np.float64)),
+             ])
     print(f"  VTK saved to {vtk_path}")
 
 

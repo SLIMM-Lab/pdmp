@@ -55,7 +55,9 @@ def test_exponential_recovery_field_boundary_conditions():
     print(f"  F(∞) ≈ {float(F_inf_approx[0]):.6f}")
     print(f"  Expected F(∞) = F_inf = {F_inf:.6f}")
     print(f"  Difference: {abs(float(F_inf_approx[0]) - F_inf):.2e}")
-    print(f"  exp(-x/l) = exp(-{float(x_large[0])}/{l}) = {np.exp(-float(x_large[0])/l):.2e}")
+    print(
+        f"  exp(-x/l) = exp(-{float(x_large[0])}/{l}) = {np.exp(-float(x_large[0])/l):.2e}"
+    )
 
     assert np.allclose(F_inf_approx[0], F_inf, rtol=1e-6), \
         f"F(∞) should approach F_inf, got {F_inf_approx[0]} vs {F_inf}"
@@ -98,14 +100,18 @@ def test_exponential_recovery_field_profile():
     print(f"  F(∞) = F_inf = {F_inf}")
 
     print(f"\nProfile values:")
-    print(f"  {'x':>8s} | {'F(x)':>10s} | {'(F-F0)/(Finf-F0)':>20s} | {'1-exp(-x/l)':>15s}")
+    print(
+        f"  {'x':>8s} | {'F(x)':>10s} | {'(F-F0)/(Finf-F0)':>20s} | {'1-exp(-x/l)':>15s}"
+    )
     print(f"  {'-'*8}-+-{'-'*10}-+-{'-'*20}-+-{'-'*15}")
 
     F_0 = F_inf * rho
     for x, F in zip(x_values, F_values):
         normalized = (F - F_0) / (F_inf - F_0)
         expected_norm = 1.0 - np.exp(-x / l)
-        print(f"  {float(x):8.2f} | {float(F):10.4f} | {float(normalized):20.6f} | {float(expected_norm):15.6f}")
+        print(
+            f"  {float(x):8.2f} | {float(F):10.4f} | {float(normalized):20.6f} | {float(expected_norm):15.6f}"
+        )
 
     # Verify that the field is monotonically increasing (for rho < 1)
     for i in range(len(F_values) - 1):
@@ -152,12 +158,7 @@ def test_exponential_recovery_field_multidim():
     coeffs = jnp.array([rho, l])
 
     # Test with 2D coordinates (should use only first dimension)
-    x_2d = jnp.array([
-        [0.0, 5.0],
-        [1.0, 10.0],
-        [2.0, 15.0],
-        [3.0, 20.0]
-    ])
+    x_2d = jnp.array([[0.0, 5.0], [1.0, 10.0], [2.0, 15.0], [3.0, 20.0]])
 
     F_2d = field.evaluate(coeffs, x_2d)
 
@@ -175,7 +176,9 @@ def test_exponential_recovery_field_multidim():
 
     print(f"\nComparison:")
     for i in range(len(F_1d)):
-        print(f"  x={float(x_1d[i]):.1f}: F_2d={float(F_2d[i]):.6f}, F_1d={float(F_1d[i]):.6f}, diff={abs(float(F_2d[i] - F_1d[i])):.2e}")
+        print(
+            f"  x={float(x_1d[i]):.1f}: F_2d={float(F_2d[i]):.6f}, F_1d={float(F_1d[i]):.6f}, diff={abs(float(F_2d[i] - F_1d[i])):.2e}"
+        )
 
     assert np.allclose(F_2d, F_1d, rtol=1e-10), \
         "2D and 1D inputs should give same results (using first dimension)"
@@ -231,16 +234,22 @@ def test_exponential_recovery_field_gradient():
     # Gradient w.r.t. rho
     coeffs_rho_plus = jnp.array([rho + h, l])
     coeffs_rho_minus = jnp.array([rho - h, l])
-    grad_rho_fd = (field_sum(coeffs_rho_plus) - field_sum(coeffs_rho_minus)) / (2 * h)
+    grad_rho_fd = (field_sum(coeffs_rho_plus) -
+                   field_sum(coeffs_rho_minus)) / (2 * h)
 
     # Gradient w.r.t. l
     coeffs_l_plus = jnp.array([rho, l + h])
     coeffs_l_minus = jnp.array([rho, l - h])
-    grad_l_fd = (field_sum(coeffs_l_plus) - field_sum(coeffs_l_minus)) / (2 * h)
+    grad_l_fd = (field_sum(coeffs_l_plus) - field_sum(coeffs_l_minus)) / (2 *
+                                                                          h)
 
     print(f"\nFinite difference verification:")
-    print(f"  dF/d(rho) FD = {float(grad_rho_fd):.6f}, diff = {abs(float(grads[0]) - float(grad_rho_fd)):.2e}")
-    print(f"  dF/d(l) FD = {float(grad_l_fd):.6f}, diff = {abs(float(grads[1]) - float(grad_l_fd)):.2e}")
+    print(
+        f"  dF/d(rho) FD = {float(grad_rho_fd):.6f}, diff = {abs(float(grads[0]) - float(grad_rho_fd)):.2e}"
+    )
+    print(
+        f"  dF/d(l) FD = {float(grad_l_fd):.6f}, diff = {abs(float(grads[1]) - float(grad_l_fd)):.2e}"
+    )
 
     # Note: Finite differences have their own numerical errors, so we use looser tolerances
     assert np.allclose(grads[0], grad_rho_fd, rtol=2e-3, atol=1e-1), \
@@ -282,7 +291,8 @@ def test_exponential_recovery_field_special_cases():
     print(f"  F(∞) ≈ {float(F_inf_approx):.6f} (expected {F_inf:.6f})")
 
     assert np.allclose(F_0, 0.0, atol=1e-10), "F(0) should be 0 when rho=0"
-    assert np.allclose(F_inf_approx, F_inf, rtol=1e-6), "F(∞) should be F_inf when rho=0"
+    assert np.allclose(F_inf_approx, F_inf,
+                       rtol=1e-6), "F(∞) should be F_inf when rho=0"
 
     # Case 2: rho = 1 (constant field at F_inf)
     print("\nCase 2: rho = 1")
@@ -314,9 +324,3 @@ if __name__ == "__main__":
     print("\n" + "=" * 70)
     print("ALL TESTS PASSED!")
     print("=" * 70)
-
-
-
-
-
-

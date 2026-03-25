@@ -38,7 +38,8 @@ def get_theoretical(config):
     model_cfg = config.get('model', {})
     dist_cfg = config.get('distribution', {})
 
-    if model_cfg.get('name') != 'Linear' or dist_cfg.get('name') != 'MultivariateNormal':
+    if model_cfg.get('name') != 'Linear' or dist_cfg.get(
+            'name') != 'MultivariateNormal':
         return None
 
     A = np.array(model_cfg['A'])
@@ -54,18 +55,29 @@ def get_theoretical(config):
 def plot_output_marginals(outputs, fig_dir, theory=None):
     """Histogram + KDE for each output dimension, with optional theoretical Gaussian."""
     dim_out = outputs.shape[1]
-    fig, axes = plt.subplots(1, dim_out, figsize=(4 * dim_out, 3.5), squeeze=False)
+    fig, axes = plt.subplots(1,
+                             dim_out,
+                             figsize=(4 * dim_out, 3.5),
+                             squeeze=False)
 
     for j in range(dim_out):
         ax = axes[0, j]
         y = outputs[:, j]
-        ax.hist(y, bins=40, density=True, alpha=0.4, color='steelblue', label='Histogram')
+        ax.hist(y,
+                bins=40,
+                density=True,
+                alpha=0.4,
+                color='steelblue',
+                label='Histogram')
 
         kde = gaussian_kde(y)
         grid = np.linspace(y.min(), y.max(), 300)
         ax.plot(grid, kde(grid), color='steelblue', lw=2, label='KDE')
 
-        ax.axvline(y.mean(), color='steelblue', lw=1.2, ls='--',
+        ax.axvline(y.mean(),
+                   color='steelblue',
+                   lw=1.2,
+                   ls='--',
                    label=f'Empirical mean {y.mean():.3f}')
 
         if theory is not None:
@@ -76,16 +88,20 @@ def plot_output_marginals(outputs, fig_dir, theory=None):
             lo = min(grid[0], mu_j - 4 * sig_j)
             hi = max(grid[-1], mu_j + 4 * sig_j)
             theo_grid = np.linspace(lo, hi, 400)
-            ax.plot(theo_grid, norm.pdf(theo_grid, mu_j, sig_j),
-                    color='tomato', lw=2, ls='-', label=f'Theory N({mu_j:.3f}, {sig_j:.3f}²)')
+            ax.plot(theo_grid,
+                    norm.pdf(theo_grid, mu_j, sig_j),
+                    color='tomato',
+                    lw=2,
+                    ls='-',
+                    label=f'Theory N({mu_j:.3f}, {sig_j:.3f}²)')
             ax.axvline(mu_j, color='tomato', lw=1.2, ls='--')
             ax.set_xlim(lo, hi)
 
         ax.set_xlabel(f'Output[{j}]')
         ax.set_ylabel('Density' if j == 0 else '')
         ax.legend(fontsize=8)
-        ax.set_title(f'Output[{j}]  std={y.std():.3f}' +
-                     (f'  (theory {np.sqrt(theory[1][j,j]):.3f})' if theory else ''))
+        ax.set_title(f'Output[{j}]  std={y.std():.3f}' + (
+            f'  (theory {np.sqrt(theory[1][j,j]):.3f})' if theory else ''))
 
     fig.suptitle('Output marginal distributions', y=1.02)
     fig.tight_layout()
@@ -101,7 +117,9 @@ def plot_output_pairwise(outputs, fig_dir, theory=None):
     if dim_out < 2:
         return
 
-    fig, axes = plt.subplots(dim_out, dim_out, figsize=(3 * dim_out, 3 * dim_out))
+    fig, axes = plt.subplots(dim_out,
+                             dim_out,
+                             figsize=(3 * dim_out, 3 * dim_out))
     for i in range(dim_out):
         for j in range(dim_out):
             ax = axes[i, j]
@@ -117,13 +135,21 @@ def plot_output_pairwise(outputs, fig_dir, theory=None):
                     lo = min(grid[0], mu_j - 4 * sig_j)
                     hi = max(grid[-1], mu_j + 4 * sig_j)
                     theo_grid = np.linspace(lo, hi, 400)
-                    ax.plot(theo_grid, norm.pdf(theo_grid, mu_j, sig_j),
-                            color='tomato', lw=2, ls='--', label='Theory')
+                    ax.plot(theo_grid,
+                            norm.pdf(theo_grid, mu_j, sig_j),
+                            color='tomato',
+                            lw=2,
+                            ls='--',
+                            label='Theory')
                     ax.set_xlim(lo, hi)
                 if i == 0:
                     ax.legend(fontsize=7)
             else:
-                ax.scatter(outputs[:, j], outputs[:, i], s=2, alpha=0.3, color='steelblue',
+                ax.scatter(outputs[:, j],
+                           outputs[:, i],
+                           s=2,
+                           alpha=0.3,
+                           color='steelblue',
                            label='Samples')
                 corr = np.corrcoef(outputs[:, j], outputs[:, i])[0, 1]
                 ax.set_title(f'r={corr:.2f}', fontsize=9)
@@ -135,15 +161,24 @@ def plot_output_pairwise(outputs, fig_dir, theory=None):
                     sub_cov = np.array([[cov_out[j, j], cov_out[j, i]],
                                         [cov_out[i, j], cov_out[i, i]]])
                     rv = multivariate_normal(mean=sub_mean, cov=sub_cov)
-                    xlo = min(outputs[:, j].min(), sub_mean[0] - 4 * np.sqrt(sub_cov[0, 0]))
-                    xhi = max(outputs[:, j].max(), sub_mean[0] + 4 * np.sqrt(sub_cov[0, 0]))
-                    ylo = min(outputs[:, i].min(), sub_mean[1] - 4 * np.sqrt(sub_cov[1, 1]))
-                    yhi = max(outputs[:, i].max(), sub_mean[1] + 4 * np.sqrt(sub_cov[1, 1]))
+                    xlo = min(outputs[:, j].min(),
+                              sub_mean[0] - 4 * np.sqrt(sub_cov[0, 0]))
+                    xhi = max(outputs[:, j].max(),
+                              sub_mean[0] + 4 * np.sqrt(sub_cov[0, 0]))
+                    ylo = min(outputs[:, i].min(),
+                              sub_mean[1] - 4 * np.sqrt(sub_cov[1, 1]))
+                    yhi = max(outputs[:, i].max(),
+                              sub_mean[1] + 4 * np.sqrt(sub_cov[1, 1]))
                     gx = np.linspace(xlo, xhi, 100)
                     gy = np.linspace(ylo, yhi, 100)
                     GX, GY = np.meshgrid(gx, gy)
                     Z = rv.pdf(np.stack([GX, GY], axis=-1))
-                    ax.contour(GX, GY, Z, levels=5, colors='tomato', linewidths=1.2)
+                    ax.contour(GX,
+                               GY,
+                               Z,
+                               levels=5,
+                               colors='tomato',
+                               linewidths=1.2)
                     ax.set_xlim(xlo, xhi)
                     ax.set_ylim(ylo, yhi)
 
@@ -155,8 +190,10 @@ def plot_output_pairwise(outputs, fig_dir, theory=None):
     # legend proxy for contours
     if theory is not None:
         from matplotlib.lines import Line2D
-        handles = [Line2D([0], [0], color='steelblue', lw=2, label='Samples / KDE'),
-                   Line2D([0], [0], color='tomato', lw=2, ls='--', label='Theory')]
+        handles = [
+            Line2D([0], [0], color='steelblue', lw=2, label='Samples / KDE'),
+            Line2D([0], [0], color='tomato', lw=2, ls='--', label='Theory')
+        ]
         fig.legend(handles=handles, loc='upper right', fontsize=9)
 
     fig.suptitle('Output pairwise distributions', y=1.01)
@@ -172,7 +209,8 @@ def plot_input_output_scatter(samples, outputs, fig_dir):
     dim_in = samples.shape[1]
     dim_out = outputs.shape[1]
 
-    fig, axes = plt.subplots(dim_out, dim_in,
+    fig, axes = plt.subplots(dim_out,
+                             dim_in,
                              figsize=(3.5 * dim_in, 3 * dim_out),
                              squeeze=False)
 
@@ -180,15 +218,22 @@ def plot_input_output_scatter(samples, outputs, fig_dir):
         sc = None
         for j in range(dim_in):
             ax = axes[i, j]
-            sc = ax.scatter(samples[:, j], outputs[:, i], s=2, alpha=0.4,
-                            c=outputs[:, i], cmap='viridis')
+            sc = ax.scatter(samples[:, j],
+                            outputs[:, i],
+                            s=2,
+                            alpha=0.4,
+                            c=outputs[:, i],
+                            cmap='viridis')
             if i == dim_out - 1:
                 ax.set_xlabel(f'Input[{j}]')
             if j == 0:
                 ax.set_ylabel(f'Output[{i}]')
             corr = np.corrcoef(samples[:, j], outputs[:, i])[0, 1]
             ax.set_title(f'r={corr:.2f}', fontsize=9)
-        fig.colorbar(sc, ax=axes[i, :].tolist(), shrink=0.8, label=f'Output[{i}]')
+        fig.colorbar(sc,
+                     ax=axes[i, :].tolist(),
+                     shrink=0.8,
+                     label=f'Output[{i}]')
 
     fig.suptitle('Input–output scatter', y=1.01)
     fig.tight_layout()
@@ -230,11 +275,18 @@ def print_summary(samples, outputs, theory=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Plot forward UQ output distribution')
-    parser.add_argument('results_dir', nargs='?', default='./results_forward_uq',
-                        help='Directory containing samples.dat and outputs.dat')
-    parser.add_argument('--config', default=None,
-                        help='YAML config used to run forward_uq.py (enables theoretical overlay)')
+    parser = argparse.ArgumentParser(
+        description='Plot forward UQ output distribution')
+    parser.add_argument(
+        'results_dir',
+        nargs='?',
+        default='./results_forward_uq',
+        help='Directory containing samples.dat and outputs.dat')
+    parser.add_argument(
+        '--config',
+        default=None,
+        help=
+        'YAML config used to run forward_uq.py (enables theoretical overlay)')
     args = parser.parse_args()
 
     samples, outputs = load_data(args.results_dir)
@@ -244,7 +296,9 @@ def main():
         config = get_config(args.config)
         theory = get_theoretical(config)
         if theory is None:
-            print('Note: theoretical distribution not available for this model/distribution combination.')
+            print(
+                'Note: theoretical distribution not available for this model/distribution combination.'
+            )
 
     fig_dir = os.path.join(args.results_dir, 'figures')
     os.makedirs(fig_dir, exist_ok=True)

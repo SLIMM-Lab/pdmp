@@ -41,8 +41,8 @@ _FAST_BO = dict(
     bo_bounds_scale=3.0,
 )
 
-
 # ── helpers ─────────────────────────────────────────────────────────────────────
+
 
 def _chdir(tmp):
     """Change to *tmp*, return old cwd."""
@@ -52,6 +52,7 @@ def _chdir(tmp):
 
 
 # ── fixtures ─────────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture(scope='module')
 def target():
@@ -138,6 +139,7 @@ def deriv_gp_bo(target, tmp_path_factory):
 
 # ── _get_bo_bounds ──────────────────────────────────────────────────────────────
 
+
 def test_get_bo_bounds_shape(gp_bo):
     bounds = gp_bo._get_bo_bounds(scale=3.0)
     assert bounds.shape == (2, DIM)
@@ -151,12 +153,14 @@ def test_get_bo_bounds_lower_lt_upper(gp_bo):
 def test_get_bo_bounds_width(gp_bo):
     scale = 4.0
     bounds = gp_bo._get_bo_bounds(scale=scale)
-    std = torch.tensor(np.sqrt(np.diag(gp_bo._laplace._cov)), dtype=torch.float64)
+    std = torch.tensor(np.sqrt(np.diag(gp_bo._laplace._cov)),
+                       dtype=torch.float64)
     expected_width = 2.0 * scale * std
     assert torch.allclose(bounds[1] - bounds[0], expected_width)
 
 
 # ── _BoTorchGPWrapper ───────────────────────────────────────────────────────────
+
 
 def test_botorch_gp_wrapper_num_outputs(gp_laplace):
     wrapper = _BoTorchGPWrapper(gp_laplace._model, gp_laplace._likelihood)
@@ -179,6 +183,7 @@ def test_botorch_gp_wrapper_posterior_variance_shape(gp_laplace):
 
 
 # ── _BoTorchDerivGPWrapper ──────────────────────────────────────────────────────
+
 
 @pytest.fixture(scope='module')
 def deriv_gp_laplace(target, tmp_path_factory):
@@ -223,12 +228,13 @@ def test_botorch_deriv_gp_wrapper_posterior_variance_shape(deriv_gp_laplace):
 
 # ── _MaxVarianceAcquisition ─────────────────────────────────────────────────────
 
+
 def test_max_variance_acquisition_output_shape(gp_laplace):
     wrapper = _BoTorchGPWrapper(gp_laplace._model, gp_laplace._likelihood)
     acq = _MaxVarianceAcquisition(model=wrapper)
     X = torch.randn(5, 1, DIM, dtype=torch.float64)  # [batch, q=1, d]
     vals = acq(X)
-    assert vals.shape == (5,)
+    assert vals.shape == (5, )
 
 
 def test_max_variance_acquisition_non_negative(gp_laplace):
@@ -240,6 +246,7 @@ def test_max_variance_acquisition_non_negative(gp_laplace):
 
 # ── _WeightedVarianceAcquisition ────────────────────────────────────────────────
 
+
 @pytest.fixture(scope='module')
 def weighted_var_acq(gp_laplace):
     """A WeightedVarianceAcquisition built from the Laplace-trained GP."""
@@ -248,9 +255,12 @@ def weighted_var_acq(gp_laplace):
     acq = _WeightedVarianceAcquisition(
         model=model,
         laplace_mean=torch.tensor(laplace._mean, dtype=torch.float64),
-        laplace_inv_cov=torch.tensor(laplace.gaussian.inv_C, dtype=torch.float64),
-        laplace_constant=torch.tensor(laplace.gaussian.constant, dtype=torch.float64),
-        laplace_log_det=torch.tensor(laplace.gaussian.log_det, dtype=torch.float64),
+        laplace_inv_cov=torch.tensor(laplace.gaussian.inv_C,
+                                     dtype=torch.float64),
+        laplace_constant=torch.tensor(laplace.gaussian.constant,
+                                      dtype=torch.float64),
+        laplace_log_det=torch.tensor(laplace.gaussian.log_det,
+                                     dtype=torch.float64),
         laplace_delta=torch.tensor(laplace._delta, dtype=torch.float64),
     )
     return acq, laplace
@@ -260,7 +270,7 @@ def test_weighted_variance_acquisition_output_shape(weighted_var_acq):
     acq, _ = weighted_var_acq
     X = torch.randn(5, 1, DIM, dtype=torch.float64)
     vals = acq(X)
-    assert vals.shape == (5,)
+    assert vals.shape == (5, )
 
 
 def test_weighted_variance_acquisition_non_negative(weighted_var_acq):
@@ -280,6 +290,7 @@ def test_weighted_variance_laplace_log_density(weighted_var_acq):
 
 
 # ── GaussianProcess BO training ─────────────────────────────────────────────────
+
 
 def test_bo_gp_total_data_size(gp_bo):
     n_expected = _FAST_BO['n_bo_init'] + _FAST_BO['n_bo_iter']
@@ -380,6 +391,7 @@ def test_bo_retrain_interval_zero(target, tmp_path, monkeypatch):
 
 # ── DerivativeGaussianProcess BO training ───────────────────────────────────────
 
+
 def test_bo_deriv_gp_total_data_size(deriv_gp_bo):
     n_expected = _FAST_BO['n_bo_init'] + _FAST_BO['n_bo_iter']
     assert len(deriv_gp_bo._x_data) == n_expected
@@ -400,7 +412,7 @@ def test_bo_deriv_gp_query_point_shape(deriv_gp_bo, target):
     """_bo_query_point for DerivativeGP returns a 1-D tensor of length d+1."""
     x = np.array([0.5, 0.2])
     y = deriv_gp_bo._bo_query_point(target, x)
-    assert y.shape == (DIM + 1,)
+    assert y.shape == (DIM + 1, )
     assert y.dtype == torch.float64
 
 
@@ -416,6 +428,5 @@ def test_bo_deriv_gp_query_point_gradient(deriv_gp_bo, target):
     """Remaining elements of _bo_query_point equal target.grad - laplace.grad."""
     x = np.array([0.5, 0.2])
     y = deriv_gp_bo._bo_query_point(target, x)
-    expected_grad = (target.grad_log_density(x)
-                     - deriv_gp_bo._laplace.grad(x))
+    expected_grad = (target.grad_log_density(x) - deriv_gp_bo._laplace.grad(x))
     assert np.allclose(y[1:].numpy(), expected_grad, atol=1e-10)
