@@ -7,6 +7,7 @@ from pdmp.random_field import JaxConstantField, get_jax_field
 from pdmp.forward_model import JaxFemModel
 from pdmp.distributions import MultivariateNormal
 
+
 def test_jax_constant_field():
     """Test the JaxConstantField implementation."""
     print("=" * 60)
@@ -16,7 +17,8 @@ def test_jax_constant_field():
     # Create a constant field
     mean = 10.
     std = 1.5
-    field_dist = MultivariateNormal(mean=np.array([mean]), cov=np.array([[std**2]]))
+    field_dist = MultivariateNormal(mean=np.array([mean]),
+                                    cov=np.array([[std**2]]))
     field = JaxConstantField(distribution=field_dist)
 
     print(f"Field dimension: {field.dim}")
@@ -24,13 +26,11 @@ def test_jax_constant_field():
 
     # Test evaluation at various points
     coeffs = jnp.array([15.])
-    x = jnp.array([[0.0, 0.0, 0.0],
-                   [0.5, 0.5, 1.0],
-                   [1.0, 1.0, 2.5]])
+    x = jnp.array([[0.0, 0.0, 0.0], [0.5, 0.5, 1.0], [1.0, 1.0, 2.5]])
 
     values = field.evaluate(coeffs, x)
     print(f"Field values at {x.shape[0]} points: {values}")
-    assert values.shape == (3,), f"Expected shape (3,), got {values.shape}"
+    assert values.shape == (3, ), f"Expected shape (3,), got {values.shape}"
     assert jnp.allclose(values, 15.), "All values should equal the coefficient"
 
     # Test coefficient distribution
@@ -49,11 +49,7 @@ def test_jax_field_from_config():
     print("Testing get_jax_field factory")
     print("=" * 60)
 
-    config = {
-        'name': 'JaxConstantField',
-        'mean': 20.,
-        'std': 5.
-    }
+    config = {'name': 'JaxConstantField', 'mean': 20., 'std': 5.}
 
     field = get_jax_field(config)
     print(f"Created field with dim={field.dim}")
@@ -76,16 +72,18 @@ def test_jax_fem_model_with_field():
     print("=" * 60)
 
     # Create a simple constant field for Young's modulus
-    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field_dist = MultivariateNormal(mean=np.array([10.]),
+                                    cov=np.array([[2.**2]]))
     field = JaxConstantField(field_dist)
 
     # Create a small FEM model
     model = JaxFemModel(
-        d_x=1.0, d_y=1.0, d_z=2.5,
+        d_x=1.0,
+        d_y=1.0,
+        d_z=2.5,
         h=0.5,  # coarse mesh for testing
         n_params=1,
-        field=field
-    )
+        field=field)
 
     print(f"Model input dimension: {model.get_dim_in()}")
     print(f"Model output dimension: {model.get_dim_out()}")
@@ -112,11 +110,7 @@ def test_jax_fem_model_from_config():
     print("Testing JaxFemModel.from_dict with field")
     print("=" * 60)
 
-    field_config = {
-        'name': 'JaxConstantField',
-        'mean': 10,
-        'std': 2
-    }
+    field_config = {'name': 'JaxConstantField', 'mean': 10, 'std': 2}
     field = get_jax_field(field_config)
 
     model_config = {

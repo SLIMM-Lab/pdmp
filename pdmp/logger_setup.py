@@ -96,4 +96,3 @@ def suppress_external_loggers():
     # Also set all its handlers to WARNING level
     for handler in jax_fem_logger.handlers:
         handler.setLevel(logging.WARNING)
-

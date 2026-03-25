@@ -81,12 +81,7 @@ class TestConstantBasisMultiDim:
         basis = ConstantBasis([[0.0, 1.0], [0.0, 2.0]])
 
         # Create 2D points
-        x = np.array([
-            [0.0, 0.0],
-            [0.5, 1.0],
-            [1.0, 2.0],
-            [0.25, 0.5]
-        ])
+        x = np.array([[0.0, 0.0], [0.5, 1.0], [1.0, 2.0], [0.25, 0.5]])
 
         phi = basis(x)
         assert phi.shape == (4, 1)
@@ -97,12 +92,8 @@ class TestConstantBasisMultiDim:
         basis = ConstantBasis([[0.0, 1.0], [0.0, 1.0], [0.0, 1.0]])
 
         # Create 3D points
-        x = np.array([
-            [0.0, 0.0, 0.0],
-            [0.5, 0.5, 0.5],
-            [1.0, 1.0, 1.0],
-            [0.25, 0.75, 0.5]
-        ])
+        x = np.array([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5], [1.0, 1.0, 1.0],
+                      [0.25, 0.75, 0.5]])
 
         phi = basis(x)
         assert phi.shape == (4, 1)
@@ -115,7 +106,8 @@ class TestConstantBasisMultiDim:
         # Try to evaluate with 3D points
         x = np.array([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]])
 
-        with pytest.raises(ValueError, match="Expected points with spatial_dim=2"):
+        with pytest.raises(ValueError,
+                           match="Expected points with spatial_dim=2"):
             basis(x)
 
     def test_2d_with_jax_random_field(self):
@@ -135,7 +127,7 @@ class TestConstantBasisMultiDim:
 
         values = field.evaluate(coeffs, x)
 
-        assert values.shape == (3,)
+        assert values.shape == (3, )
         np.testing.assert_allclose(values, 3.0)
 
     def test_3d_with_jax_random_field(self):
@@ -150,16 +142,12 @@ class TestConstantBasisMultiDim:
         field = JaxRandomFieldBase(basis=basis, coefficient_dist=dist)
 
         # Evaluate at 3D points
-        x = jnp.array([
-            [0.0, 0.0, 0.0],
-            [1.0, 1.5, 2.0],
-            [2.0, 3.0, 4.0]
-        ])
+        x = jnp.array([[0.0, 0.0, 0.0], [1.0, 1.5, 2.0], [2.0, 3.0, 4.0]])
         coeffs = jnp.array([7.5])
 
         values = field.evaluate(coeffs, x)
 
-        assert values.shape == (3,)
+        assert values.shape == (3, )
         np.testing.assert_allclose(values, 7.5)
 
     def test_2d_gradient_computation(self):
@@ -194,12 +182,8 @@ class TestConstantBasisMultiDim:
         field = JaxRandomFieldBase(basis=basis, coefficient_dist=dist)
 
         def loss_fn(coeffs):
-            x = jnp.array([
-                [0.0, 0.0, 0.0],
-                [0.5, 0.5, 0.5],
-                [1.0, 1.0, 1.0],
-                [0.25, 0.25, 0.25]
-            ])
+            x = jnp.array([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5], [1.0, 1.0, 1.0],
+                           [0.25, 0.25, 0.25]])
             values = field.evaluate(coeffs, x)
             return jnp.sum(values**2)
 
@@ -223,10 +207,8 @@ class TestConstantBasisMultiDim:
         phi_new = basis_new(x)
 
         np.testing.assert_array_equal(phi_old, phi_new)
-        np.testing.assert_almost_equal(
-            basis_old.get_norms()[0, 0],
-            basis_new.get_norms()[0, 0]
-        )
+        np.testing.assert_almost_equal(basis_old.get_norms()[0, 0],
+                                       basis_new.get_norms()[0, 0])
 
     def test_properties(self):
         """Test spatial_dim and domain properties."""
@@ -261,12 +243,14 @@ class TestConstantBasisMultiDim:
         # Evaluate at quadrature points (simulating FEM)
         n_cells = 5
         n_quads_per_cell = 4
-        quad_points = np.random.uniform([0.0, 0.0], [10.0, 5.0], (n_cells * n_quads_per_cell, 2))
+        quad_points = np.random.uniform([0.0, 0.0], [10.0, 5.0],
+                                        (n_cells * n_quads_per_cell, 2))
 
-        values = field.evaluate(jnp.array(sample_coeff), jnp.array(quad_points))
+        values = field.evaluate(jnp.array(sample_coeff),
+                                jnp.array(quad_points))
 
         # All values should be constant
-        assert values.shape == (n_cells * n_quads_per_cell,)
+        assert values.shape == (n_cells * n_quads_per_cell, )
         np.testing.assert_allclose(values, sample_coeff[0])
 
     def test_realistic_3d_scenario(self):
@@ -289,7 +273,7 @@ class TestConstantBasisMultiDim:
         values = field.evaluate(coeffs, jnp.array(x))
 
         # All values should be constant
-        assert values.shape == (100,)
+        assert values.shape == (100, )
         np.testing.assert_allclose(values, 1.2e-5)
 
 

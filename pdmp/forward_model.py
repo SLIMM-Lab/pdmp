@@ -11,6 +11,7 @@ from pdmp import logger
 import jax
 import jax.numpy as jnp
 
+
 class Model:
     """Base class for the forward model"""
 
@@ -93,7 +94,11 @@ class Model:
 class PiecewiseConstantModel(Model):
     """    Forward model for deformation of a 1d bar with piecewise constant Young's modulus."""
 
-    def __init__(self, F: np.ndarray, n_params: int, x_obs: np.ndarray, field=None):
+    def __init__(self,
+                 F: np.ndarray,
+                 n_params: int,
+                 x_obs: np.ndarray,
+                 field=None):
         """Initialize the model
 
         Args:
@@ -113,7 +118,8 @@ class PiecewiseConstantModel(Model):
         else:
             self.n_params = n_params  # Number of parameters
         if self.n_params is None:
-            raise ValueError("Either n_params or field must define parameter dimension.")
+            raise ValueError(
+                "Either n_params or field must define parameter dimension.")
 
     def _midpoints(self) -> np.ndarray:
         """Return midpoints of the n_params equal sub-intervals of [0,1]."""
@@ -162,7 +168,8 @@ class PiecewiseConstantModel(Model):
         x = np.asarray(x, dtype=float)
         n = self.n_params
         if params.shape[0] != n:
-            raise ValueError(f"params must have length {n}, got {params.shape[0]}")
+            raise ValueError(
+                f"params must have length {n}, got {params.shape[0]}")
         if x.ndim != 1:
             raise ValueError("x must be a 1D array")
         if np.any((x < 0.0) | (x > 1.0)):
@@ -173,7 +180,10 @@ class PiecewiseConstantModel(Model):
         params_eff = self._effective_params(params)
         return params_eff[I - 1]
 
-    def eval(self, params: np.ndarray, x: np.ndarray = None, idx: int = 0) -> np.ndarray:
+    def eval(self,
+             params: np.ndarray,
+             x: np.ndarray = None,
+             idx: int = 0) -> np.ndarray:
         """Analytic evaluation of u
 
         Formula for x in ((I-1)/n, I/n], with I = ceil(x*n), n = number of parameters:
@@ -186,7 +196,9 @@ class PiecewiseConstantModel(Model):
         params_eff = self._effective_params(params)
         n = self.n_params
         if params_eff.shape[0] != n:
-            raise ValueError("effective params must be a vector of length n_params for analytic evaluation")
+            raise ValueError(
+                "effective params must be a vector of length n_params for analytic evaluation"
+            )
         I = np.ceil(x * n).astype(int)
         np.clip(I, 1, n, out=I)
         inv_p = 1.0 / params_eff
@@ -195,7 +207,10 @@ class PiecewiseConstantModel(Model):
         final_term = (x - (I - 1) / n) / params_eff[I - 1]
         return self.F_vals[idx] * (base_sum + final_term)
 
-    def eval_grad(self, params: np.ndarray, x: np.ndarray = None, idx: int = 0) -> np.ndarray:
+    def eval_grad(self,
+                  params: np.ndarray,
+                  x: np.ndarray = None,
+                  idx: int = 0) -> np.ndarray:
         """Analytic gradient w.r.t. model parameters (coefficients).
 
         Internally, the analytic formulas are expressed w.r.t. the effective piecewise-constant
@@ -211,7 +226,9 @@ class PiecewiseConstantModel(Model):
         params_eff = self._effective_params(params)
         n = self.n_params
         if params_eff.shape[0] != n:
-            raise ValueError("effective params must be a vector of length n_params for analytic gradient")
+            raise ValueError(
+                "effective params must be a vector of length n_params for analytic gradient"
+            )
         m = x.size
         I = np.ceil(x * n).astype(int)
         np.clip(I, 1, n, out=I)
@@ -224,13 +241,17 @@ class PiecewiseConstantModel(Model):
             stop = Ii - 1
             if stop > 0:
                 G_eff[row, :stop] = base_prefix[:stop]
-            G_eff[row, Ii - 1] = -(x[row] - (Ii - 1) / n) / (params_eff[Ii - 1]**2)
+            G_eff[row,
+                  Ii - 1] = -(x[row] - (Ii - 1) / n) / (params_eff[Ii - 1]**2)
         G_eff *= Fval
         # Chain rule to parameters: J = ∂p/∂a = Φ(mid)
         J = self._J_params_eff()
         return G_eff @ J
 
-    def eval_hessian(self, params: np.ndarray, x: np.ndarray = None, idx: int = 0) -> np.ndarray:
+    def eval_hessian(self,
+                     params: np.ndarray,
+                     x: np.ndarray = None,
+                     idx: int = 0) -> np.ndarray:
         """Analytic Hessian w.r.t. model parameters (coefficients).
 
         With p = Φ(mid) @ a linear in a, the Hessian transforms as:
@@ -244,7 +265,9 @@ class PiecewiseConstantModel(Model):
         params_eff = self._effective_params(params)
         n = self.n_params
         if params_eff.shape[0] != n:
-            raise ValueError("effective params must be a vector of length n_params for analytic Hessian")
+            raise ValueError(
+                "effective params must be a vector of length n_params for analytic Hessian"
+            )
         m = x.size
         I = np.ceil(x * n).astype(int)
         np.clip(I, 1, n, out=I)
@@ -254,8 +277,10 @@ class PiecewiseConstantModel(Model):
         Fval = self.F_vals[idx]
         for row, Ii in enumerate(I):
             if Ii - 1 > 0:
-                H_eff[row, :Ii - 1, :Ii - 1] = np.diag(2.0 / n * inv_p3[:Ii - 1])
-            H_eff[row, Ii - 1, Ii - 1] = 2.0 * (x[row] - (Ii - 1) / n) * inv_p3[Ii - 1]
+                H_eff[row, :Ii - 1, :Ii - 1] = np.diag(2.0 / n *
+                                                       inv_p3[:Ii - 1])
+            H_eff[row, Ii - 1,
+                  Ii - 1] = 2.0 * (x[row] - (Ii - 1) / n) * inv_p3[Ii - 1]
         H_eff *= Fval
         # Transform to parameters via J^T H J
         J = self._J_params_eff()
@@ -474,7 +499,8 @@ def build_sensor_interpolants(fe, sensors, location_fn_map, tol=1e-8):
 
         # Resolve location_fn for this sensor group
         if "location_fn" not in spec:
-            raise ValueError(f"Sensor '{spec['name']}' must define a 'location_fn' key.")
+            raise ValueError(
+                f"Sensor '{spec['name']}' must define a 'location_fn' key.")
         loc = spec["location_fn"]
         if callable(loc):
             location_fn = loc
@@ -505,7 +531,8 @@ def build_sensor_interpolants(fe, sensors, location_fn_map, tol=1e-8):
         elif "point" in spec:
             points = np.asarray(spec["point"], dtype=float)[None, :]
         else:
-            raise ValueError(f"Sensor '{spec['name']}' must define 'point' or 'points'.")
+            raise ValueError(
+                f"Sensor '{spec['name']}' must define 'point' or 'points'.")
 
         n_points = points.shape[0]
         all_node_ids = []
@@ -558,7 +585,9 @@ def face_interpolation_weights(point, coords, tol):
         return None
     if len(coords) == 4:
         return quad_bilinear_weights(point, coords, tol)
-    raise ValueError(f"Unsupported face with {len(coords)} nodes for interpolation.")
+    raise ValueError(
+        f"Unsupported face with {len(coords)} nodes for interpolation.")
+
 
 def quad_bilinear_weights(point, quad_coords, tol):
     """Bilinear interpolation weights for a planar quad face (4 nodes).
@@ -602,7 +631,7 @@ def quad_bilinear_weights(point, quad_coords, tol):
         return np.array([np.dot(d, e1), np.dot(d, e2)])
 
     nodes_2d = np.array([to_2d(quad_coords[i]) for i in range(4)])  # (4, 2)
-    point_2d = to_2d(point)                                           # (2,)
+    point_2d = to_2d(point)  # (2,)
 
     # ── Determine local (s, t) coordinates for each mesh node ────────────────
     # We fit the bilinear map  x(s,t) = sum_i N_i(s,t) * x_i  by finding the
@@ -615,7 +644,7 @@ def quad_bilinear_weights(point, quad_coords, tol):
         return None
 
     # Map each node to its local coordinate in [-1, +1]^2
-    nodes_st = 2.0 * (nodes_2d - mins) / span - 1.0   # (4, 2)
+    nodes_st = 2.0 * (nodes_2d - mins) / span - 1.0  # (4, 2)
     # Round to ±1 to avoid floating-point drift at corners
     nodes_st = np.clip(nodes_st, -1.0, 1.0)
     s_nodes = nodes_st[:, 0]
@@ -626,7 +655,8 @@ def quad_bilinear_weights(point, quad_coords, tol):
 
     # ── Check the point is inside [-1,+1]^2 (with tolerance) ─────────────────
     boundary_tol = max(tol, 1e-6)
-    if np.abs(point_st[0]) > 1.0 + boundary_tol or np.abs(point_st[1]) > 1.0 + boundary_tol:
+    if np.abs(point_st[0]) > 1.0 + boundary_tol or np.abs(
+            point_st[1]) > 1.0 + boundary_tol:
         return None
     point_st = np.clip(point_st, -1.0, 1.0)
     s, t = point_st
@@ -634,6 +664,7 @@ def quad_bilinear_weights(point, quad_coords, tol):
     # ── Evaluate bilinear shape functions ─────────────────────────────────────
     weights = 0.25 * (1.0 + s_nodes * s) * (1.0 + t_nodes * t)
     return weights
+
 
 def point_in_triangle(point, tri, tol):
     v0 = tri[1] - tri[0]
@@ -661,8 +692,10 @@ def point_in_triangle(point, tri, tol):
     u = (dot11 * dot02 - dot01 * dot12) * inv_denom
     v = (dot00 * dot12 - dot01 * dot02) * inv_denom
     w = 1.0 - u - v
-    inside = (u >= -tol) and (v >= -tol) and (w >= -tol) and (u + v <= 1.0 + tol)
+    inside = (u >= -tol) and (v >= -tol) and (w >= -tol) and (u + v
+                                                              <= 1.0 + tol)
     return inside, (w, u, v)  # weights for tri[0], tri[1], tri[2] respectively
+
 
 def evaluate_sensor_displacements(sol, interpolants):
     """Evaluate displacements at sensors based on precomputed interpolants.
@@ -762,25 +795,34 @@ class JaxFemModel(Model):
         Default: [{"name": "sensor_left_center", "location_fn": "side_faces",
                    "point": [0, 0.5*d_y, 0.5*d_z]}]
     """
-    def __init__(self, d_x: float, d_y: float, d_z: float, ele_type: str = 'HEX8', nu: float = 0.3, h: float = 0.5,
-                 indenter_loc: float = None, traction=None, total_load=None, n_params: int = 1,
-                 field=None, sensors=None):
-        super().__init__()
 
-        # todo: remove obs_loc and d_obs in favor of sensors for specifying observation setup
+    def __init__(self,
+                 d_x: float,
+                 d_y: float,
+                 d_z: float,
+                 ele_type: str = 'HEX8',
+                 nu: float = 0.3,
+                 h: float = 0.5,
+                 indenter_loc: float = None,
+                 traction=None,
+                 total_load=None,
+                 n_params: int = 1,
+                 field=None,
+                 sensors=None):
+        super().__init__()
 
         if traction is not None and total_load is not None:
             raise ValueError(
                 "Cannot specify both 'traction' and 'total_load'. "
                 "Use 'traction' for a direct traction vector or "
-                "'total_load' for a total force divided by surface area."
-            )
+                "'total_load' for a total force divided by surface area.")
 
         # Mutable list so the get_surface_maps() closure sees updates
         if traction is not None:
             _traction = list(traction)
         elif total_load is not None:
-            _traction = [0., 0., 0.]  # placeholder; computed after Problem construction
+            _traction = [0., 0., 0.
+                         ]  # placeholder; computed after Problem construction
         else:
             _traction = [0., .015, 0.]
 
@@ -802,28 +844,32 @@ class JaxFemModel(Model):
         from jax_fem.generate_mesh import get_meshio_cell_type, Mesh, box_mesh_gmsh
 
         class LinearElasticity(Problem):
+
             def custom_init(self):
                 self.fe = self.fes[0]
 
             def get_tensor_map(self):
+
                 def stress(u_grad, E):
                     E_rho = E * 1.
                     mu = E_rho / (2. * (1. + nu))
                     lmbda = E_rho * nu / ((1 + nu) * (1 - 2 * nu))
                     epsilon = 0.5 * (u_grad + u_grad.T)
-                    sigma = lmbda * jnp.trace(epsilon) * jnp.eye(self.dim) + 2 * mu * epsilon
+                    sigma = lmbda * jnp.trace(epsilon) * jnp.eye(
+                        self.dim) + 2 * mu * epsilon
                     return sigma
 
                 return stress
 
             def get_surface_maps(self):
+
                 def surface_map(u, x):
                     return jnp.array(_traction)
 
                 return [surface_map]
 
             def set_params(self, params):
-                E  = params[0]
+                E = params[0]
                 self.internal_vars = [E]
 
         def zero_dirichlet_val(point):
@@ -833,7 +879,8 @@ class JaxFemModel(Model):
             return jnp.isclose(point[2], 0., atol=1e-5)
 
         def indenter(point):
-            return (point[2] > indenter_loc) * jnp.isclose(point[1], d_y, atol=1e-5)
+            return (point[2] > indenter_loc) * jnp.isclose(
+                point[1], d_y, atol=1e-5)
             # return ((point[0] - d_x / 2.) ** 2 + (point[2] - d_z - 0.75) ** 2 > 1.8
             #         * jnp.isclose(point[1], d_y, atol=1e-5))
 
@@ -847,9 +894,10 @@ class JaxFemModel(Model):
                     jnp.isclose(point[1], d_y, atol=1e-5))
 
         dirichlet_bc_info = [
-            [bottom_face, bottom_face, bottom_face], # location
-            [0,                  1,                  2],   # dof
-            [zero_dirichlet_val, zero_dirichlet_val, zero_dirichlet_val] # value
+            [bottom_face, bottom_face, bottom_face],  # location
+            [0, 1, 2],  # dof
+            [zero_dirichlet_val, zero_dirichlet_val,
+             zero_dirichlet_val]  # value
         ]
 
         location_fns = [indenter]
@@ -864,27 +912,34 @@ class JaxFemModel(Model):
         # Use provided sensors or default to a single sensor on the side faces todo: remove backwards compatibility
         if sensors is None:
             sensors = [
-                {"name": "sensor_left_center", "location_fn": "side_faces",
-                 "point": np.array([0, 0.5*d_y, 0.5*d_z])},
+                {
+                    "name": "sensor_left_center",
+                    "location_fn": "side_faces",
+                    "point": np.array([0, 0.5 * d_y, 0.5 * d_z])
+                },
             ]
 
         data_dir = os.path.join(os.path.dirname(__file__), 'data')
         cell_type = get_meshio_cell_type(ele_type)
-        n_x = int(d_x/h)
-        n_y = int(d_y/h)
-        n_z = int(d_z/h)
-        meshio_mesh = box_mesh_gmsh(
-            Nx=n_x, Ny=n_y, Nz=n_z,
-            domain_x=d_x, domain_y=d_y, domain_z=d_z,
-            data_dir=data_dir, ele_type=ele_type
-        )
+        n_x = int(d_x / h)
+        n_y = int(d_y / h)
+        n_z = int(d_z / h)
+        meshio_mesh = box_mesh_gmsh(Nx=n_x,
+                                    Ny=n_y,
+                                    Nz=n_z,
+                                    domain_x=d_x,
+                                    domain_y=d_y,
+                                    domain_z=d_z,
+                                    data_dir=data_dir,
+                                    ele_type=ele_type)
         mesh = Mesh(meshio_mesh.points, meshio_mesh.cells_dict[cell_type])
 
-        self.problem = LinearElasticity(
-            mesh, vec=3, dim=3, ele_type=ele_type,
-            dirichlet_bc_info=dirichlet_bc_info,
-            location_fns=location_fns
-        )
+        self.problem = LinearElasticity(mesh,
+                                        vec=3,
+                                        dim=3,
+                                        ele_type=ele_type,
+                                        dirichlet_bc_info=dirichlet_bc_info,
+                                        location_fns=location_fns)
 
         # Derive traction from total load and computed surface area
         if total_load is not None:
@@ -904,10 +959,10 @@ class JaxFemModel(Model):
             self._surface_area = surface_area
             logger.info(
                 f"total_load={total_load.tolist()}, surface_area={surface_area:.6f}, "
-                f"traction={list(_traction)}"
-            )
+                f"traction={list(_traction)}")
 
-        self.sensor_interpolants = build_sensor_interpolants(self.problem.fe, sensors, location_fn_map) if sensors else []
+        self.sensor_interpolants = build_sensor_interpolants(
+            self.problem.fe, sensors, location_fn_map) if sensors else []
 
         # Use UMFPACK (direct solver) for the adjoint.  The default JAX BiCGStab
         # starts from a zero initial guess and can hit a numerical breakdown
@@ -916,11 +971,13 @@ class JaxFemModel(Model):
         # UMFPACK is a direct sparse solver and is unconditionally robust here.
         # might need to have two wrappers for problem bc umfpack does not scale well with dofs
         # BiCGStab only caused problems at the MAP so far, expected to work for the rest of domain
-        self.fwd_pred = ad_wrapper(self.problem, adjoint_solver_options={"umfpack_solver": {}})
+        self.fwd_pred = ad_wrapper(
+            self.problem, adjoint_solver_options={"umfpack_solver": {}})
 
         # total observed dofs = total point-wise displacements from all sensors
         sample_sol = jnp.zeros((self.problem.fe.num_total_nodes, 3))
-        sample_readings = evaluate_sensor_displacements(sample_sol, self.sensor_interpolants)
+        sample_readings = evaluate_sensor_displacements(
+            sample_sol, self.sensor_interpolants)
         self._d_obs = sum(int(r["u"].size) for r in sample_readings)
 
     @override
@@ -945,7 +1002,8 @@ class JaxFemModel(Model):
         # Map parameters to material property field
         if self.field is None:
             # Simple broadcast: scalar/global params to per-cell/quadrature field
-            param_field = params * jnp.ones((self.problem.fe.num_cells, self.problem.fe.num_quads))
+            param_field = params * jnp.ones(
+                (self.problem.fe.num_cells, self.problem.fe.num_quads))
         else:
             # Evaluate random field at physical quadrature points
             # physical_quad_points shape: (num_cells, num_quads, spatial_dim)
@@ -953,20 +1011,27 @@ class JaxFemModel(Model):
 
             # Flatten to evaluate all quadrature points at once
             # Shape: (num_cells * num_quads, spatial_dim)
-            quad_coords_flat = physical_quad_points.reshape(-1, physical_quad_points.shape[-1])
+            quad_coords_flat = physical_quad_points.reshape(
+                -1, physical_quad_points.shape[-1])
 
             # Evaluate field at all quadrature points
-            field_values_flat = self.field.evaluate(params, quad_coords_flat)  # (num_cells * num_quads,)
+            field_values_flat = self.field.evaluate(
+                params, quad_coords_flat)  # (num_cells * num_quads,)
 
             # Reshape back to (num_cells, num_quads)
-            param_field = field_values_flat.reshape(self.problem.fe.num_cells, self.problem.fe.num_quads)
+            param_field = field_values_flat.reshape(self.problem.fe.num_cells,
+                                                    self.problem.fe.num_quads)
 
         sol_list = self.fwd_pred([param_field])
-        sensor_readings = evaluate_sensor_displacements(sol_list[0], self.sensor_interpolants)
+        sensor_readings = evaluate_sensor_displacements(
+            sol_list[0], self.sensor_interpolants)
         u_list = [jnp.ravel(reading["u"]) for reading in sensor_readings]
         return jnp.concatenate(u_list, axis=0) if u_list else jnp.array([])
 
-    def eval(self, params: np.ndarray, idx: int = 0, save_dir: str = None) -> np.ndarray:  # noqa: D401
+    def eval(self,
+             params: np.ndarray,
+             idx: int = 0,
+             save_dir: str = None) -> np.ndarray:  # noqa: D401
         """Evaluate observed displacement components.
 
         Returns the concatenated vector of per-point sensor displacements.
@@ -979,13 +1044,16 @@ class JaxFemModel(Model):
         # Optionally still write full-field VTK for debugging
         # Recompute with full field to save; this keeps eval() side-effects
         if self.field is None:
-            param_field = theta * jnp.ones((self.problem.fe.num_cells, self.problem.fe.num_quads))
+            param_field = theta * jnp.ones(
+                (self.problem.fe.num_cells, self.problem.fe.num_quads))
         else:
             # Use field evaluation (same as in _eval_obs)
             physical_quad_points = self.problem.physical_quad_points
-            quad_coords_flat = physical_quad_points.reshape(-1, physical_quad_points.shape[-1])
+            quad_coords_flat = physical_quad_points.reshape(
+                -1, physical_quad_points.shape[-1])
             field_values_flat = self.field.evaluate(theta, quad_coords_flat)
-            param_field = field_values_flat.reshape(self.problem.fe.num_cells, self.problem.fe.num_quads)
+            param_field = field_values_flat.reshape(self.problem.fe.num_cells,
+                                                    self.problem.fe.num_quads)
 
         if save_dir:
             sol_list = self.fwd_pred([param_field])
@@ -1023,12 +1091,13 @@ class JaxFemModel(Model):
         y, vjp_handle = jax.vjp(obs_fn, theta)
 
         def apply_vjp(v: np.ndarray) -> np.ndarray:
-            (g,) = vjp_handle(jnp.asarray(v))
+            (g, ) = vjp_handle(jnp.asarray(v))
             return np.asarray(g)
 
         return np.asarray(y), apply_vjp
 
-    def eval_vjp(self, params: np.ndarray, idx: int, v: np.ndarray) -> np.ndarray:
+    def eval_vjp(self, params: np.ndarray, idx: int,
+                 v: np.ndarray) -> np.ndarray:
         """Compute J^T v without forming J explicitly.
 
         Uses a single vjp built at the given ``params``. This is the most
@@ -1060,12 +1129,15 @@ class JaxFemModel(Model):
         # as the i-th row of the Jacobian.
         for i in range(d_obs):
             e_i = jnp.zeros_like(y).at[i].set(1.0)
-            (g_i,) = vjp_handle(e_i)
+            (g_i, ) = vjp_handle(e_i)
             J_rows.append(g_i)
         J = jnp.stack(J_rows, axis=0)  # (d_obs, n_params)
         return np.asarray(J)
 
-    def eval_hessian(self, params: np.ndarray, idx: int = 0, h: float = 1e-5) -> np.ndarray:
+    def eval_hessian(self,
+                     params: np.ndarray,
+                     idx: int = 0,
+                     h: float = 1e-5) -> np.ndarray:
         """Finite difference approximation of the Hessian using eval_grad.
 
         Uses central differences: H[:, :, j] ≈ (J(x + h*e_j) - J(x - h*e_j)) / (2h)
@@ -1097,8 +1169,10 @@ class JaxFemModel(Model):
             params_plus[j] += h
             params_minus[j] -= h
 
-            J_plus = self.eval_grad(params_plus, idx)   # shape (d_obs, n_params)
-            J_minus = self.eval_grad(params_minus, idx)  # shape (d_obs, n_params)
+            J_plus = self.eval_grad(params_plus,
+                                    idx)  # shape (d_obs, n_params)
+            J_minus = self.eval_grad(params_minus,
+                                     idx)  # shape (d_obs, n_params)
 
             # H[:, :, j] = dJ/dθ_j
             hess[:, :, j] = (J_plus - J_minus) / (2 * h)
@@ -1164,15 +1238,25 @@ class JaxFemModel(Model):
                 elif "points" in sensor_spec:
                     sensor["points"] = np.array(sensor_spec["points"])
                 else:
-                    raise ValueError(f"Sensor '{sensor_spec['name']}' must define 'point' or 'points'")
+                    raise ValueError(
+                        f"Sensor '{sensor_spec['name']}' must define 'point' or 'points'"
+                    )
 
                 sensors.append(sensor)
 
         return cls(
-            d_x=d_x, d_y=d_y, d_z=d_z, indenter_loc=indenter_loc,
-            ele_type=ele_type, nu=nu, h=h,
-            traction=traction, total_load=total_load,
-            n_params=n_params, field=field, sensors=sensors,
+            d_x=d_x,
+            d_y=d_y,
+            d_z=d_z,
+            indenter_loc=indenter_loc,
+            ele_type=ele_type,
+            nu=nu,
+            h=h,
+            traction=traction,
+            total_load=total_load,
+            n_params=n_params,
+            field=field,
+            sensors=sensors,
         )
 
 
@@ -1211,14 +1295,29 @@ class RVEModel:
     """
 
     SUPPORTED_QUANTITIES = {
-        'avg_stress', 'avg_strain', 'cell_stresses', 'cell_strains',
-        'displacements', 'max_von_mises', 'max_stress', 'max_strain',
+        'avg_stress',
+        'avg_strain',
+        'cell_stresses',
+        'cell_strains',
+        'displacements',
+        'max_von_mises',
+        'max_stress',
+        'max_strain',
     }
 
-    def __init__(self, fibers, L=1.0, mesh_size=0.03, ele_type='TRI3',
-                 E_inf=30e3, E_fiber=200e3, nu_matrix=0.35, nu_fiber=0.2,
+    def __init__(self,
+                 fibers,
+                 L=1.0,
+                 mesh_size=0.03,
+                 ele_type='TRI3',
+                 E_inf=30e3,
+                 E_fiber=200e3,
+                 nu_matrix=0.35,
+                 nu_fiber=0.2,
                  eps_macro=(1e-3, 0.0, 0.0),
-                 quantities=None, msh_file=None, data_dir=None):
+                 quantities=None,
+                 msh_file=None,
+                 data_dir=None):
         from pdmp.rve_utils import (
             validate_fiber_placement,
             generate_multi_fiber_rve_mesh,
@@ -1259,19 +1358,27 @@ class RVEModel:
             if data_dir is None:
                 import tempfile
                 data_dir = tempfile.mkdtemp(prefix="rve_")
-            mesh, phys_tags = generate_multi_fiber_rve_mesh(
-                L, self.fibers, mesh_size, data_dir, ele_type=ele_type)
+            mesh, phys_tags = generate_multi_fiber_rve_mesh(L,
+                                                            self.fibers,
+                                                            mesh_size,
+                                                            data_dir,
+                                                            ele_type=ele_type)
 
         # Periodic constraints
         P_mat = build_periodic_pmat(mesh, L, vec=2)
 
         # Create jax-fem problem
         mat_props = dict(
-            E_matrix=E_inf, nu_matrix=nu_matrix,
-            E_aggregate=E_fiber, nu_aggregate=nu_fiber,
+            E_matrix=E_inf,
+            nu_matrix=nu_matrix,
+            E_aggregate=E_fiber,
+            nu_aggregate=nu_fiber,
         )
         self._problem = LinearElasticRVE(
-            mesh, vec=2, dim=2, ele_type=ele_type,
+            mesh,
+            vec=2,
+            dim=2,
+            ele_type=ele_type,
             additional_info=(phys_tags, mat_props),
         )
         self._problem.P_mat = P_mat
@@ -1289,9 +1396,12 @@ class RVEModel:
         self._is_fiber_q = jnp.array(
             np.broadcast_to(is_fiber[:, None], (nc, nq)))
 
-        self._nu_q = jnp.array(np.where(
-            is_fiber[:, None], nu_fiber, nu_matrix,
-        ) * np.ones((nc, nq)))
+        self._nu_q = jnp.array(
+            np.where(
+                is_fiber[:, None],
+                nu_fiber,
+                nu_matrix,
+            ) * np.ones((nc, nq)))
 
         self._eps_macro_q = make_eps_macro_q(self.eps_macro_voigt, nc, nq)
 
@@ -1334,11 +1444,12 @@ class RVEModel:
         sol = self._fwd_pred(fem_params)[0]
 
         result = {}
-        needs_stress = any(q in self.quantities for q in
-                          ['avg_stress', 'cell_stresses', 'max_von_mises',
-                           'max_stress'])
-        needs_strain = any(q in self.quantities for q in
-                          ['avg_strain', 'cell_strains', 'max_strain'])
+        needs_stress = any(
+            q in self.quantities for q in
+            ['avg_stress', 'cell_stresses', 'max_von_mises', 'max_stress'])
+        needs_strain = any(
+            q in self.quantities
+            for q in ['avg_strain', 'cell_strains', 'max_strain'])
 
         sigma_avg = sigma_cell = None
         if needs_stress:
@@ -1347,8 +1458,7 @@ class RVEModel:
 
         eps_cell = None
         if needs_strain:
-            eps_cell = self._problem.compute_avg_strain(
-                sol, self._eps_macro_q)
+            eps_cell = self._problem.compute_avg_strain(sol, self._eps_macro_q)
 
         for q in self.quantities:
             if q == 'avg_stress':
@@ -1360,8 +1470,8 @@ class RVEModel:
                 JxW = self._problem.fe.JxW
                 cell_vols = jnp.sum(JxW, axis=1)
                 total_vol = jnp.sum(cell_vols)
-                avg = jnp.sum(
-                    eps_qp_avg * cell_vols[:, None, None], axis=0) / total_vol
+                avg = jnp.sum(eps_qp_avg * cell_vols[:, None, None],
+                              axis=0) / total_vol
                 result[q] = np.array(avg)
             elif q == 'cell_stresses':
                 result[q] = np.array(sigma_cell)
@@ -1395,10 +1505,12 @@ class RVEModel:
             nu_matrix=config.get('nu_matrix', 0.35),
             nu_fiber=config.get('nu_fiber', 0.2),
             eps_macro=eps_macro,
-            quantities=config.get('quantities', ['avg_stress', 'max_von_mises']),
+            quantities=config.get('quantities',
+                                  ['avg_stress', 'max_von_mises']),
             msh_file=config.get('msh_file', None),
             data_dir=config.get('data_dir', None),
         )
+
 
 if __name__ == '__main__':
 
@@ -1415,7 +1527,8 @@ if __name__ == '__main__':
     n_params = 2
     model = PiecewiseConstantModel(F, n_params, x_obs)
     print(
-        model.eval_E(np.array([0.1, 0.2]), np.array([0.1, 0.2, 0.3, 0.6, 1.1])))
+        model.eval_E(np.array([0.1, 0.2]), np.array([0.1, 0.2, 0.3, 0.6,
+                                                     1.1])))
 
     # x = np.linspace(0, 1, 100)
     x = np.array([0.1, 0.2, 0.3, 0.6, 1.0])
@@ -1475,4 +1588,3 @@ if __name__ == '__main__':
     fig, ax = plt.subplots(1, 1, figsize=(10, 5))
     ax.contourf(X, Y, Z, 100)
     plt.show()
-

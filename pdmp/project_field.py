@@ -109,7 +109,9 @@ class ConstantBasis(Basis):
                 self.spatial_dim_ = self.domain_.shape[0]
 
         if self.domain_.shape[1] != 2:
-            raise ValueError(f"Domain must have shape (spatial_dim, 2), got {self.domain_.shape}")
+            raise ValueError(
+                f"Domain must have shape (spatial_dim, 2), got {self.domain_.shape}"
+            )
 
         # Support (stored as 1D interval for compatibility with base class)
         # For multi-dim, this is a simplified representation
@@ -144,12 +146,15 @@ class ConstantBasis(Basis):
             n_points = x.shape[0]
             # For 1D, this is fine
             if self.spatial_dim_ != 1:
-                raise ValueError(f"Expected {self.spatial_dim_}D points, got 1D array")
+                raise ValueError(
+                    f"Expected {self.spatial_dim_}D points, got 1D array")
         else:
             n_points = x.shape[0]
             # Check spatial dimension matches
             if x.shape[1] != self.spatial_dim_:
-                raise ValueError(f"Expected points with spatial_dim={self.spatial_dim_}, got shape {x.shape}")
+                raise ValueError(
+                    f"Expected points with spatial_dim={self.spatial_dim_}, got shape {x.shape}"
+                )
 
         if i is None:
             # Return shape (n_points, 1) - one basis function
@@ -158,7 +163,9 @@ class ConstantBasis(Basis):
             # Return shape (n_points,) - the single basis function values
             return np.ones(n_points)
         else:
-            raise ValueError(f"ConstantBasis only has 1 basis function (index 0), got index {i}")
+            raise ValueError(
+                f"ConstantBasis only has 1 basis function (index 0), got index {i}"
+            )
 
     def get_support(self, i: int = None) -> np.ndarray:
         """Get the support of the constant basis function.
@@ -175,7 +182,9 @@ class ConstantBasis(Basis):
         elif i == 0:
             return self.support_[0]
         else:
-            raise ValueError(f"ConstantBasis only has 1 basis function (index 0), got index {i}")
+            raise ValueError(
+                f"ConstantBasis only has 1 basis function (index 0), got index {i}"
+            )
 
     def get_norms(self) -> np.ndarray:
         """Get the norm of the constant basis function.
@@ -212,15 +221,16 @@ class PiecewiseConstantBasis(Basis):
         for i in range(self.n_):
             self.basis_.append(
                 lambda x, i=i: np.piecewise(x, [
-                    x < (i / self.n_), x == (i / self.n_), ((i / self.n_) < x) &
-                    (x < ((i + 1) / self.n_)), x == ((i + 1) / self.n_), x > (
-                        (i + 1) / self.n_)
+                    x < (i / self.n_), x == (i / self.n_),
+                    ((i / self.n_) < x) & (x < ((i + 1) / self.n_)), x == (
+                        (i + 1) / self.n_), x > ((i + 1) / self.n_)
                 ], [0, 0.5, 1, 0.5, 0]))
 
         self.support_[:, 0] = np.linspace(interval[0], interval[1], n + 1)[:-1]
         self.support_[:, 1] = np.linspace(interval[0], interval[1], n + 1)[1:]
 
-        self.norms_ = np.diag(np.sqrt((interval[1] - interval[0]) / n) * np.ones(n))
+        self.norms_ = np.diag(
+            np.sqrt((interval[1] - interval[0]) / n) * np.ones(n))
 
     def __call__(self, x: np.ndarray, i: int = None) -> np.ndarray:
         """Evaluate the piecewise constant basis functions at given points.
@@ -261,6 +271,7 @@ class PiecewiseConstantBasis(Basis):
 
 
 class NormPiecewiseConstantBasis(PiecewiseConstantBasis):
+
     def __init__(self, n: int, interval: Tuple[float, float]):
         """Initialize the Normalized Piecewise Constant Basis class.
 
@@ -282,9 +293,10 @@ class NormPiecewiseConstantBasis(PiecewiseConstantBasis):
             np.ndarray: The evaluated basis functions.
         """
         if i is None:
-            return np.array([basis(x) for basis in self.basis_]).T / np.diag(self.norms_)
+            return np.array([basis(x) for basis in self.basis_]).T / np.diag(
+                self.norms_)
         else:
-            return self.basis_[i](x) / self.norms_[i,i]
+            return self.basis_[i](x) / self.norms_[i, i]
 
     def get_norms(self) -> np.ndarray:
         """Get the norms of the normalized piecewise constant basis functions.
@@ -354,7 +366,8 @@ def compute_coefficients(kernel: Callable[
                      np.min([interval[1], basis.get_support(i)[1]]))
             int_y = (np.max([interval[0], basis.get_support(j)[0]]),
                      np.min([interval[1], basis.get_support(j)[1]]))
-            coefficients[i, j], tol = integrate.nquad(integrand, [int_x, int_y],
+            coefficients[i, j], tol = integrate.nquad(integrand,
+                                                      [int_x, int_y],
                                                       args=(i, j))
             logger.debug(f"     {coefficients[i, j]:.4}")
 
@@ -368,12 +381,13 @@ def compute_coefficients(kernel: Callable[
 
     return coefficients_norm
 
+
 def compute_coefficients_norm(kernel: Callable[
     [np.ndarray, np.ndarray, float, float], float],
-                         basis: Basis,
-                         interval: Tuple[float, float],
-                         weights: Callable[[np.ndarray], float] = None,
-                         kernel_params: Dict = None) -> np.ndarray:
+                              basis: Basis,
+                              interval: Tuple[float, float],
+                              weights: Callable[[np.ndarray], float] = None,
+                              kernel_params: Dict = None) -> np.ndarray:
     """Compute the coefficients for the given basis functions using the specified kernel.
 
     Args:
@@ -396,7 +410,6 @@ def compute_coefficients_norm(kernel: Callable[
         return kernel(x, y, **kernel_params) * basis(x, p) * basis(
             y, q) * weights(x) * weights(y)
 
-
     coefficients = np.zeros((n, n))
     coefficients_norm = np.zeros((n, n))
 
@@ -408,25 +421,27 @@ def compute_coefficients_norm(kernel: Callable[
                      np.min([interval[1], basis.get_support(i)[1]]))
             int_y = (np.max([interval[0], basis.get_support(j)[0]]),
                      np.min([interval[1], basis.get_support(j)[1]]))
-            coefficients[i, j], tol = integrate.nquad(integrand, [int_x, int_y],
+            coefficients[i, j], tol = integrate.nquad(integrand,
+                                                      [int_x, int_y],
                                                       args=(i, j))
             logger.debug(f"     {coefficients[i, j]:.4}")
 
     # normalize the coefficients
     for i in range(n):
         for j in range(i, n):
-            coefficients_norm[i, j] = coefficients_norm[j, i] = coefficients[i, j]
-
+            coefficients_norm[i, j] = coefficients_norm[j, i] = coefficients[i,
+                                                                             j]
 
     logger.debug(f"Normalized coefficientes:\n {coefficients_norm}")
 
     return coefficients_norm
 
-def compute_cell_average_covariance(basis: PiecewiseConstantBasis,
-                                   sigma: float = 1.0,
-                                   ell: float = 1.0,
-                                   return_correlation: bool = True) -> np.ndarray:
 
+def compute_cell_average_covariance(
+        basis: PiecewiseConstantBasis,
+        sigma: float = 1.0,
+        ell: float = 1.0,
+        return_correlation: bool = True) -> np.ndarray:
     """Compute the covariance matrix for cell-averaged basis functions with a squared exponential kernel.
     Args:
         basis: The piecewise constant basis functions.
@@ -447,13 +462,17 @@ def compute_cell_average_covariance(basis: PiecewiseConstantBasis,
             term2 = special.erf((b - d) / (np.sqrt(2) * ell))
             term3 = special.erf((a - c) / (np.sqrt(2) * ell))
             term4 = special.erf((a - d) / (np.sqrt(2) * ell))
-            cov[i, j] = cov[j, i] = (sigma**2 * ell * np.sqrt(np.pi / 2) / ((b - a) * (d - c))) * (term1 - term2 - term3 + term4)
+            cov[i, j] = cov[j,
+                            i] = (sigma**2 * ell * np.sqrt(np.pi / 2) /
+                                  ((b - a) *
+                                   (d - c))) * (term1 - term2 - term3 + term4)
     if return_correlation:
         stddev = np.sqrt(np.diag(cov))
         corr = cov / np.outer(stddev, stddev)
         return corr
     else:
         return cov
+
 
 def monte_carlo_2d(func: Callable[[np.ndarray, np.ndarray], np.ndarray],
                    x_lim: Tuple[float, float],
@@ -500,6 +519,7 @@ def get_gaussian_random_field_projection_from_dict(
 
     return mean, cov
 
+
 def get_gaussian_random_field_projection_norm_from_dict(
         config: Dict[str, Any], **kwargs) -> tuple[np.ndarray, np.ndarray]:
     """Load the projection configuration.
@@ -517,9 +537,9 @@ def get_gaussian_random_field_projection_norm_from_dict(
     d = config['dim']
     mean = np.ones(d) * config['mean']
     cov = compute_coefficients_norm(squared_exponential_kernel,
-                               NormPiecewiseConstantBasis(d, interval),
-                               interval,
-                               kernel_params=kernel_params)
+                                    NormPiecewiseConstantBasis(d, interval),
+                                    interval,
+                                    kernel_params=kernel_params)
 
     return mean, cov
 
@@ -535,16 +555,16 @@ if __name__ == '__main__':
 
     print("Computing coefficients numerically...")
     coefficients_numerical = compute_coefficients(squared_exponential_kernel,
-                                                basis,
-                                                interval,
-                                                kernel_params=kernel_params)
+                                                  basis,
+                                                  interval,
+                                                  kernel_params=kernel_params)
 
     print("Computing coefficients analytically...")
     # coefficients_new = compute_coefficients_analytical(basis, interval, **kernel_params)
     coefficients_new = compute_coefficients_norm(squared_exponential_kernel,
-                                                  basis_2,
-                                                  interval,
-                                                  kernel_params=kernel_params)
+                                                 basis_2,
+                                                 interval,
+                                                 kernel_params=kernel_params)
 
     print("\nNumerical coefficients:")
     print(coefficients_numerical)
@@ -552,7 +572,9 @@ if __name__ == '__main__':
     print(coefficients_new)
     print("\nDifference (Numerical - Analytical):")
     print(coefficients_numerical - coefficients_new)
-    print(f"\nMax absolute difference: {np.max(np.abs(coefficients_numerical - coefficients_new)):.8f}")
+    print(
+        f"\nMax absolute difference: {np.max(np.abs(coefficients_numerical - coefficients_new)):.8f}"
+    )
 
     # Test the basis functions
     fig, axes = plt.subplots(2, 2, figsize=(15, 10))
@@ -572,8 +594,14 @@ if __name__ == '__main__':
     cov_numerical = Phi.T @ coefficients_numerical @ Phi
     cov_analytical = Phi_2.T @ coefficients_new @ Phi_2
 
-    axes[0, 1].plot(x_vals, np.diag(cov_numerical), label='Numerical', linestyle='--')
-    axes[0, 1].plot(x_vals, np.diag(cov_analytical), label='Analytical', linestyle='-')
+    axes[0, 1].plot(x_vals,
+                    np.diag(cov_numerical),
+                    label='Numerical',
+                    linestyle='--')
+    axes[0, 1].plot(x_vals,
+                    np.diag(cov_analytical),
+                    label='Analytical',
+                    linestyle='-')
     axes[0, 1].legend()
     axes[0, 1].set_title("Variance Function Comparison")
     axes[0, 1].set_xlabel("x")
@@ -584,7 +612,10 @@ if __name__ == '__main__':
     axes[1, 0].set_title("Numerical Coefficients")
     plt.colorbar(im1, ax=axes[1, 0])
 
-    im2 = axes[1, 1].imshow(coefficients_numerical, vmin=-1, vmax=1, cmap='RdBu_r')
+    im2 = axes[1, 1].imshow(coefficients_numerical,
+                            vmin=-1,
+                            vmax=1,
+                            cmap='RdBu_r')
     axes[1, 1].set_title("Analytical Coefficients")
     plt.colorbar(im2, ax=axes[1, 1])
 

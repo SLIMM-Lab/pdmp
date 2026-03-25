@@ -53,7 +53,7 @@ class TestConstantBasis:
         phi = basis(x, i=0)
 
         # Should return shape (n_points,)
-        assert phi.shape == (5,)
+        assert phi.shape == (5, )
         # All values should be 1
         np.testing.assert_array_equal(phi, np.ones(5))
 
@@ -104,7 +104,7 @@ class TestConstantBasis:
         values = field.evaluate(coeffs, x)
 
         # All values should be 3.0 (constant)
-        assert values.shape == (3,)
+        assert values.shape == (3, )
         np.testing.assert_allclose(values, 3.0)
 
     def test_gradient_computation(self):
@@ -141,7 +141,8 @@ class TestConstantBasis:
 
             # Norm should be sqrt(interval length)
             expected_norm = np.sqrt(interval[1] - interval[0])
-            np.testing.assert_almost_equal(basis.get_norms()[0, 0], expected_norm)
+            np.testing.assert_almost_equal(basis.get_norms()[0, 0],
+                                           expected_norm)
 
     def test_scalar_input(self):
         """Test evaluation with scalar input."""
@@ -164,7 +165,10 @@ class TestConstantBasis:
         field = JaxRandomFieldBase(basis=basis, coefficient_dist=dist)
 
         # Sample multiple times
-        samples = [field.coefficient_distribution.get_sample()[0] for _ in range(10000)]
+        samples = [
+            field.coefficient_distribution.get_sample()[0]
+            for _ in range(10000)
+        ]
 
         # Check that samples have approximately correct mean and std
         # Using looser tolerance for std since it has higher variance

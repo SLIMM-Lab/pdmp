@@ -42,10 +42,10 @@ import numpy as np
 
 from jax_fem.problem import Problem
 
-
 # ---------------------------------------------------------------------------
 # Shared base
 # ---------------------------------------------------------------------------
+
 
 class _PlaneStrainRVEBase(Problem):
     """Shared utilities for plane-strain RVE models."""
@@ -57,8 +57,8 @@ class _PlaneStrainRVEBase(Problem):
         -------
         u_grads : (num_cells, num_quads, vec, dim)
         """
-        u_grads = (jnp.take(sol, self.fe.cells, axis=0)[:, None, :, :, None]
-                   * self.fe.shape_grads[:, :, :, None, :])
+        u_grads = (jnp.take(sol, self.fe.cells, axis=0)[:, None, :, :, None] *
+                   self.fe.shape_grads[:, :, :, None, :])
         return jnp.sum(u_grads, axis=2)
 
     def set_params(self, params):
@@ -80,8 +80,8 @@ class _PlaneStrainRVEBase(Problem):
         u_grads = self._compute_u_grads(sol)
         eps_qp = 0.5 * (u_grads + jnp.swapaxes(u_grads, -1, -2)) + eps_macro_q
         JxW = self.fe.JxW
-        return (jnp.sum(eps_qp * JxW[:, :, None, None], axis=1)
-                / jnp.sum(JxW, axis=1)[:, None, None])
+        return (jnp.sum(eps_qp * JxW[:, :, None, None], axis=1) /
+                jnp.sum(JxW, axis=1)[:, None, None])
 
     def compute_avg_stress(self, sol, params):
         """Volume-averaged Cauchy stress over the RVE.
@@ -108,17 +108,18 @@ class _PlaneStrainRVEBase(Problem):
         sigma_qp = vmap_tensor_map(u_grads, *params)
 
         JxW = self.fe.JxW
-        sigma_cell = (jnp.sum(sigma_qp * JxW[:, :, None, None], axis=1)
-                      / jnp.sum(JxW, axis=1)[:, None, None])
-        sigma_avg = (jnp.sum(sigma_qp.reshape(-1, 2, 2)
-                             * JxW.reshape(-1)[:, None, None], axis=0)
-                     / jnp.sum(JxW))
+        sigma_cell = (jnp.sum(sigma_qp * JxW[:, :, None, None], axis=1) /
+                      jnp.sum(JxW, axis=1)[:, None, None])
+        sigma_avg = (jnp.sum(
+            sigma_qp.reshape(-1, 2, 2) * JxW.reshape(-1)[:, None, None],
+            axis=0) / jnp.sum(JxW))
         return sigma_avg, sigma_cell
 
 
 # ---------------------------------------------------------------------------
 # Linear elastic
 # ---------------------------------------------------------------------------
+
 
 class LinearElasticRVE(_PlaneStrainRVEBase):
     """2-D plane-strain RVE with isotropic linear elasticity.
@@ -186,6 +187,7 @@ class LinearElasticRVE(_PlaneStrainRVEBase):
 # J2 plasticity
 # ---------------------------------------------------------------------------
 
+
 class J2PlasticRVE(_PlaneStrainRVEBase):
     """2-D plane-strain RVE with J2 isotropic hardening.
 
@@ -233,8 +235,9 @@ class J2PlasticRVE(_PlaneStrainRVEBase):
         #   [4] eps_p_q       (nc, nq, 2, 2)
         #   [5] alpha_q       (nc, nq)
         #   [6] eps_macro_q   (nc, nq, 2, 2)
-        self.internal_vars = [E_q, nu_q, sigma_y_q, H_q,
-                              eps_p_q, alpha_q, eps_macro_q]
+        self.internal_vars = [
+            E_q, nu_q, sigma_y_q, H_q, eps_p_q, alpha_q, eps_macro_q
+        ]
 
     def get_tensor_map(self):
         tensor_map, _ = self.get_maps()
@@ -251,8 +254,8 @@ class J2PlasticRVE(_PlaneStrainRVEBase):
         update_int_vars_map returns (eps_p_new, alpha_new).
         """
 
-        def _return_mapping(u_grad, E, nu, sigma_y, H,
-                            eps_p_old, alpha_old, eps_macro):
+        def _return_mapping(u_grad, E, nu, sigma_y, H, eps_p_old, alpha_old,
+                            eps_macro):
             """J2 radial return for 2-D plane strain.
 
             Works in full 3-D stress space (sigma_zz != 0 for plane strain)
@@ -273,29 +276,29 @@ class J2PlasticRVE(_PlaneStrainRVEBase):
             # Out-of-plane elastic strain from plastic incompressibility
             eps_zz_e_trial = eps_p_old[0, 0] + eps_p_old[1, 1]
 
-            tr_eps_e = (eps_e_trial_2d[0, 0] + eps_e_trial_2d[1, 1]
-                        + eps_zz_e_trial)
+            tr_eps_e = (eps_e_trial_2d[0, 0] + eps_e_trial_2d[1, 1] +
+                        eps_zz_e_trial)
 
-            sigma_trial_2d = (lmbda * tr_eps_e * jnp.eye(2)
-                              + 2.0 * mu * eps_e_trial_2d)
+            sigma_trial_2d = (lmbda * tr_eps_e * jnp.eye(2) +
+                              2.0 * mu * eps_e_trial_2d)
             sigma_trial_zz = lmbda * tr_eps_e + 2.0 * mu * eps_zz_e_trial
 
-            sigma_hydro = (sigma_trial_2d[0, 0] + sigma_trial_2d[1, 1]
-                           + sigma_trial_zz) / 3.0
+            sigma_hydro = (sigma_trial_2d[0, 0] + sigma_trial_2d[1, 1] +
+                           sigma_trial_zz) / 3.0
 
             s_trial_2d = sigma_trial_2d - sigma_hydro * jnp.eye(2)
             s_trial_zz = sigma_trial_zz - sigma_hydro
 
             # s:s = s_xx^2 + s_yy^2 + s_zz^2 + 2*s_xy^2
-            s_norm_sq = (s_trial_2d[0, 0]**2 + s_trial_2d[1, 1]**2
-                         + s_trial_zz**2
-                         + 2.0 * s_trial_2d[0, 1]**2)
+            s_norm_sq = (s_trial_2d[0, 0]**2 + s_trial_2d[1, 1]**2 +
+                         s_trial_zz**2 + 2.0 * s_trial_2d[0, 1]**2)
             s_norm = jnp.sqrt(s_norm_sq + 1e-30)
 
             sqrt_2_3 = jnp.sqrt(2.0 / 3.0)
             f_trial = s_norm - sqrt_2_3 * (sigma_y + H * alpha_old)
 
-            delta_gamma = jnp.maximum(f_trial, 0.0) / (2.0 * mu + 2.0 / 3.0 * H)
+            delta_gamma = jnp.maximum(f_trial,
+                                      0.0) / (2.0 * mu + 2.0 / 3.0 * H)
 
             n_2d = s_trial_2d / s_norm
             eps_p_new = eps_p_old + delta_gamma * n_2d
@@ -304,16 +307,17 @@ class J2PlasticRVE(_PlaneStrainRVEBase):
 
             return sigma_2d, eps_p_new, alpha_new
 
-        def tensor_map(u_grad, E, nu, sigma_y, H,
-                       eps_p_old, alpha_old, eps_macro):
-            sigma, _, _ = _return_mapping(u_grad, E, nu, sigma_y, H,
-                                          eps_p_old, alpha_old, eps_macro)
+        def tensor_map(u_grad, E, nu, sigma_y, H, eps_p_old, alpha_old,
+                       eps_macro):
+            sigma, _, _ = _return_mapping(u_grad, E, nu, sigma_y, H, eps_p_old,
+                                          alpha_old, eps_macro)
             return sigma
 
-        def update_int_vars_map(u_grad, E, nu, sigma_y, H,
-                                eps_p_old, alpha_old, eps_macro):
-            _, eps_p_new, alpha_new = _return_mapping(
-                u_grad, E, nu, sigma_y, H, eps_p_old, alpha_old, eps_macro)
+        def update_int_vars_map(u_grad, E, nu, sigma_y, H, eps_p_old,
+                                alpha_old, eps_macro):
+            _, eps_p_new, alpha_new = _return_mapping(u_grad, E, nu, sigma_y,
+                                                      H, eps_p_old, alpha_old,
+                                                      eps_macro)
             return eps_p_new, alpha_new
 
         return tensor_map, update_int_vars_map

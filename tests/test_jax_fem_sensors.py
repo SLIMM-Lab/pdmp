@@ -25,10 +25,10 @@ from pdmp.forward_model import (
 )
 from pdmp.distributions import MultivariateNormal
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Unit tests for the low-level interpolation primitives
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def test_quad_weights_at_nodes():
     """At each corner node the corresponding weight must be 1 and all others 0."""
@@ -127,7 +127,9 @@ def test_quad_weights_interior_all_nonzero():
     which would assign zero weight to one node even for interior points.
     """
     print("=" * 70)
-    print("Unit test: quad_bilinear_weights — all 4 weights non-zero at interior")
+    print(
+        "Unit test: quad_bilinear_weights — all 4 weights non-zero at interior"
+    )
     print("=" * 70)
 
     quad = np.array([
@@ -156,7 +158,9 @@ def test_quad_weights_interior_all_nonzero():
         reconstructed = w @ quad[:, :2]
         assert np.allclose(reconstructed, p[:2], atol=1e-10), \
             f"Interior point {p}: reconstruction failed: got {reconstructed}"
-        print(f"  p={p[:2]}  weights={np.round(w,4)}  reconstructed={np.round(reconstructed,4)}  ✓")
+        print(
+            f"  p={p[:2]}  weights={np.round(w,4)}  reconstructed={np.round(reconstructed,4)}  ✓"
+        )
 
     print("✓ quad_weights_interior_all_nonzero passed!\n")
 
@@ -176,9 +180,10 @@ def test_quad_weights_off_plane_rejected():
     tol = 1e-8
 
     off_plane_points = [
-        np.array([0.5, 0.5, 0.1]),    # above face, inside projected boundary
+        np.array([0.5, 0.5, 0.1]),  # above face, inside projected boundary
         np.array([0.3, 0.3, -0.05]),  # below face
-        np.array([0.0, 0.49, 2.5]),   # the original bug case: on x=0 side face, z=2.5
+        np.array([0.0, 0.49,
+                  2.5]),  # the original bug case: on x=0 side face, z=2.5
     ]
 
     for p in off_plane_points:
@@ -193,7 +198,8 @@ def test_quad_weights_off_plane_rejected():
 def test_quad_weights_outside_face_rejected():
     """A coplanar point that lies outside the face boundary must return None."""
     print("=" * 70)
-    print("Unit test: quad_bilinear_weights rejects out-of-face coplanar points")
+    print(
+        "Unit test: quad_bilinear_weights rejects out-of-face coplanar points")
     print("=" * 70)
 
     quad = np.array([
@@ -205,7 +211,7 @@ def test_quad_weights_outside_face_rejected():
     tol = 1e-8
 
     outside_points = [
-        np.array([1.5, 0.5, 0.0]),   # outside in x
+        np.array([1.5, 0.5, 0.0]),  # outside in x
         np.array([0.5, -0.1, 0.0]),  # outside in y
         np.array([-0.1, 0.5, 0.0]),  # outside in x (negative)
     ]
@@ -238,14 +244,16 @@ def test_quad_weights_non_square_face():
     centre = np.array([1.0, 0.25, 1.0])
     w = quad_bilinear_weights(centre, quad, tol)
     assert w is not None
-    assert np.allclose(w, 0.25, atol=1e-10), f"Rectangle centre: expected all 0.25, got {w}"
+    assert np.allclose(
+        w, 0.25, atol=1e-10), f"Rectangle centre: expected all 0.25, got {w}"
     print(f"  rectangle centre weights = {w}  ✓")
 
     # Interior point (1.2, 0.1): all 4 weights non-zero
     p = np.array([1.2, 0.1, 1.0])
     w2 = quad_bilinear_weights(p, quad, tol)
     assert w2 is not None
-    assert np.all(w2 > tol), f"Rectangle interior: expected all weights > 0, got {w2}"
+    assert np.all(
+        w2 > tol), f"Rectangle interior: expected all weights > 0, got {w2}"
     reconstructed = w2 @ quad[:, :2]
     assert np.allclose(reconstructed, p[:2], atol=1e-10), \
         f"Rectangle interior: reconstruction failed: {reconstructed} != {p[:2]}"
@@ -290,6 +298,7 @@ def test_point_in_triangle_coplanarity():
 # Integration test: verify all-4-node contribution through a full FEM solve
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def test_interior_face_sensor_uses_all_four_nodes():
     """An interior face sensor must interpolate from all 4 nodes of its quad face.
 
@@ -302,20 +311,23 @@ def test_interior_face_sensor_uses_all_four_nodes():
     print("Integration test: interior face sensor uses all 4 nodes")
     print("=" * 70)
 
-    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field_dist = MultivariateNormal(mean=np.array([10.]),
+                                    cov=np.array([[2.**2]]))
     field = JaxConstantField(field_dist)
 
     # Place sensor strictly inside a top-face quad: x and y are not on any mesh
     # node (h=0.25 → nodes at 0, 0.25, 0.5, …).  x=0.1, y=0.1 falls in the
     # quad spanned by (0,0), (0.25,0), (0.25,0.25), (0,0.25).
-    sensors = [
-        {"name": "interior_top",
-         "location_fn": "top_face",
-         "point": np.array([0.1, 0.1, 2.5])}
-    ]
+    sensors = [{
+        "name": "interior_top",
+        "location_fn": "top_face",
+        "point": np.array([0.1, 0.1, 2.5])
+    }]
 
     model = JaxFemModel(
-        d_x=1.0, d_y=1.0, d_z=2.5,
+        d_x=1.0,
+        d_y=1.0,
+        d_z=2.5,
         h=0.25,
         n_params=1,
         field=field,
@@ -324,8 +336,8 @@ def test_interior_face_sensor_uses_all_four_nodes():
 
     interp = model.sensor_interpolants[0]
     weights = interp["weights"][0]
-    nodes   = interp["nodes"][0]
-    coords  = model.problem.fe.points[nodes]
+    nodes = interp["nodes"][0]
+    coords = model.problem.fe.points[nodes]
 
     print(f"  Sensor node IDs  : {nodes}")
     print(f"  Node coordinates :")
@@ -335,8 +347,7 @@ def test_interior_face_sensor_uses_all_four_nodes():
     tol = 1e-8
     assert np.all(weights > tol), (
         f"Expected all 4 weights > 0 for interior point, got {weights}. "
-        "This indicates the old triangle-splitting bug is still present."
-    )
+        "This indicates the old triangle-splitting bug is still present.")
     assert np.isclose(np.sum(weights), 1.0, atol=1e-10), \
         f"Weights do not sum to 1: {weights}"
 
@@ -359,7 +370,8 @@ def test_shared_edge_sensors_agree():
     print("Integration test: shared-edge sensors agree")
     print("=" * 70)
 
-    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field_dist = MultivariateNormal(mean=np.array([10.]),
+                                    cov=np.array([[2.**2]]))
     field = JaxConstantField(field_dist)
 
     # y=0.49 is strictly between mesh nodes 0.25 and 0.5 so the point lies on
@@ -367,12 +379,22 @@ def test_shared_edge_sensors_agree():
     shared_pt = np.array([0.0, 0.49, 2.5])
 
     sensors = [
-        {"name": "side_edge",  "location_fn": "side_faces", "point": shared_pt},
-        {"name": "top_edge",   "location_fn": "top_face",   "point": shared_pt},
+        {
+            "name": "side_edge",
+            "location_fn": "side_faces",
+            "point": shared_pt
+        },
+        {
+            "name": "top_edge",
+            "location_fn": "top_face",
+            "point": shared_pt
+        },
     ]
 
     model = JaxFemModel(
-        d_x=1.0, d_y=1.0, d_z=2.5,
+        d_x=1.0,
+        d_y=1.0,
+        d_z=2.5,
         h=0.25,
         n_params=1,
         field=field,
@@ -390,15 +412,16 @@ def test_shared_edge_sensors_agree():
 
     assert nz0 == nz1, (
         f"Both sensors should activate the same two edge nodes, "
-        f"but side={sorted(nz0)}, top={sorted(nz1)}"
-    )
-    assert len(nz0) == 2, f"Expected exactly 2 non-zero-weight nodes, got {len(nz0)}"
+        f"but side={sorted(nz0)}, top={sorted(nz1)}")
+    assert len(
+        nz0) == 2, f"Expected exactly 2 non-zero-weight nodes, got {len(nz0)}"
 
     # The weights on those two shared nodes should be identical
     def shared_weights(interp):
         nz_mask = interp["weights"][0] > 1e-10
-        return dict(zip(interp["nodes"][0][nz_mask].tolist(),
-                        interp["weights"][0][nz_mask].tolist()))
+        return dict(
+            zip(interp["nodes"][0][nz_mask].tolist(),
+                interp["weights"][0][nz_mask].tolist()))
 
     w0 = shared_weights(s0)
     w1 = shared_weights(s1)
@@ -430,7 +453,6 @@ def test_shared_edge_sensors_agree():
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-
 def test_jax_fem_model_basic_sensors():
     """Test JaxFemModel with basic sensor setup.
 
@@ -442,54 +464,57 @@ def test_jax_fem_model_basic_sensors():
     print("=" * 70)
 
     # Create a simple constant field for Young's modulus
-    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field_dist = MultivariateNormal(mean=np.array([10.]),
+                                    cov=np.array([[2.**2]]))
     field = JaxConstantField(field_dist)
 
     # --- Part 1: point NOT on side_faces should raise ValueError --------------
     # [0.5, 0.5, 1.25] is an interior point; none of its x/y coordinates equal
     # 0 or d_x/d_y, so build_sensor_interpolants must raise a ValueError.
-    invalid_sensors = [
-        {"name": "sensor_interior", "location_fn": "side_faces",
-         "point": np.array([0.5, 0.5, 1.25])}
-    ]
+    invalid_sensors = [{
+        "name": "sensor_interior",
+        "location_fn": "side_faces",
+        "point": np.array([0.5, 0.5, 1.25])
+    }]
 
-    print("Part 1: Verifying that an off-face sensor point raises ValueError...")
+    print(
+        "Part 1: Verifying that an off-face sensor point raises ValueError...")
     raised = False
     try:
-        _ = JaxFemModel(
-            d_x=1.0, d_y=1.0, d_z=2.5,
-            h=0.25,
-            n_params=1,
-            field=field,
-            sensors=invalid_sensors
-        )
+        _ = JaxFemModel(d_x=1.0,
+                        d_y=1.0,
+                        d_z=2.5,
+                        h=0.25,
+                        n_params=1,
+                        field=field,
+                        sensors=invalid_sensors)
     except ValueError as e:
         raised = True
         print(f"  \u2713 ValueError raised as expected: {e}")
         assert "sensor_interior" in str(e) or "not located" in str(e), (
-            f"Unexpected error message: {e}"
-        )
+            f"Unexpected error message: {e}")
 
     assert raised, (
         "Expected a ValueError when the sensor point is not on the declared face, "
-        "but no exception was raised."
-    )
+        "but no exception was raised.")
 
     # --- Part 2: valid sensor point on side_faces creates model correctly -----
     # [0.0, 0.5, 1.25] lies on the x=0 side face.
     print("Part 2: Creating model with a valid side-face sensor point...")
-    valid_sensors = [
-        {"name": "sensor_side", "location_fn": "side_faces",
-         "point": np.array([0.0, 0.5, 1.25])}
-    ]
+    valid_sensors = [{
+        "name": "sensor_side",
+        "location_fn": "side_faces",
+        "point": np.array([0.0, 0.5, 1.25])
+    }]
 
     model = JaxFemModel(
-        d_x=1.0, d_y=1.0, d_z=2.5,
+        d_x=1.0,
+        d_y=1.0,
+        d_z=2.5,
         h=0.25,  # coarse mesh for testing
         n_params=1,
         field=field,
-        sensors=valid_sensors
-    )
+        sensors=valid_sensors)
 
     print(f"Model input dimension: {model.get_dim_in()}")
     print(f"Model output dimension: {model.get_dim_out()}")
@@ -497,7 +522,8 @@ def test_jax_fem_model_basic_sensors():
 
     assert model.get_dim_in() == 1, "Should have 1 parameter (from field)"
     # Each sensor point produces 3 displacement components (x, y, z)
-    assert model.get_dim_out() == 3, "Should have 3 outputs (ux, uy, uz from 1 sensor point)"
+    assert model.get_dim_out(
+    ) == 3, "Should have 3 outputs (ux, uy, uz from 1 sensor point)"
 
     # Test forward evaluation
     params = np.array([12.])
@@ -507,7 +533,7 @@ def test_jax_fem_model_basic_sensors():
     print(f"Model output shape: {y.shape}")
     print(f"Model output values: {y}")
 
-    assert y.shape == (3,), f"Expected shape (3,), got {y.shape}"
+    assert y.shape == (3, ), f"Expected shape (3,), got {y.shape}"
     print("\u2713 Basic sensor test passed!\n")
 
 
@@ -518,30 +544,28 @@ def test_jax_fem_model_multiple_points_per_sensor():
     print("=" * 70)
 
     # Create a simple constant field
-    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field_dist = MultivariateNormal(mean=np.array([10.]),
+                                    cov=np.array([[2.**2]]))
     field = JaxConstantField(field_dist)
 
     # Define a sensor with multiple points
-    sensors = [
-        {
-            "name": "multi_point_sensor",
-            "location_fn": "side_faces",
-            "points": np.array([
-                [0.0, 0.25, 1.0],
-                [0.0, 0.5,  1.25],
-                [0.0, 0.75, 2.0]
-            ])
-        }
-    ]
+    sensors = [{
+        "name":
+        "multi_point_sensor",
+        "location_fn":
+        "side_faces",
+        "points":
+        np.array([[0.0, 0.25, 1.0], [0.0, 0.5, 1.25], [0.0, 0.75, 2.0]])
+    }]
 
     # Create FEM model with multiple sensor points
-    model = JaxFemModel(
-        d_x=1.0, d_y=1.0, d_z=2.5,
-        h=0.25,
-        n_params=1,
-        field=field,
-        sensors=sensors
-    )
+    model = JaxFemModel(d_x=1.0,
+                        d_y=1.0,
+                        d_z=2.5,
+                        h=0.25,
+                        n_params=1,
+                        field=field,
+                        sensors=sensors)
 
     print(f"Model input dimension: {model.get_dim_in()}")
     print(f"Model output dimension: {model.get_dim_out()}")
@@ -550,7 +574,8 @@ def test_jax_fem_model_multiple_points_per_sensor():
 
     assert model.get_dim_in() == 1, "Should have 1 parameter"
     # 3 points × 3 displacement components = 9 outputs
-    assert model.get_dim_out() == 9, "Should have 9 outputs (3 points × 3 displacement components)"
+    assert model.get_dim_out(
+    ) == 9, "Should have 9 outputs (3 points × 3 displacement components)"
 
     # Test forward evaluation
     params = np.array([12.])
@@ -558,7 +583,7 @@ def test_jax_fem_model_multiple_points_per_sensor():
     print(f"Model output shape: {y.shape}")
     print(f"Model output values (first 6): {y[:6]}")
 
-    assert y.shape == (9,), f"Expected shape (9,), got {y.shape}"
+    assert y.shape == (9, ), f"Expected shape (9,), got {y.shape}"
     print("✓ Multiple points per sensor test passed!\n")
 
 
@@ -569,43 +594,36 @@ def test_jax_fem_model_multiple_sensor_groups():
     print("=" * 70)
 
     # Create a simple constant field
-    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field_dist = MultivariateNormal(mean=np.array([10.]),
+                                    cov=np.array([[2.**2]]))
     field = JaxConstantField(field_dist)
 
     # Define multiple sensors with different numbers of points
-    sensors = [
-        {
-            "name": "side_sensors",
-            "location_fn": "side_faces",
-            "points": np.array([
-                [0.0, 0.2, 0.5],
-                [0.0, 0.8, 0.5]
-            ])
-        },
-        {
-            "name": "more_side_sensors",
-            "location_fn": "side_faces",
-            "points": np.array([
-                [0.25, 0.0, 1.25],
-                [0.5,  0.0, 1.25],
-                [0.75, 0.0, 1.25]
-            ])
-        },
-        {
-            "name": "top_sensor",
-            "location_fn": "top_face",
-            "point": np.array([0.5, 0.5, 2.5])
-        }
-    ]
+    sensors = [{
+        "name": "side_sensors",
+        "location_fn": "side_faces",
+        "points": np.array([[0.0, 0.2, 0.5], [0.0, 0.8, 0.5]])
+    }, {
+        "name":
+        "more_side_sensors",
+        "location_fn":
+        "side_faces",
+        "points":
+        np.array([[0.25, 0.0, 1.25], [0.5, 0.0, 1.25], [0.75, 0.0, 1.25]])
+    }, {
+        "name": "top_sensor",
+        "location_fn": "top_face",
+        "point": np.array([0.5, 0.5, 2.5])
+    }]
 
     # Create FEM model with multiple sensor groups
-    model = JaxFemModel(
-        d_x=1.0, d_y=1.0, d_z=2.5,
-        h=0.25,
-        n_params=1,
-        field=field,
-        sensors=sensors
-    )
+    model = JaxFemModel(d_x=1.0,
+                        d_y=1.0,
+                        d_z=2.5,
+                        h=0.25,
+                        n_params=1,
+                        field=field,
+                        sensors=sensors)
 
     print(f"Model input dimension: {model.get_dim_in()}")
     print(f"Model output dimension: {model.get_dim_out()}")
@@ -619,7 +637,8 @@ def test_jax_fem_model_multiple_sensor_groups():
     print(f"Expected outputs: {expected_outputs}")
 
     assert model.get_dim_in() == 1, "Should have 1 parameter"
-    assert model.get_dim_out() == expected_outputs, f"Should have {expected_outputs} outputs"
+    assert model.get_dim_out(
+    ) == expected_outputs, f"Should have {expected_outputs} outputs"
 
     # Test forward evaluation
     params = np.array([12.])
@@ -627,7 +646,9 @@ def test_jax_fem_model_multiple_sensor_groups():
     print(f"Model output shape: {y.shape}")
     print(f"Model output values (first 6): {y[:6]}")
 
-    assert y.shape == (expected_outputs,), f"Expected shape ({expected_outputs},), got {y.shape}"
+    assert y.shape == (
+        expected_outputs,
+    ), f"Expected shape ({expected_outputs},), got {y.shape}"
     print("✓ Multiple sensor groups test passed!\n")
 
 
@@ -638,31 +659,30 @@ def test_jax_fem_model_sensors_from_config():
     print("=" * 70)
 
     # Create field from config
-    field_config = {
-        'name': 'JaxConstantField',
-        'mean': 10,
-        'std': 2
-    }
+    field_config = {'name': 'JaxConstantField', 'mean': 10, 'std': 2}
     field = get_jax_field(field_config)
 
     # Define sensors in config format
-    sensors_config = [
-        {
-            "name": "vertical_sensors",
-            "location_fn": "side_faces",
-            "points": [
-                [0.0, 0.5, 1.0],
-                [0.0, 0.5, 1.5],
-                [0.0, 0.5, 2.0],
-                [0.0, 0.5, 2.5],
-            ]
-        }
-    ]
+    sensors_config = [{
+        "name":
+        "vertical_sensors",
+        "location_fn":
+        "side_faces",
+        "points": [
+            [0.0, 0.5, 1.0],
+            [0.0, 0.5, 1.5],
+            [0.0, 0.5, 2.0],
+            [0.0, 0.5, 2.5],
+        ]
+    }]
 
     model_config = {
         'name': 'JaxFem',
-        'd_x': 1.0, 'd_y': 1.0, 'd_z': 2.5,
-        'h': 0.25, 'nu': 0.3,
+        'd_x': 1.0,
+        'd_y': 1.0,
+        'd_z': 2.5,
+        'h': 0.25,
+        'nu': 0.3,
         'sensors': sensors_config
     }
 
@@ -673,13 +693,14 @@ def test_jax_fem_model_sensors_from_config():
 
     assert model.get_dim_in() == 1, "Should infer n_params=1 from field"
     # 4 points × 3 displacement components = 12 outputs
-    assert model.get_dim_out() == 12, "Should have 12 outputs from 4 sensor points"
+    assert model.get_dim_out(
+    ) == 12, "Should have 12 outputs from 4 sensor points"
 
     # Test evaluation
     params = np.array([12.])
     y = model.eval(params)
     print(f"Model output shape: {y.shape}")
-    assert y.shape == (12,), f"Expected shape (12,), got {y.shape}"
+    assert y.shape == (12, ), f"Expected shape (12,), got {y.shape}"
 
     print("Model output values:", y)
 
@@ -693,11 +714,7 @@ def test_jax_fem_model_sensors_from_config_multiple_groups():
     print("=" * 70)
 
     # Create field from config
-    field_config = {
-        'name': 'JaxConstantField',
-        'mean': 10,
-        'std': 2
-    }
+    field_config = {'name': 'JaxConstantField', 'mean': 10, 'std': 2}
     field = get_jax_field(field_config)
 
     # Define multiple groups of sensors in config format
@@ -716,8 +733,11 @@ def test_jax_fem_model_sensors_from_config_multiple_groups():
 
     model_config = {
         'name': 'JaxFem',
-        'd_x': 1.0, 'd_y': 1.0, 'd_z': 2.5,
-        'h': 0.25, 'nu': 0.3,
+        'd_x': 1.0,
+        'd_y': 1.0,
+        'd_z': 2.5,
+        'h': 0.25,
+        'nu': 0.3,
         'sensors': sensors_config
     }
 
@@ -735,13 +755,16 @@ def test_jax_fem_model_sensors_from_config_multiple_groups():
     print(f"Expected outputs: {expected_outputs}")
 
     assert model.get_dim_in() == 1, "Should infer n_params=1 from field"
-    assert model.get_dim_out() == expected_outputs, f"Should have {expected_outputs} outputs"
+    assert model.get_dim_out(
+    ) == expected_outputs, f"Should have {expected_outputs} outputs"
 
     # Test evaluation
     params = np.array([12.])
     y = model.eval(params)
     print(f"Model output shape: {y.shape}")
-    assert y.shape == (expected_outputs,), f"Expected shape ({expected_outputs},), got {y.shape}"
+    assert y.shape == (
+        expected_outputs,
+    ), f"Expected shape ({expected_outputs},), got {y.shape}"
     print("Model output values:", y)
 
     print("✓ Multiple sensor groups from config test passed!\n")
@@ -754,30 +777,33 @@ def test_jax_fem_model_default_sensors():
     print("=" * 70)
 
     # Create a simple constant field
-    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field_dist = MultivariateNormal(mean=np.array([10.]),
+                                    cov=np.array([[2.**2]]))
     field = JaxConstantField(field_dist)
 
     # Create FEM model without specifying sensors (should use default)
-    model = JaxFemModel(
-        d_x=1.0, d_y=1.0, d_z=2.5,
-        h=0.25,
-        n_params=1,
-        field=field
-        # No sensors specified - will use default
-    )
+    model = JaxFemModel(d_x=1.0,
+                        d_y=1.0,
+                        d_z=2.5,
+                        h=0.25,
+                        n_params=1,
+                        field=field
+                        # No sensors specified - will use default
+                        )
 
     print(f"Model input dimension: {model.get_dim_in()}")
     print(f"Model output dimension: {model.get_dim_out()}")
 
     assert model.get_dim_in() == 1, "Should have 1 parameter"
     # Default sensor gives 3 outputs (ux, uy, uz components)
-    assert model.get_dim_out() == 3, "Should have 3 outputs (default sensor with 3 displacement components)"
+    assert model.get_dim_out(
+    ) == 3, "Should have 3 outputs (default sensor with 3 displacement components)"
 
     # Test evaluation
     params = np.array([12.])
     y = model.eval(params)
     print(f"Model output shape: {y.shape}")
-    assert y.shape == (3,), f"Expected shape (3,), got {y.shape}"
+    assert y.shape == (3, ), f"Expected shape (3,), got {y.shape}"
 
     print("✓ Default sensor test passed!\n")
 
@@ -789,24 +815,26 @@ def test_sensor_output_consistency():
     print("=" * 70)
 
     # Create a simple constant field
-    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field_dist = MultivariateNormal(mean=np.array([10.]),
+                                    cov=np.array([[2.**2]]))
     field = JaxConstantField(field_dist)
 
     # Define sensors - use default which should capture displacement
     # Let's use the default sensor which is at a location that should see displacement
-    sensors = [
-        {"name": "default_sensor", "location_fn": "side_faces",
-         "point": np.array([0, 0.5, 1.25])}
-    ]
+    sensors = [{
+        "name": "default_sensor",
+        "location_fn": "side_faces",
+        "point": np.array([0, 0.5, 1.25])
+    }]
 
     # Create model
-    model = JaxFemModel(
-        d_x=1.0, d_y=1.0, d_z=2.5,
-        h=0.25,
-        n_params=1,
-        field=field,
-        sensors=sensors
-    )
+    model = JaxFemModel(d_x=1.0,
+                        d_y=1.0,
+                        d_z=2.5,
+                        h=0.25,
+                        n_params=1,
+                        field=field,
+                        sensors=sensors)
 
     # Evaluate with two different parameter values
     params1 = np.array([10])  # Lower Young's modulus
@@ -821,7 +849,9 @@ def test_sensor_output_consistency():
 
     # Check if we get non-zero displacements
     if np.allclose(y1, 0) and np.allclose(y2, 0):
-        print("⚠ Warning: Both outputs are zero. This may indicate the sensor is at a constrained location.")
+        print(
+            "⚠ Warning: Both outputs are zero. This may indicate the sensor is at a constrained location."
+        )
         print("  Skipping consistency check but marking test as passed.")
     else:
         # With higher Young's modulus, displacement magnitude should be smaller or equal
@@ -841,29 +871,25 @@ def test_gradient_computation_with_sensors():
     print("=" * 70)
 
     # Create a simple constant field
-    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field_dist = MultivariateNormal(mean=np.array([10.]),
+                                    cov=np.array([[2.**2]]))
     field = JaxConstantField(field_dist)
 
     # Define sensors
-    sensors = [
-        {
-            "name": "vertical_line",
-            "location_fn": "side_faces",
-            "points": np.array([
-                [0.0, 0.5, 1.0],
-                [0.0, 0.5, 2.0]
-            ])
-        }
-    ]
+    sensors = [{
+        "name": "vertical_line",
+        "location_fn": "side_faces",
+        "points": np.array([[0.0, 0.5, 1.0], [0.0, 0.5, 2.0]])
+    }]
 
     # Create model
-    model = JaxFemModel(
-        d_x=1.0, d_y=1.0, d_z=2.5,
-        h=0.25,
-        n_params=1,
-        field=field,
-        sensors=sensors
-    )
+    model = JaxFemModel(d_x=1.0,
+                        d_y=1.0,
+                        d_z=2.5,
+                        h=0.25,
+                        n_params=1,
+                        field=field,
+                        sensors=sensors)
 
     # Test gradient computation
     params = np.array([12.])
@@ -876,7 +902,8 @@ def test_gradient_computation_with_sensors():
 
         # 2 points × 3 displacement components = 6 outputs
         # Gradient is (n_outputs, n_params) = (6, 1)
-        assert grad.shape == (6, 1), f"Expected gradient shape (6, 1), got {grad.shape}"
+        assert grad.shape == (
+            6, 1), f"Expected gradient shape (6, 1), got {grad.shape}"
 
         # Gradient should be negative (increasing E decreases displacement)
         # Note: not all components may be negative, but the norm should decrease
@@ -907,23 +934,27 @@ def test_dirichlet_boundary_sensors_near_zero():
     print("Testing Dirichlet boundary sensors read near-zero displacement")
     print("=" * 70)
 
-    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field_dist = MultivariateNormal(mean=np.array([10.]),
+                                    cov=np.array([[2.**2]]))
     field = JaxConstantField(field_dist)
 
-    sensors_on_dirichlet = [
-        {
-            "name": "dirichlet_face_sensors",
-            "location_fn": "bottom_face",
-            "points": np.array([
-                [0.25, 0.25, 0.0],
-                [0.5,  0.5,  0.0],
-                [0.75, 0.75, 0.0],
-            ])
-        }
-    ]
+    sensors_on_dirichlet = [{
+        "name":
+        "dirichlet_face_sensors",
+        "location_fn":
+        "bottom_face",
+        "points":
+        np.array([
+            [0.25, 0.25, 0.0],
+            [0.5, 0.5, 0.0],
+            [0.75, 0.75, 0.0],
+        ])
+    }]
 
     model = JaxFemModel(
-        d_x=1.0, d_y=1.0, d_z=2.5,
+        d_x=1.0,
+        d_y=1.0,
+        d_z=2.5,
         h=0.25,
         n_params=1,
         field=field,
@@ -937,7 +968,8 @@ def test_dirichlet_boundary_sensors_near_zero():
     from pdmp.forward_model import evaluate_sensor_displacements
 
     fe = model.problem.fe
-    param_field = jnp.asarray(params[0]) * jnp.ones((fe.num_cells, fe.num_quads))
+    param_field = jnp.asarray(params[0]) * jnp.ones(
+        (fe.num_cells, fe.num_quads))
     sol_list = model.fwd_pred([param_field])
     sol = sol_list[0]
 
@@ -948,7 +980,9 @@ def test_dirichlet_boundary_sensors_near_zero():
     bottom_displacements = np.asarray(sol[bottom_nodes])
     max_bottom_disp = np.max(np.abs(bottom_displacements))
     print(f"Max |displacement| at bottom nodes (z=0): {max_bottom_disp:.2e}")
-    print(f"Bottom node displacement sample (first 3 nodes):\n{bottom_displacements[:3]}")
+    print(
+        f"Bottom node displacement sample (first 3 nodes):\n{bottom_displacements[:3]}"
+    )
 
     solver_tol = 1e-8
     assert max_bottom_disp < solver_tol, (
@@ -956,7 +990,8 @@ def test_dirichlet_boundary_sensors_near_zero():
         f"max |u| = {max_bottom_disp:.2e} (expected < {solver_tol}). "
         f"This indicates a solver tolerance issue, not an interpolation issue."
     )
-    print(f"✓ Part 1 passed: raw FEM solution at bottom nodes is < {solver_tol}")
+    print(
+        f"✓ Part 1 passed: raw FEM solution at bottom nodes is < {solver_tol}")
 
     # --- Part 2: check interpolated sensor readings on the bottom face --------
     readings = evaluate_sensor_displacements(sol, model.sensor_interpolants)
@@ -964,34 +999,44 @@ def test_dirichlet_boundary_sensors_near_zero():
     u_sensor = np.asarray(readings[0]["u"])
 
     max_sensor_disp = np.max(np.abs(u_sensor))
-    print(f"\nInterpolated displacement at Dirichlet boundary sensors: {u_sensor}")
-    print(f"Max |interpolated displacement| at Dirichlet sensors: {max_sensor_disp:.2e}")
+    print(
+        f"\nInterpolated displacement at Dirichlet boundary sensors: {u_sensor}"
+    )
+    print(
+        f"Max |interpolated displacement| at Dirichlet sensors: {max_sensor_disp:.2e}"
+    )
 
     interp_tol = 1e-12
     assert max_sensor_disp < interp_tol, (
         f"Interpolated sensor displacement on Dirichlet face is not near-zero: "
         f"max |u| = {max_sensor_disp:.2e} (expected < {interp_tol}). "
         f"This indicates an interpolation issue (e.g. sensor point not found on "
-        f"the correct face), not a solver tolerance issue."
+        f"the correct face), not a solver tolerance issue.")
+    print(
+        f"✓ Part 2 passed: interpolated sensor output at Dirichlet nodes is < {interp_tol}"
     )
-    print(f"✓ Part 2 passed: interpolated sensor output at Dirichlet nodes is < {interp_tol}")
 
     # --- Sanity check: sensor at top should have non-zero displacement --------
     from pdmp.forward_model import build_sensor_interpolants
-    sensors_top = [{"name": "top_sensor", "location_fn": "top_face",
-                    "point": np.array([0.5, 0.5, 2.5])}]
+    sensors_top = [{
+        "name": "top_sensor",
+        "location_fn": "top_face",
+        "point": np.array([0.5, 0.5, 2.5])
+    }]
     top_interpolants = build_sensor_interpolants(
-        fe, sensors_top,
-        location_fn_map={'top_face': lambda p: jnp.isclose(p[2], 2.5, atol=1e-5)}
-    )
+        fe,
+        sensors_top,
+        location_fn_map={
+            'top_face': lambda p: jnp.isclose(p[2], 2.5, atol=1e-5)
+        })
     top_readings = evaluate_sensor_displacements(sol, top_interpolants)
     u_top = np.asarray(top_readings[0]["u"])
     print(f"\nDisplacement at top face sensor (sanity check): {u_top}")
     assert np.max(np.abs(u_top)) > 1e-6, (
         "Top-face sensor reads near-zero – the FEM solve may not have applied "
-        "the traction load correctly."
-    )
-    print("✓ Sanity check passed: top-face sensor reads non-zero displacement\n")
+        "the traction load correctly.")
+    print(
+        "✓ Sanity check passed: top-face sensor reads non-zero displacement\n")
 
     print("✓ Dirichlet boundary sensor test passed!\n")
 
@@ -1000,16 +1045,26 @@ def test_dirichlet_boundary_sensors_near_zero():
 # Tests for total_load feature
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def test_total_load_mutual_exclusivity():
     """Specifying both traction and total_load must raise ValueError."""
     import pytest
-    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field_dist = MultivariateNormal(mean=np.array([10.]),
+                                    cov=np.array([[2.**2]]))
     field = JaxConstantField(field_dist)
-    sensors = [{"name": "s", "location_fn": "side_faces", "point": np.array([0., 0.5, 1.25])}]
+    sensors = [{
+        "name": "s",
+        "location_fn": "side_faces",
+        "point": np.array([0., 0.5, 1.25])
+    }]
 
-    with pytest.raises(ValueError, match="traction.*total_load|total_load.*traction"):
+    with pytest.raises(ValueError,
+                       match="traction.*total_load|total_load.*traction"):
         JaxFemModel(
-            d_x=1.0, d_y=1.0, d_z=2.5, h=0.25,
+            d_x=1.0,
+            d_y=1.0,
+            d_z=2.5,
+            h=0.25,
             traction=[0., 0.015, 0.],
             total_load=[0., 40., 0.],
             sensors=sensors,
@@ -1018,32 +1073,51 @@ def test_total_load_mutual_exclusivity():
 
 def test_total_load_surface_area_computed():
     """total_load mode stores a positive surface_area on the model instance."""
-    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field_dist = MultivariateNormal(mean=np.array([10.]),
+                                    cov=np.array([[2.**2]]))
     field = JaxConstantField(field_dist)
-    sensors = [{"name": "s", "location_fn": "side_faces", "point": np.array([0., 0.5, 1.25])}]
+    sensors = [{
+        "name": "s",
+        "location_fn": "side_faces",
+        "point": np.array([0., 0.5, 1.25])
+    }]
 
     model = JaxFemModel(
-        d_x=1.0, d_y=1.0, d_z=2.5, h=0.25,
+        d_x=1.0,
+        d_y=1.0,
+        d_z=2.5,
+        h=0.25,
         total_load=[0., 40., 0.],
         sensors=sensors,
         field=field,
     )
 
-    assert hasattr(model, '_surface_area'), "Model should expose _surface_area after total_load construction"
+    assert hasattr(
+        model, '_surface_area'
+    ), "Model should expose _surface_area after total_load construction"
     assert model._surface_area > 0, f"Surface area must be positive, got {model._surface_area}"
     print(f"  surface_area = {model._surface_area:.6f}")
 
 
 def test_total_load_traction_equals_load_over_area():
     """The derived traction must equal total_load / surface_area component-wise."""
-    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field_dist = MultivariateNormal(mean=np.array([10.]),
+                                    cov=np.array([[2.**2]]))
     field = JaxConstantField(field_dist)
-    sensors = [{"name": "s", "location_fn": "side_faces", "point": np.array([0., 0.5, 1.25])}]
+    sensors = [{
+        "name": "s",
+        "location_fn": "side_faces",
+        "point": np.array([0., 0.5, 1.25])
+    }]
 
     total_load = np.array([0., 40., 0.])
 
     model = JaxFemModel(
-        d_x=1.0, d_y=1.0, d_z=2.5, h=0.25, indenter_loc=0.5,
+        d_x=1.0,
+        d_y=1.0,
+        d_z=2.5,
+        h=0.25,
+        indenter_loc=0.5,
         total_load=total_load,
         sensors=sensors,
         field=field,
@@ -1056,7 +1130,11 @@ def test_total_load_traction_equals_load_over_area():
 
     # Build a model with that explicit traction and check both produce the same output
     model_explicit = JaxFemModel(
-        d_x=1.0, d_y=1.0, d_z=2.5, h=0.25, indenter_loc=0.5,
+        d_x=1.0,
+        d_y=1.0,
+        d_z=2.5,
+        h=0.25,
+        indenter_loc=0.5,
         traction=expected_traction.tolist(),
         sensors=sensors,
         field=field,
@@ -1071,8 +1149,7 @@ def test_total_load_traction_equals_load_over_area():
     assert np.allclose(y_load, y_explicit, rtol=1e-6), (
         f"total_load and equivalent explicit traction must give same output.\n"
         f"  total_load: {y_load}\n"
-        f"  explicit  : {y_explicit}"
-    )
+        f"  explicit  : {y_explicit}")
 
 
 def test_total_load_from_dict():
@@ -1083,32 +1160,55 @@ def test_total_load_from_dict():
     field = get_jax_field(field_config)
 
     config = {
-        'name': 'JaxFem',
-        'd_x': 1.0, 'd_y': 1.0, 'd_z': 2.5,
-        'h': 0.25, 'nu': 0.3,
+        'name':
+        'JaxFem',
+        'd_x':
+        1.0,
+        'd_y':
+        1.0,
+        'd_z':
+        2.5,
+        'h':
+        0.25,
+        'nu':
+        0.3,
         'total_load': [0., 40., 0.],
-        'sensors': [{"name": "s", "location_fn": "side_faces", "point": [0., 0.5, 1.25]}],
+        'sensors': [{
+            "name": "s",
+            "location_fn": "side_faces",
+            "point": [0., 0.5, 1.25]
+        }],
     }
 
     model = JaxFemModel.from_dict(config, field=field)
 
-    assert hasattr(model, '_surface_area'), "from_dict with total_load should set _surface_area"
+    assert hasattr(
+        model,
+        '_surface_area'), "from_dict with total_load should set _surface_area"
     assert model._surface_area > 0
 
     # Forward pass should run without error
     y = model.eval(np.array([12.]))
-    assert y.shape == (3,), f"Expected shape (3,), got {y.shape}"
+    assert y.shape == (3, ), f"Expected shape (3,), got {y.shape}"
     print(f"  from_dict total_load output: {y}")
 
 
 def test_total_load_produces_nonzero_displacement():
     """A non-zero total_load should produce a non-zero displacement at a free sensor."""
-    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field_dist = MultivariateNormal(mean=np.array([10.]),
+                                    cov=np.array([[2.**2]]))
     field = JaxConstantField(field_dist)
-    sensors = [{"name": "s", "location_fn": "side_faces", "point": np.array([0., 0.5, 1.25])}]
+    sensors = [{
+        "name": "s",
+        "location_fn": "side_faces",
+        "point": np.array([0., 0.5, 1.25])
+    }]
 
     model = JaxFemModel(
-        d_x=1.0, d_y=1.0, d_z=2.5, h=0.25,
+        d_x=1.0,
+        d_y=1.0,
+        d_z=2.5,
+        h=0.25,
         total_load=[0., 40., 0.],
         sensors=sensors,
         field=field,
@@ -1123,20 +1223,33 @@ def test_total_load_produces_nonzero_displacement():
 
 def test_total_load_default_unchanged():
     """With neither traction nor total_load, the default traction [0, 0.015, 0] is used."""
-    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[2.**2]]))
+    field_dist = MultivariateNormal(mean=np.array([10.]),
+                                    cov=np.array([[2.**2]]))
     field = JaxConstantField(field_dist)
-    sensors = [{"name": "s", "location_fn": "side_faces", "point": np.array([0., 0.5, 1.25])}]
+    sensors = [{
+        "name": "s",
+        "location_fn": "side_faces",
+        "point": np.array([0., 0.5, 1.25])
+    }]
 
     # Model with no load arguments — uses default traction
     model_default = JaxFemModel(
-        d_x=1.0, d_y=1.0, d_z=2.5, h=0.25,
-        sensors=sensors, field=field,
+        d_x=1.0,
+        d_y=1.0,
+        d_z=2.5,
+        h=0.25,
+        sensors=sensors,
+        field=field,
     )
     # Model with explicit default traction
     model_explicit = JaxFemModel(
-        d_x=1.0, d_y=1.0, d_z=2.5, h=0.25,
+        d_x=1.0,
+        d_y=1.0,
+        d_z=2.5,
+        h=0.25,
         traction=[0., 0.015, 0.],
-        sensors=sensors, field=field,
+        sensors=sensors,
+        field=field,
     )
 
     params = np.array([12.])
@@ -1146,11 +1259,9 @@ def test_total_load_default_unchanged():
     assert np.allclose(y_default, y_explicit, rtol=1e-10), (
         f"Default traction and explicit [0, 0.015, 0] should give same output.\n"
         f"  default : {y_default}\n"
-        f"  explicit: {y_explicit}"
-    )
+        f"  explicit: {y_explicit}")
     assert not hasattr(model_default, '_surface_area'), (
-        "_surface_area should not be set when total_load is not used"
-    )
+        "_surface_area should not be set when total_load is not used")
 
 
 if __name__ == '__main__':
@@ -1167,11 +1278,20 @@ if __name__ == '__main__':
     # ── Integration tests (need a FEM solve) ──────────────────────────────────
     # Initialize jax-fem logger by creating a minimal model, then suppress it
     print("Initializing test environment...")
-    field_dist = MultivariateNormal(mean=np.array([10.]), cov=np.array([[1.**2]]))
+    field_dist = MultivariateNormal(mean=np.array([10.]),
+                                    cov=np.array([[1.**2]]))
     field = JaxConstantField(field_dist)
-    _ = JaxFemModel(d_x=1.0, d_y=1.0, d_z=2.5, h=0.5, n_params=1, field=field,
-                    sensors=[{"name": "warmup", "location_fn": "side_faces",
-                               "point": np.array([0.0, 0.5, 1.0])}])
+    _ = JaxFemModel(d_x=1.0,
+                    d_y=1.0,
+                    d_z=2.5,
+                    h=0.5,
+                    n_params=1,
+                    field=field,
+                    sensors=[{
+                        "name": "warmup",
+                        "location_fn": "side_faces",
+                        "point": np.array([0.0, 0.5, 1.0])
+                    }])
 
     import logging
     jax_fem_logger = logging.getLogger('jax_fem')
@@ -1195,5 +1315,3 @@ if __name__ == '__main__':
     print("=" * 70)
     print("All sensor tests passed! ✓")
     print("=" * 70)
-
-

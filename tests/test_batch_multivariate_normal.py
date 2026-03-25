@@ -7,9 +7,7 @@ from pdmp.distributions import MultivariateNormal
 def test_multivariate_normal_batch_log_density():
     """Test that batch log_density returns consistent results."""
     mean = np.array([1.0, 2.0, 3.0])
-    cov = np.array([[2.0, 0.5, 0.1],
-                    [0.5, 1.5, 0.2],
-                    [0.1, 0.2, 1.0]])
+    cov = np.array([[2.0, 0.5, 0.1], [0.5, 1.5, 0.2], [0.1, 0.2, 1.0]])
 
     dist = MultivariateNormal(mean=mean, cov=cov, seed=42)
 
@@ -18,15 +16,15 @@ def test_multivariate_normal_batch_log_density():
     log_dens_single = dist.log_density(x_single)
 
     # Test batch
-    x_batch = np.array([[1.5, 2.5, 3.5],
-                        [2.0, 3.0, 4.0],
-                        [0.5, 1.5, 2.5]])
+    x_batch = np.array([[1.5, 2.5, 3.5], [2.0, 3.0, 4.0], [0.5, 1.5, 2.5]])
     log_dens_batch = dist.log_density(x_batch)
 
     # First element of batch should match single point
-    assert isinstance(log_dens_single, float), "Single point should return float"
+    assert isinstance(log_dens_single,
+                      float), "Single point should return float"
     assert isinstance(log_dens_batch, np.ndarray), "Batch should return array"
-    assert log_dens_batch.shape == (3,), f"Expected shape (3,), got {log_dens_batch.shape}"
+    assert log_dens_batch.shape == (
+        3, ), f"Expected shape (3,), got {log_dens_batch.shape}"
     assert np.isclose(log_dens_batch[0], log_dens_single), \
         f"Batch[0] = {log_dens_batch[0]} != single = {log_dens_single}"
 
@@ -43,9 +41,7 @@ def test_multivariate_normal_batch_log_density():
 def test_multivariate_normal_batch_grad_log_density():
     """Test that batch grad_log_density returns consistent results."""
     mean = np.array([1.0, 2.0, 3.0])
-    cov = np.array([[2.0, 0.5, 0.1],
-                    [0.5, 1.5, 0.2],
-                    [0.1, 0.2, 1.0]])
+    cov = np.array([[2.0, 0.5, 0.1], [0.5, 1.5, 0.2], [0.1, 0.2, 1.0]])
 
     dist = MultivariateNormal(mean=mean, cov=cov, seed=42)
 
@@ -54,14 +50,14 @@ def test_multivariate_normal_batch_grad_log_density():
     grad_single = dist.grad_log_density(x_single)
 
     # Test batch
-    x_batch = np.array([[1.5, 2.5, 3.5],
-                        [2.0, 3.0, 4.0],
-                        [0.5, 1.5, 2.5]])
+    x_batch = np.array([[1.5, 2.5, 3.5], [2.0, 3.0, 4.0], [0.5, 1.5, 2.5]])
     grad_batch = dist.grad_log_density(x_batch)
 
     # Check shapes
-    assert grad_single.shape == (3,), f"Single grad shape: expected (3,), got {grad_single.shape}"
-    assert grad_batch.shape == (3, 3), f"Batch grad shape: expected (3, 3), got {grad_batch.shape}"
+    assert grad_single.shape == (
+        3, ), f"Single grad shape: expected (3,), got {grad_single.shape}"
+    assert grad_batch.shape == (
+        3, 3), f"Batch grad shape: expected (3, 3), got {grad_batch.shape}"
 
     # First row of batch should match single point
     assert np.allclose(grad_batch[0], grad_single), \
@@ -80,9 +76,7 @@ def test_multivariate_normal_batch_grad_log_density():
 def test_multivariate_normal_batch_hessian_log_density():
     """Test that batch hessian_log_density returns consistent results."""
     mean = np.array([1.0, 2.0, 3.0])
-    cov = np.array([[2.0, 0.5, 0.1],
-                    [0.5, 1.5, 0.2],
-                    [0.1, 0.2, 1.0]])
+    cov = np.array([[2.0, 0.5, 0.1], [0.5, 1.5, 0.2], [0.1, 0.2, 1.0]])
 
     dist = MultivariateNormal(mean=mean, cov=cov, seed=42)
 
@@ -91,14 +85,15 @@ def test_multivariate_normal_batch_hessian_log_density():
     hess_single = dist.hessian_log_density(x_single)
 
     # Test batch
-    x_batch = np.array([[1.5, 2.5, 3.5],
-                        [2.0, 3.0, 4.0],
-                        [0.5, 1.5, 2.5]])
+    x_batch = np.array([[1.5, 2.5, 3.5], [2.0, 3.0, 4.0], [0.5, 1.5, 2.5]])
     hess_batch = dist.hessian_log_density(x_batch)
 
     # Check shapes
-    assert hess_single.shape == (3, 3), f"Single hess shape: expected (3, 3), got {hess_single.shape}"
-    assert hess_batch.shape == (3, 3, 3), f"Batch hess shape: expected (3, 3, 3), got {hess_batch.shape}"
+    assert hess_single.shape == (
+        3, 3), f"Single hess shape: expected (3, 3), got {hess_single.shape}"
+    assert hess_batch.shape == (
+        3, 3,
+        3), f"Batch hess shape: expected (3, 3, 3), got {hess_batch.shape}"
 
     # First element of batch should match single point
     assert np.allclose(hess_batch[0], hess_single), \
@@ -139,7 +134,9 @@ def test_efficiency():
     time_loop = time.time() - start
 
     assert np.allclose(result_batch, result_loop), "Results don't match"
-    print(f"log_density: batch={time_batch:.4f}s, loop={time_loop:.4f}s, speedup={time_loop/time_batch:.2f}x")
+    print(
+        f"log_density: batch={time_batch:.4f}s, loop={time_loop:.4f}s, speedup={time_loop/time_batch:.2f}x"
+    )
 
     # Test grad_log_density
     start = time.time()
@@ -151,7 +148,9 @@ def test_efficiency():
     time_loop = time.time() - start
 
     assert np.allclose(result_batch, result_loop), "Results don't match"
-    print(f"grad_log_density: batch={time_batch:.4f}s, loop={time_loop:.4f}s, speedup={time_loop/time_batch:.2f}x")
+    print(
+        f"grad_log_density: batch={time_batch:.4f}s, loop={time_loop:.4f}s, speedup={time_loop/time_batch:.2f}x"
+    )
 
     # Test hessian_log_density
     start = time.time()
@@ -163,15 +162,15 @@ def test_efficiency():
     time_loop = time.time() - start
 
     assert np.allclose(result_batch, result_loop), "Results don't match"
-    print(f"hessian_log_density: batch={time_batch:.4f}s, loop={time_loop:.4f}s, speedup={time_loop/time_batch:.2f}x")
+    print(
+        f"hessian_log_density: batch={time_batch:.4f}s, loop={time_loop:.4f}s, speedup={time_loop/time_batch:.2f}x"
+    )
 
 
 def test_scipy_comparison_log_density():
     """Compare log_density results with scipy.stats.multivariate_normal."""
     mean = np.array([1.0, 2.0, 3.0])
-    cov = np.array([[2.0, 0.5, 0.1],
-                    [0.5, 1.5, 0.2],
-                    [0.1, 0.2, 1.0]])
+    cov = np.array([[2.0, 0.5, 0.1], [0.5, 1.5, 0.2], [0.1, 0.2, 1.0]])
 
     dist = MultivariateNormal(mean=mean, cov=cov, seed=42)
     scipy_dist = multivariate_normal(mean=mean, cov=cov)
@@ -185,9 +184,7 @@ def test_scipy_comparison_log_density():
         f"Single point: ours={our_result}, scipy={scipy_result}"
 
     # Test batch
-    x_batch = np.array([[1.5, 2.5, 3.5],
-                        [2.0, 3.0, 4.0],
-                        [0.5, 1.5, 2.5],
+    x_batch = np.array([[1.5, 2.5, 3.5], [2.0, 3.0, 4.0], [0.5, 1.5, 2.5],
                         [-1.0, 0.0, 1.0]])
     our_results = dist.log_density(x_batch)
     scipy_results = scipy_dist.logpdf(x_batch)
@@ -201,9 +198,7 @@ def test_scipy_comparison_log_density():
 def test_scipy_comparison_samples():
     """Verify that samples have correct statistics."""
     mean = np.array([1.0, 2.0, 3.0])
-    cov = np.array([[2.0, 0.5, 0.1],
-                    [0.5, 1.5, 0.2],
-                    [0.1, 0.2, 1.0]])
+    cov = np.array([[2.0, 0.5, 0.1], [0.5, 1.5, 0.2], [0.1, 0.2, 1.0]])
 
     dist = MultivariateNormal(mean=mean, cov=cov, seed=12345)
     scipy_dist = multivariate_normal(mean=mean, cov=cov)
@@ -237,9 +232,7 @@ def test_scipy_comparison_samples():
 def test_scipy_comparison_gradient():
     """Compare gradient with numerical gradient of scipy logpdf."""
     mean = np.array([1.0, 2.0, 3.0])
-    cov = np.array([[2.0, 0.5, 0.1],
-                    [0.5, 1.5, 0.2],
-                    [0.1, 0.2, 1.0]])
+    cov = np.array([[2.0, 0.5, 0.1], [0.5, 1.5, 0.2], [0.1, 0.2, 1.0]])
 
     dist = MultivariateNormal(mean=mean, cov=cov, seed=42)
     scipy_dist = multivariate_normal(mean=mean, cov=cov)
@@ -256,15 +249,14 @@ def test_scipy_comparison_gradient():
         x_minus = x.copy()
         x_plus[i] += eps
         x_minus[i] -= eps
-        numerical_grad[i] = (scipy_dist.logpdf(x_plus) - scipy_dist.logpdf(x_minus)) / (2 * eps)
+        numerical_grad[i] = (scipy_dist.logpdf(x_plus) -
+                             scipy_dist.logpdf(x_minus)) / (2 * eps)
 
     assert np.allclose(our_grad, numerical_grad, rtol=1e-5, atol=1e-8), \
         f"Gradient: ours={our_grad}, numerical={numerical_grad}, diff={our_grad - numerical_grad}"
 
     # Test batch
-    x_batch = np.array([[1.5, 2.5, 3.5],
-                        [2.0, 3.0, 4.0],
-                        [0.5, 1.5, 2.5]])
+    x_batch = np.array([[1.5, 2.5, 3.5], [2.0, 3.0, 4.0], [0.5, 1.5, 2.5]])
     our_grads = dist.grad_log_density(x_batch)
 
     # Compute numerical gradients for batch
@@ -275,7 +267,8 @@ def test_scipy_comparison_gradient():
             x_minus = x_point.copy()
             x_plus[i] += eps
             x_minus[i] -= eps
-            numerical_grads[j, i] = (scipy_dist.logpdf(x_plus) - scipy_dist.logpdf(x_minus)) / (2 * eps)
+            numerical_grads[j, i] = (scipy_dist.logpdf(x_plus) -
+                                     scipy_dist.logpdf(x_minus)) / (2 * eps)
 
     assert np.allclose(our_grads, numerical_grads, rtol=1e-5, atol=1e-8), \
         f"Batch gradient max diff: {np.max(np.abs(our_grads - numerical_grads))}"
@@ -286,9 +279,7 @@ def test_scipy_comparison_gradient():
 def test_scipy_comparison_hessian():
     """Compare Hessian with analytical result (should be -inv(cov))."""
     mean = np.array([1.0, 2.0, 3.0])
-    cov = np.array([[2.0, 0.5, 0.1],
-                    [0.5, 1.5, 0.2],
-                    [0.1, 0.2, 1.0]])
+    cov = np.array([[2.0, 0.5, 0.1], [0.5, 1.5, 0.2], [0.1, 0.2, 1.0]])
 
     dist = MultivariateNormal(mean=mean, cov=cov, seed=42)
 
@@ -303,9 +294,7 @@ def test_scipy_comparison_hessian():
         f"Hessian differs from -inv(cov)"
 
     # Test batch
-    x_batch = np.array([[1.5, 2.5, 3.5],
-                        [2.0, 3.0, 4.0],
-                        [0.5, 1.5, 2.5]])
+    x_batch = np.array([[1.5, 2.5, 3.5], [2.0, 3.0, 4.0], [0.5, 1.5, 2.5]])
     our_hessians = dist.hessian_log_density(x_batch)
 
     for i in range(len(x_batch)):
@@ -330,6 +319,3 @@ if __name__ == "__main__":
     print("\n=== Performance Tests ===")
     test_efficiency()
     print("\n✅ All tests passed!")
-
-
-

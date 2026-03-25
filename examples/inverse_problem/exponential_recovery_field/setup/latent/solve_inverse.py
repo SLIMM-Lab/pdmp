@@ -15,6 +15,7 @@ This script:
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
+
 matplotlib.use('Agg')  # Non-interactive backend
 import os
 import argparse
@@ -49,9 +50,9 @@ SIGMA_OBS = 0.005
 
 # Sampling parameters (start with coarse for testing)
 N_GRID_RHO = 50  # Grid points for rho
-N_GRID_L = 50    # Grid points for l
+N_GRID_L = 50  # Grid points for l
 N_RWM_SAMPLES = 50  # RWM samples
-T_MAX_ZZS = 10.0     # ZigZag max time
+T_MAX_ZZS = 10.0  # ZigZag max time
 
 # # for testing
 # N_GRID_RHO = 10  # Grid points for rho
@@ -59,8 +60,8 @@ T_MAX_ZZS = 10.0     # ZigZag max time
 # ============================================================================
 # Enable/Disable Samplers (set to False to skip sampling)
 # ============================================================================
-RUN_RWM = False      # Set to True to run Random Walk Metropolis
-RUN_ZIGZAG = False   # Set to True to run ZigZag sampler
+RUN_RWM = False  # Set to True to run Random Walk Metropolis
+RUN_ZIGZAG = False  # Set to True to run ZigZag sampler
 
 # File names
 OBS_FILE = os.path.join(DATA_DIR, "observations.dat")
@@ -68,10 +69,10 @@ GRID_FILE = os.path.join(DATA_DIR, "posterior_grid.npz")
 RWM_FILE = os.path.join(SAMPLES_DIR, "rwm_samples.npy")
 ZZS_FILE = os.path.join(SAMPLES_DIR, "zzs_samples.npz")
 
-
 # ============================================================================
 # Configuration Dictionaries
 # ============================================================================
+
 
 def get_config():
     """Get problem configuration."""
@@ -99,10 +100,16 @@ def get_config():
             'name': 'FromField'
         },
         'likelihood': {
-            'name': 'TransformedLikelihood',
-            'transformation': COMPOSITE,
+            'name':
+            'TransformedLikelihood',
+            'transformation':
+            COMPOSITE,
             'transformations': [
-                {'type': SIGMOID, 'a': 0.0, 'b': 1.0},  # For rho (bounded to [0, 1])
+                {
+                    'type': SIGMOID,
+                    'a': 0.0,
+                    'b': 1.0
+                },  # For rho (bounded to [0, 1])
                 EXPONENTIAL,  # For l (positive)
             ],
             'indices': [np.array([0]), np.array([1])],
@@ -120,7 +127,10 @@ def get_config():
 # Data Generation
 # ============================================================================
 
-def generate_observations(config: Dict[str, Any], rng: np.random.Generator, force: bool = False):
+
+def generate_observations(config: Dict[str, Any],
+                          rng: np.random.Generator,
+                          force: bool = False):
     """Generate synthetic observations from true parameters."""
     if os.path.exists(OBS_FILE) and not force:
         print(f"✓ Observations already exist: {OBS_FILE}")
@@ -172,7 +182,10 @@ def generate_observations(config: Dict[str, Any], rng: np.random.Generator, forc
 # Posterior Evaluation
 # ============================================================================
 
-def evaluate_posterior_grid(target, rng: np.random.Generator, force: bool = False):
+
+def evaluate_posterior_grid(target,
+                            rng: np.random.Generator,
+                            force: bool = False):
     """Evaluate log-posterior on a 2D grid."""
     if os.path.exists(GRID_FILE) and not force:
         print(f"✓ Loading posterior grid from: {GRID_FILE}")
@@ -202,7 +215,9 @@ def evaluate_posterior_grid(target, rng: np.random.Generator, force: bool = Fals
     true_xi_l = np.log(TRUE_L)  # log transform
     true_xi = np.array([true_xi_rho, true_xi_l])
 
-    print(f"  Grid size: {N_GRID_RHO} × {N_GRID_L} = {N_GRID_RHO * N_GRID_L} points")
+    print(
+        f"  Grid size: {N_GRID_RHO} × {N_GRID_L} = {N_GRID_RHO * N_GRID_L} points"
+    )
     print(f"  xi_rho range: [{xi_rho_min}, {xi_rho_max}]")
     print(f"  xi_l range: [{xi_l_min}, {xi_l_max}]")
 
@@ -220,12 +235,15 @@ def evaluate_posterior_grid(target, rng: np.random.Generator, force: bool = Fals
 
     # Save grid
     os.makedirs(DATA_DIR, exist_ok=True)
-    np.savez(GRID_FILE, xi_rho_grid=xi_rho_grid, xi_l_grid=xi_l_grid,
+    np.savez(GRID_FILE,
+             xi_rho_grid=xi_rho_grid,
+             xi_l_grid=xi_l_grid,
              log_post_grid=log_post_grid)
 
     print(f"  ✓ Saved posterior grid to: {GRID_FILE}")
-    print(f"  Log-posterior range: [{np.max(log_post_grid[np.isfinite(log_post_grid)]):.2f}, "
-          f"{np.min(log_post_grid[np.isfinite(log_post_grid)]):.2f}]")
+    print(
+        f"  Log-posterior range: [{np.max(log_post_grid[np.isfinite(log_post_grid)]):.2f}, "
+        f"{np.min(log_post_grid[np.isfinite(log_post_grid)]):.2f}]")
 
     return xi_rho_grid, xi_l_grid, log_post_grid
 
@@ -233,6 +251,7 @@ def evaluate_posterior_grid(target, rng: np.random.Generator, force: bool = Fals
 # ============================================================================
 # Sampling with RWM
 # ============================================================================
+
 
 def run_rwm_sampling(target, rng: np.random.Generator, force: bool = False):
     """Run Random Walk Metropolis sampling."""
@@ -278,12 +297,14 @@ def run_rwm_sampling(target, rng: np.random.Generator, force: bool = False):
 # Sampling with ZigZag
 # ============================================================================
 
+
 def run_zigzag_sampling(target, rng: np.random.Generator, force: bool = False):
     """Run ZigZag sampling."""
     if os.path.exists(ZZS_FILE) and not force:
         print(f"✓ Loading ZigZag samples from: {ZZS_FILE}")
         data = np.load(ZZS_FILE)
-        return data['positions'], data['velocities'], data['times'], data['samples']
+        return data['positions'], data['velocities'], data['times'], data[
+            'samples']
 
     print("=" * 70)
     print("Running ZigZag sampling...")
@@ -312,7 +333,10 @@ def run_zigzag_sampling(target, rng: np.random.Generator, force: bool = False):
     print(f"  Initial point: {x_0}")
 
     surrogate = get_surrogate(surrogate_config, target=target, rng=rng)
-    zig_zag = get_sampler(zig_zag_config, target=target, rng=rng, surrogate=surrogate)
+    zig_zag = get_sampler(zig_zag_config,
+                          target=target,
+                          rng=rng,
+                          surrogate=surrogate)
     zig_zag.run()
 
     pos = zig_zag.positions
@@ -321,11 +345,18 @@ def run_zigzag_sampling(target, rng: np.random.Generator, force: bool = False):
 
     # Sample equidistantly along path
     n_samples_zzs = 500
-    samples_zzs = sample_equidistant_along_path(pos, vel, times, N=n_samples_zzs)
+    samples_zzs = sample_equidistant_along_path(pos,
+                                                vel,
+                                                times,
+                                                N=n_samples_zzs)
 
     # Save
     os.makedirs(SAMPLES_DIR, exist_ok=True)
-    np.savez(ZZS_FILE, positions=pos, velocities=vel, times=times, samples=samples_zzs)
+    np.savez(ZZS_FILE,
+             positions=pos,
+             velocities=vel,
+             times=times,
+             samples=samples_zzs)
 
     print(f"  ✓ Saved ZigZag samples to: {ZZS_FILE}")
     print(f"  Skeleton points: {len(times)}")
@@ -338,9 +369,15 @@ def run_zigzag_sampling(target, rng: np.random.Generator, force: bool = False):
 # Plotting
 # ============================================================================
 
-def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
-                      rwm_samples, zzs_samples,
-                      xi_rho_true, xi_l_true, target=None):
+
+def plot_posterior_2d(xi_rho_grid,
+                      xi_l_grid,
+                      log_post_grid,
+                      rwm_samples,
+                      zzs_samples,
+                      xi_rho_true,
+                      xi_l_true,
+                      target=None):
     """Plot 2D posterior with samples - creates separate PDF figures."""
     print("=" * 70)
     print("Creating 2D posterior plots...")
@@ -383,32 +420,58 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
     xi_rho_min, xi_rho_max = xi_rho_grid.min(), xi_rho_grid.max()
     xi_l_min, xi_l_max = xi_l_grid.min(), xi_l_grid.max()
 
-    fig1, ax1 = get_2d_despined_figure(
-        plot_limits=([xi_rho_min, xi_rho_max], [xi_l_min, xi_l_max]),
-        figsize=(4., 4.),
-        axes_label=(r'\xi_\rho', r'\xi_l'),
-        equal_axes=False,
-        keep_ticks=True
-    )
+    fig1, ax1 = get_2d_despined_figure(plot_limits=([xi_rho_min, xi_rho_max],
+                                                    [xi_l_min, xi_l_max]),
+                                       figsize=(4., 4.),
+                                       axes_label=(r'\xi_\rho', r'\xi_l'),
+                                       equal_axes=False,
+                                       keep_ticks=True)
 
     # Plot prior contours first (if available)
     if log_prior_grid is not None:
-        ax1.contour(xi_rho_grid, xi_l_grid, prior_norm, levels=20,
-                    zorder=1, alpha=0.3, cmap=cmap_prior, linestyles='dashed')
+        ax1.contour(xi_rho_grid,
+                    xi_l_grid,
+                    prior_norm,
+                    levels=20,
+                    zorder=1,
+                    alpha=0.3,
+                    cmap=cmap_prior,
+                    linestyles='dashed')
 
     # Plot posterior contours
-    ax1.contour(xi_rho_grid, xi_l_grid, post_norm, levels=20,
-                zorder=2, alpha=0.6, cmap=cmap_post)
+    ax1.contour(xi_rho_grid,
+                xi_l_grid,
+                post_norm,
+                levels=20,
+                zorder=2,
+                alpha=0.6,
+                cmap=cmap_post)
 
     # Plot samples
-    ax1.scatter(rwm_samples[::5, 0], rwm_samples[::5, 1], c='red', s=10, alpha=0.5,
-                label='RWM', zorder=2)
-    ax1.scatter(zzs_samples[::5, 0], zzs_samples[::5, 1], c='cyan', s=10, alpha=0.5,
-                label='ZZS', zorder=2)
+    ax1.scatter(rwm_samples[::5, 0],
+                rwm_samples[::5, 1],
+                c='red',
+                s=10,
+                alpha=0.5,
+                label='RWM',
+                zorder=2)
+    ax1.scatter(zzs_samples[::5, 0],
+                zzs_samples[::5, 1],
+                c='cyan',
+                s=10,
+                alpha=0.5,
+                label='ZZS',
+                zorder=2)
 
     # True value
-    ax1.scatter([xi_rho_true], [xi_l_true], c='black', s=100, marker='*',
-                edgecolors='white', linewidths=1.5, label='True', zorder=10)
+    ax1.scatter([xi_rho_true], [xi_l_true],
+                c='black',
+                s=100,
+                marker='*',
+                edgecolors='white',
+                linewidths=1.5,
+                label='True',
+                zorder=10)
 
     ax1.legend(loc='upper right', frameon=False)
 
@@ -437,7 +500,8 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
     prior_original_norm = None
     if log_prior_grid is not None:
         log_prior_original = log_prior_grid - log_jacobian
-        log_prior_original_norm = log_prior_original - np.nanmax(log_prior_original)
+        log_prior_original_norm = log_prior_original - np.nanmax(
+            log_prior_original)
         prior_original_norm = np.exp(log_prior_original_norm)
 
     # Determine plot limits
@@ -447,22 +511,32 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
     rho_min = 0.0
     rho_max = 1.0
 
-    fig2, ax2 = get_2d_despined_figure(
-        plot_limits=([rho_min, rho_max], [l_min, l_max]),
-        figsize=(4., 4.),
-        axes_label=(r'\rho', r'l'),
-        equal_axes=False,
-        keep_ticks=True
-    )
+    fig2, ax2 = get_2d_despined_figure(plot_limits=([rho_min,
+                                                     rho_max], [l_min, l_max]),
+                                       figsize=(4., 4.),
+                                       axes_label=(r'\rho', r'l'),
+                                       equal_axes=False,
+                                       keep_ticks=True)
 
     # Plot prior contours first (if available)
     if prior_original_norm is not None:
-        ax2.contour(rho_grid, l_grid, prior_original_norm, levels=20,
-                    zorder=1, alpha=1.0, cmap=cmap_prior, linestyles='dashed')
+        ax2.contour(rho_grid,
+                    l_grid,
+                    prior_original_norm,
+                    levels=20,
+                    zorder=1,
+                    alpha=1.0,
+                    cmap=cmap_prior,
+                    linestyles='dashed')
 
     # Plot posterior contours
-    ax2.contour(rho_grid, l_grid, post_original_norm, levels=10,
-                zorder=2, alpha=0.6, cmap=cmap_post)
+    ax2.contour(rho_grid,
+                l_grid,
+                post_original_norm,
+                levels=10,
+                zorder=2,
+                alpha=0.6,
+                cmap=cmap_post)
 
     # Convert samples to original space
     rwm_rho = 1.0 / (1.0 + np.exp(-rwm_samples[:, 0]))
@@ -470,12 +544,28 @@ def plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
     zzs_rho = 1.0 / (1.0 + np.exp(-zzs_samples[:, 0]))
     zzs_l = np.exp(zzs_samples[:, 1])
 
-    ax2.scatter(rwm_rho[::5], rwm_l[::5], c='red', s=10, alpha=0.5,
-                label='RWM', zorder=2)
-    ax2.scatter(zzs_rho[::5], zzs_l[::5], c='cyan', s=10, alpha=0.5,
-                label='ZZS', zorder=2)
-    ax2.scatter([TRUE_RHO], [TRUE_L], c='black', s=100, marker='*',
-                edgecolors='white', linewidths=1.5, label='True', zorder=10)
+    ax2.scatter(rwm_rho[::5],
+                rwm_l[::5],
+                c='red',
+                s=10,
+                alpha=0.5,
+                label='RWM',
+                zorder=2)
+    ax2.scatter(zzs_rho[::5],
+                zzs_l[::5],
+                c='cyan',
+                s=10,
+                alpha=0.5,
+                label='ZZS',
+                zorder=2)
+    ax2.scatter([TRUE_RHO], [TRUE_L],
+                c='black',
+                s=100,
+                marker='*',
+                edgecolors='white',
+                linewidths=1.5,
+                label='True',
+                zorder=10)
 
     ax2.legend(loc='upper right', frameon=False)
 
@@ -506,9 +596,23 @@ def plot_marginals(rwm_samples, zzs_samples, xi_rho_true, xi_l_true):
     # Marginal histogram for rho
     # ========================================================================
     fig1, ax1 = plt.subplots(1, 1, figsize=(4., 3.))
-    ax1.hist(rwm_rho, bins=30, alpha=0.5, density=True, label='RWM', color='red')
-    ax1.hist(zzs_rho, bins=30, alpha=0.5, density=True, label='ZZS', color='cyan')
-    ax1.axvline(TRUE_RHO, color='black', linestyle='--', linewidth=2, label='True')
+    ax1.hist(rwm_rho,
+             bins=30,
+             alpha=0.5,
+             density=True,
+             label='RWM',
+             color='red')
+    ax1.hist(zzs_rho,
+             bins=30,
+             alpha=0.5,
+             density=True,
+             label='ZZS',
+             color='cyan')
+    ax1.axvline(TRUE_RHO,
+                color='black',
+                linestyle='--',
+                linewidth=2,
+                label='True')
     ax1.set_xlabel(r'$\rho$')
     ax1.set_ylabel('Density')
     ax1.legend(frameon=False)
@@ -524,8 +628,17 @@ def plot_marginals(rwm_samples, zzs_samples, xi_rho_true, xi_l_true):
     # ========================================================================
     fig2, ax2 = plt.subplots(1, 1, figsize=(4., 3.))
     ax2.hist(rwm_l, bins=30, alpha=0.5, density=True, label='RWM', color='red')
-    ax2.hist(zzs_l, bins=30, alpha=0.5, density=True, label='ZZS', color='cyan')
-    ax2.axvline(TRUE_L, color='black', linestyle='--', linewidth=2, label='True')
+    ax2.hist(zzs_l,
+             bins=30,
+             alpha=0.5,
+             density=True,
+             label='ZZS',
+             color='cyan')
+    ax2.axvline(TRUE_L,
+                color='black',
+                linestyle='--',
+                linewidth=2,
+                label='True')
     ax2.set_xlabel(r'$l$')
     ax2.set_ylabel('Density')
     ax2.legend(frameon=False)
@@ -543,15 +656,27 @@ def plot_marginals(rwm_samples, zzs_samples, xi_rho_true, xi_l_true):
     rho_grid = np.linspace(0, 1, 200)
     try:
         kde_rwm_rho = gaussian_kde(rwm_rho)
-        ax3.plot(rho_grid, kde_rwm_rho(rho_grid), label='RWM', color='red', linewidth=2)
+        ax3.plot(rho_grid,
+                 kde_rwm_rho(rho_grid),
+                 label='RWM',
+                 color='red',
+                 linewidth=2)
     except:
         pass
     try:
         kde_zzs_rho = gaussian_kde(zzs_rho)
-        ax3.plot(rho_grid, kde_zzs_rho(rho_grid), label='ZZS', color='cyan', linewidth=2)
+        ax3.plot(rho_grid,
+                 kde_zzs_rho(rho_grid),
+                 label='ZZS',
+                 color='cyan',
+                 linewidth=2)
     except:
         pass
-    ax3.axvline(TRUE_RHO, color='black', linestyle='--', linewidth=2, label='True')
+    ax3.axvline(TRUE_RHO,
+                color='black',
+                linestyle='--',
+                linewidth=2,
+                label='True')
     ax3.set_xlabel(r'$\rho$')
     ax3.set_ylabel('Density')
     ax3.legend(frameon=False)
@@ -569,15 +694,27 @@ def plot_marginals(rwm_samples, zzs_samples, xi_rho_true, xi_l_true):
     l_grid = np.linspace(0.5, 2.5, 200)
     try:
         kde_rwm_l = gaussian_kde(rwm_l)
-        ax4.plot(l_grid, kde_rwm_l(l_grid), label='RWM', color='red', linewidth=2)
+        ax4.plot(l_grid,
+                 kde_rwm_l(l_grid),
+                 label='RWM',
+                 color='red',
+                 linewidth=2)
     except:
         pass
     try:
         kde_zzs_l = gaussian_kde(zzs_l)
-        ax4.plot(l_grid, kde_zzs_l(l_grid), label='ZZS', color='cyan', linewidth=2)
+        ax4.plot(l_grid,
+                 kde_zzs_l(l_grid),
+                 label='ZZS',
+                 color='cyan',
+                 linewidth=2)
     except:
         pass
-    ax4.axvline(TRUE_L, color='black', linestyle='--', linewidth=2, label='True')
+    ax4.axvline(TRUE_L,
+                color='black',
+                linestyle='--',
+                linewidth=2,
+                label='True')
     ax4.set_xlabel(r'$l$')
     ax4.set_ylabel('Density')
     ax4.legend(frameon=False)
@@ -591,9 +728,14 @@ def plot_marginals(rwm_samples, zzs_samples, xi_rho_true, xi_l_true):
     return None
 
 
-def plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
-                                  rwm_samples, zzs_samples,
-                                  xi_rho_true, xi_l_true, target=None):
+def plot_posterior_2d_grid_only(xi_rho_grid,
+                                xi_l_grid,
+                                log_post_grid,
+                                rwm_samples,
+                                zzs_samples,
+                                xi_rho_true,
+                                xi_l_true,
+                                target=None):
     """Plot 2D posterior grid without requiring both samplers - creates separate PDF figures."""
     print("=" * 70)
     print("Creating 2D posterior plots (grid only)...")
@@ -636,13 +778,12 @@ def plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
     xi_rho_min, xi_rho_max = xi_rho_grid.min(), xi_rho_grid.max()
     xi_l_min, xi_l_max = xi_l_grid.min(), xi_l_grid.max()
 
-    fig1, ax1 = get_2d_despined_figure(
-        plot_limits=([xi_rho_min, xi_rho_max], [xi_l_min, xi_l_max]),
-        figsize=(4., 4.),
-        axes_label=(r'\eta_\rho', r'\eta_l'),
-        equal_axes=False,
-        keep_ticks=True
-    )
+    fig1, ax1 = get_2d_despined_figure(plot_limits=([xi_rho_min, xi_rho_max],
+                                                    [xi_l_min, xi_l_max]),
+                                       figsize=(4., 4.),
+                                       axes_label=(r'\eta_\rho', r'\eta_l'),
+                                       equal_axes=False,
+                                       keep_ticks=True)
 
     # # Plot prior contours first (if available)
     # if log_prior_grid is not None:
@@ -650,20 +791,41 @@ def plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
     #                 zorder=1, alpha=0.3, cmap=cmap_prior, linestyles='-')
 
     # Plot posterior contours
-    ax1.contour(xi_rho_grid, xi_l_grid, post_norm, levels=20,
-                zorder=2, alpha=0.6, cmap=cmap_post)
+    ax1.contour(xi_rho_grid,
+                xi_l_grid,
+                post_norm,
+                levels=20,
+                zorder=2,
+                alpha=0.6,
+                cmap=cmap_post)
 
     # Plot samples if available
     if rwm_samples is not None:
-        ax1.scatter(rwm_samples[::5, 0], rwm_samples[::5, 1], c='red', s=10, alpha=0.5,
-                    label='RWM', zorder=2)
+        ax1.scatter(rwm_samples[::5, 0],
+                    rwm_samples[::5, 1],
+                    c='red',
+                    s=10,
+                    alpha=0.5,
+                    label='RWM',
+                    zorder=2)
     if zzs_samples is not None:
-        ax1.scatter(zzs_samples[::5, 0], zzs_samples[::5, 1], c='cyan', s=10, alpha=0.5,
-                    label='ZZS', zorder=2)
+        ax1.scatter(zzs_samples[::5, 0],
+                    zzs_samples[::5, 1],
+                    c='cyan',
+                    s=10,
+                    alpha=0.5,
+                    label='ZZS',
+                    zorder=2)
 
     # True value
-    ax1.scatter([xi_rho_true], [xi_l_true], c='black', s=100, marker='*',
-                edgecolors='white', linewidths=1.5, label='True', zorder=10)
+    ax1.scatter([xi_rho_true], [xi_l_true],
+                c='black',
+                s=100,
+                marker='*',
+                edgecolors='white',
+                linewidths=1.5,
+                label='True',
+                zorder=10)
 
     ax1.legend(loc='upper right', frameon=False)
 
@@ -692,7 +854,8 @@ def plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
     prior_original_norm = None
     if log_prior_grid is not None:
         log_prior_original = log_prior_grid - log_jacobian
-        log_prior_original_norm = log_prior_original - np.nanmax(log_prior_original)
+        log_prior_original_norm = log_prior_original - np.nanmax(
+            log_prior_original)
         prior_original_norm = np.exp(log_prior_original_norm)
 
     # Determine plot limits
@@ -703,38 +866,64 @@ def plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
     rho_max = 1.0
     l_max = 12
 
-    fig2, ax2 = get_2d_despined_figure(
-        plot_limits=([rho_min, rho_max], [l_min, l_max]),
-        figsize=(4., 4.),
-        axes_label=(r'\rho', r'l'),
-        equal_axes=False,
-        keep_ticks=True
-    )
+    fig2, ax2 = get_2d_despined_figure(plot_limits=([rho_min,
+                                                     rho_max], [l_min, l_max]),
+                                       figsize=(4., 4.),
+                                       axes_label=(r'\rho', r'l'),
+                                       equal_axes=False,
+                                       keep_ticks=True)
 
     # Plot prior contours first (if available)
     if prior_original_norm is not None:
-        ax2.contour(rho_grid, l_grid, prior_original_norm, levels=20,
-                    zorder=1, alpha=0.3, cmap=cmap_prior, linestyles='-')
+        ax2.contour(rho_grid,
+                    l_grid,
+                    prior_original_norm,
+                    levels=20,
+                    zorder=1,
+                    alpha=0.3,
+                    cmap=cmap_prior,
+                    linestyles='-')
 
     # Plot posterior contours
-    ax2.contour(rho_grid, l_grid, post_original_norm, levels=20,
-                zorder=2, alpha=0.6, cmap=cmap_post)
+    ax2.contour(rho_grid,
+                l_grid,
+                post_original_norm,
+                levels=20,
+                zorder=2,
+                alpha=0.6,
+                cmap=cmap_post)
 
     # Convert samples to original space if available
     if rwm_samples is not None:
         rwm_rho = 1.0 / (1.0 + np.exp(-rwm_samples[:, 0]))
         rwm_l = np.exp(rwm_samples[:, 1])
-        ax2.scatter(rwm_rho[::5], rwm_l[::5], c='red', s=10, alpha=0.5,
-                    label='RWM', zorder=2)
+        ax2.scatter(rwm_rho[::5],
+                    rwm_l[::5],
+                    c='red',
+                    s=10,
+                    alpha=0.5,
+                    label='RWM',
+                    zorder=2)
 
     if zzs_samples is not None:
         zzs_rho = 1.0 / (1.0 + np.exp(-zzs_samples[:, 0]))
         zzs_l = np.exp(zzs_samples[:, 1])
-        ax2.scatter(zzs_rho[::5], zzs_l[::5], c='cyan', s=10, alpha=0.5,
-                    label='ZZS', zorder=2)
+        ax2.scatter(zzs_rho[::5],
+                    zzs_l[::5],
+                    c='cyan',
+                    s=10,
+                    alpha=0.5,
+                    label='ZZS',
+                    zorder=2)
 
-    ax2.scatter([TRUE_RHO], [TRUE_L], c='black', s=100, marker='*',
-                edgecolors='white', linewidths=1.5, label='True', zorder=10)
+    ax2.scatter([TRUE_RHO], [TRUE_L],
+                c='black',
+                s=100,
+                marker='*',
+                edgecolors='white',
+                linewidths=1.5,
+                label='True',
+                zorder=10)
 
     ax2.legend(loc='upper right', frameon=False)
 
@@ -749,16 +938,20 @@ def plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
     # ========================================================================
 
     if prior_original_norm is not None:
-        fig3, ax3 = get_2d_despined_figure(
-            plot_limits=([rho_min, rho_max], [l_min, l_max]),
-            figsize=(4., 4.),
-            axes_label=(r'\rho', r'l'),
-            equal_axes=False,
-            keep_ticks=True
-        )
+        fig3, ax3 = get_2d_despined_figure(plot_limits=([rho_min, rho_max],
+                                                        [l_min, l_max]),
+                                           figsize=(4., 4.),
+                                           axes_label=(r'\rho', r'l'),
+                                           equal_axes=False,
+                                           keep_ticks=True)
 
-        ax3.contour(rho_grid, l_grid, prior_original_norm, levels=20,
-                    zorder=1, alpha=0.6, cmap=cmap_prior)
+        ax3.contour(rho_grid,
+                    l_grid,
+                    prior_original_norm,
+                    levels=20,
+                    zorder=1,
+                    alpha=0.6,
+                    cmap=cmap_prior)
 
         fig_path = os.path.join(FIG_DIR, 'prior_2d_original.pdf')
         fig3.savefig(fig_path, bbox_inches='tight')
@@ -801,16 +994,22 @@ def print_summary_statistics(rwm_samples, zzs_samples):
 # Main
 # ============================================================================
 
+
 def main():
     """Main execution function."""
-    parser = argparse.ArgumentParser(description='Solve inverse problem with ExponentialRecoveryField')
-    parser.add_argument('--force', action='store_true',
+    parser = argparse.ArgumentParser(
+        description='Solve inverse problem with ExponentialRecoveryField')
+    parser.add_argument('--force',
+                        action='store_true',
                         help='Force recomputation of all data')
-    parser.add_argument('--force-obs', action='store_true',
+    parser.add_argument('--force-obs',
+                        action='store_true',
                         help='Force regeneration of observations')
-    parser.add_argument('--force-grid', action='store_true',
+    parser.add_argument('--force-grid',
+                        action='store_true',
                         help='Force recomputation of posterior grid')
-    parser.add_argument('--force-samples', action='store_true',
+    parser.add_argument('--force-samples',
+                        action='store_true',
                         help='Force resampling')
     args = parser.parse_args()
 
@@ -844,8 +1043,7 @@ def main():
 
     # Evaluate posterior grid
     xi_rho_grid, xi_l_grid, log_post_grid = evaluate_posterior_grid(
-        target, rng, force=args.force or args.force_grid
-    )
+        target, rng, force=args.force or args.force_grid)
 
     # True values in transformed space
     xi_rho_true = np.log(TRUE_RHO / (1.0 - TRUE_RHO))
@@ -857,7 +1055,9 @@ def main():
 
     if RUN_RWM:
         # Run RWM sampling
-        rwm_samples = run_rwm_sampling(target, rng, force=args.force or args.force_samples)
+        rwm_samples = run_rwm_sampling(target,
+                                       rng,
+                                       force=args.force or args.force_samples)
     else:
         print("=" * 70)
         print("Skipping RWM sampling (RUN_RWM = False)")
@@ -866,8 +1066,7 @@ def main():
     if RUN_ZIGZAG:
         # Run ZigZag sampling
         pos, vel, times, zzs_samples = run_zigzag_sampling(
-            target, rng, force=args.force or args.force_samples
-        )
+            target, rng, force=args.force or args.force_samples)
     else:
         print("=" * 70)
         print("Skipping ZigZag sampling (RUN_ZIGZAG = False)")
@@ -875,9 +1074,14 @@ def main():
 
     # Plot results (only if we have samples)
     if rwm_samples is not None and zzs_samples is not None:
-        plot_posterior_2d(xi_rho_grid, xi_l_grid, log_post_grid,
-                          rwm_samples, zzs_samples,
-                          xi_rho_true, xi_l_true, target=target)
+        plot_posterior_2d(xi_rho_grid,
+                          xi_l_grid,
+                          log_post_grid,
+                          rwm_samples,
+                          zzs_samples,
+                          xi_rho_true,
+                          xi_l_true,
+                          target=target)
 
         plot_marginals(rwm_samples, zzs_samples, xi_rho_true, xi_l_true)
 
@@ -887,23 +1091,38 @@ def main():
         print("=" * 70)
         print("Only RWM samples available - creating grid plot only")
         print("=" * 70)
-        plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
-                                     rwm_samples, None,
-                                     xi_rho_true, xi_l_true, target=target)
+        plot_posterior_2d_grid_only(xi_rho_grid,
+                                    xi_l_grid,
+                                    log_post_grid,
+                                    rwm_samples,
+                                    None,
+                                    xi_rho_true,
+                                    xi_l_true,
+                                    target=target)
     elif zzs_samples is not None:
         print("=" * 70)
         print("Only ZigZag samples available - creating grid plot only")
         print("=" * 70)
-        plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
-                                     None, zzs_samples,
-                                     xi_rho_true, xi_l_true, target=target)
+        plot_posterior_2d_grid_only(xi_rho_grid,
+                                    xi_l_grid,
+                                    log_post_grid,
+                                    None,
+                                    zzs_samples,
+                                    xi_rho_true,
+                                    xi_l_true,
+                                    target=target)
     else:
         print("=" * 70)
         print("No samples - creating grid-only plot")
         print("=" * 70)
-        plot_posterior_2d_grid_only(xi_rho_grid, xi_l_grid, log_post_grid,
-                                     None, None,
-                                     xi_rho_true, xi_l_true, target=target)
+        plot_posterior_2d_grid_only(xi_rho_grid,
+                                    xi_l_grid,
+                                    log_post_grid,
+                                    None,
+                                    None,
+                                    xi_rho_true,
+                                    xi_l_true,
+                                    target=target)
 
     print("\n" + "=" * 70)
     print("✓ All done! Figures saved to:", FIG_DIR)
@@ -912,4 +1131,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

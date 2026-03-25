@@ -24,14 +24,22 @@ def test_full_integration():
     print("Generating synthetic observations...")
 
     # Create a temporary observation file
-    temp_obs_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt')
+    temp_obs_file = tempfile.NamedTemporaryFile(mode='w',
+                                                delete=False,
+                                                suffix='.txt')
     theta_true = np.array([1.2e6])
 
     # Create a simple model to generate observations
     mean = 1.0e6
     std = 2.0e5
-    field_temp = JaxConstantField(MultivariateNormal(mean=np.array([mean]), cov=np.array([[std**2]])))
-    model_temp = JaxFemModel(d_x=1.0, d_y=1.0, d_z=2.5, h=0.5, nu=0.3, field=field_temp)
+    field_temp = JaxConstantField(
+        MultivariateNormal(mean=np.array([mean]), cov=np.array([[std**2]])))
+    model_temp = JaxFemModel(d_x=1.0,
+                             d_y=1.0,
+                             d_z=2.5,
+                             h=0.5,
+                             nu=0.3,
+                             field=field_temp)
     y_obs = model_temp.eval(theta_true)
 
     # Write observations to file
@@ -76,7 +84,8 @@ def test_full_integration():
     print(f"✓ Posterior created successfully")
     print(f"  - Prior dimension: {posterior.prior.dim}")
     print(f"  - Model input dim: {posterior._likelihood._model.get_dim_in()}")
-    print(f"  - Model output dim: {posterior._likelihood._model.get_dim_out()}")
+    print(
+        f"  - Model output dim: {posterior._likelihood._model.get_dim_out()}")
 
     # Sample from prior
     print("\nSampling from prior...")
@@ -87,7 +96,8 @@ def test_full_integration():
     # Evaluate prior log probability
     print("\nEvaluating prior log probability...")
     log_prior = posterior.prior.log_density(theta_0)
-    log_prior_val = np.asarray(log_prior).item() if np.asarray(log_prior).size == 1 else float(np.asarray(log_prior).flat[0])
+    log_prior_val = np.asarray(log_prior).item() if np.asarray(
+        log_prior).size == 1 else float(np.asarray(log_prior).flat[0])
     print(f"  log π(θ): {log_prior_val:.4f}")
 
     # Evaluate model (likelihood data term)
@@ -99,17 +109,21 @@ def test_full_integration():
     # Evaluate likelihood
     print("\nEvaluating likelihood...")
     log_like = posterior._likelihood.log_density(theta_0)
-    log_like_val = np.asarray(log_like).item() if np.asarray(log_like).size == 1 else float(np.asarray(log_like).flat[0])
+    log_like_val = np.asarray(log_like).item() if np.asarray(
+        log_like).size == 1 else float(np.asarray(log_like).flat[0])
     print(f"  log L(θ|y): {log_like_val:.4f}")
 
     # Evaluate posterior log probability
     print("\nEvaluating posterior log probability...")
     log_post = posterior.log_density(theta_0)
-    log_post_val = np.asarray(log_post).item() if np.asarray(log_post).size == 1 else float(np.asarray(log_post).flat[0])
+    log_post_val = np.asarray(log_post).item() if np.asarray(
+        log_post).size == 1 else float(np.asarray(log_post).flat[0])
     print(f"  log p(θ|y): {log_post_val:.4f}")
     print(f"  Verification: log_post ≈ log_prior + log_like")
     print(f"    {log_post_val:.4f} ≈ {log_prior_val:.4f} + {log_like_val:.4f}")
-    print(f"    Difference: {abs(log_post_val - (log_prior_val + log_like_val)):.6e}")
+    print(
+        f"    Difference: {abs(log_post_val - (log_prior_val + log_like_val)):.6e}"
+    )
 
     # Test gradient computation
     print("\nTesting gradient computation...")
@@ -146,7 +160,8 @@ def test_from_yaml_file():
         # Quick sanity check
         theta = posterior.get_prior_sample()
         log_p = posterior.prior.log_density(theta)
-        log_p_val = np.asarray(log_p).item() if np.asarray(log_p).size == 1 else float(np.asarray(log_p).flat[0])
+        log_p_val = np.asarray(log_p).item() if np.asarray(
+            log_p).size == 1 else float(np.asarray(log_p).flat[0])
         print(f"  - Sample from prior: {theta}")
         print(f"  - Log prior: {log_p_val:.4f}")
 
@@ -168,13 +183,21 @@ def test_gradient_correctness():
 
     # Generate observations
     print("Generating synthetic observations...")
-    field_temp = JaxConstantField(MultivariateNormal(mean=np.array([3.0]), cov=np.array([[0.25**2]])))
-    model_temp = JaxFemModel(d_x=1.0, d_y=1.0, d_z=2.5, h=0.5, nu=0.3, field=field_temp)
+    field_temp = JaxConstantField(
+        MultivariateNormal(mean=np.array([3.0]), cov=np.array([[0.25**2]])))
+    model_temp = JaxFemModel(d_x=1.0,
+                             d_y=1.0,
+                             d_z=2.5,
+                             h=0.5,
+                             nu=0.3,
+                             field=field_temp)
     theta_true = np.array([3.1])
     y_obs = model_temp.eval(theta_true)
 
     # Create temp file
-    temp_obs_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt')
+    temp_obs_file = tempfile.NamedTemporaryFile(mode='w',
+                                                delete=False,
+                                                suffix='.txt')
     np.savetxt(temp_obs_file.name, y_obs.reshape(1, -1))
     temp_obs_file.close()
 
@@ -218,15 +241,17 @@ def test_gradient_correctness():
     print("\nComputing finite difference gradient...")
     h = 1e-4  # Step size (larger for numerical stability with FEM)
 
-
     grad_finite_difference = grad_fd(posterior.log_density, theta, h=h)
 
     print(f"  Finite difference gradient: {grad_finite_difference}")
 
     # Compare
-    rel_error = np.abs(grad_analytical - grad_finite_difference) / (np.abs(grad_finite_difference) + 1e-10)
+    rel_error = np.abs(grad_analytical - grad_finite_difference) / (
+        np.abs(grad_finite_difference) + 1e-10)
     print(f"\nComparison:")
-    print(f"  Absolute difference: {np.abs(grad_analytical - grad_finite_difference)}")
+    print(
+        f"  Absolute difference: {np.abs(grad_analytical - grad_finite_difference)}"
+    )
     print(f"  Relative error: {rel_error}")
 
     # Cleanup

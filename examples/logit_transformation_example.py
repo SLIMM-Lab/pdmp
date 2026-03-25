@@ -7,17 +7,13 @@ a Gaussian prior in the unbounded space.
 
 import numpy as np
 import matplotlib.pyplot as plt
-from pdmp.distributions import (
-    MultivariateNormal,
-    TransformedDistribution,
-    LogitTransformation,
-    LOGIT
-)
+from pdmp.distributions import (MultivariateNormal, TransformedDistribution,
+                                LogitTransformation, LOGIT)
 
 # Example 1: Simple 1D case
-print("="*60)
+print("=" * 60)
 print("Example 1: Bounded parameter with Gaussian prior")
-print("="*60)
+print("=" * 60)
 
 # We have a parameter p that must be in [0, 1] (e.g., a probability)
 # But we want to use a Gaussian prior in the unbounded space
@@ -46,9 +42,9 @@ log_p = p_dist.log_density(p_test)
 print(f"\nlog p(p={p_test[0]}) = {log_p:.4f}")
 
 # Example 2: Multivariate case with different bounds
-print("\n" + "="*60)
+print("\n" + "=" * 60)
 print("Example 2: Multiple bounded parameters with different bounds")
-print("="*60)
+print("=" * 60)
 
 # Suppose we have:
 # - θ₁ ∈ [0, 1]: a probability
@@ -56,8 +52,7 @@ print("="*60)
 
 # Define Gaussian in unbounded space
 mean_xi = np.array([0.0, 0.0])
-cov_xi = np.array([[1.0, 0.3],
-                   [0.3, 0.5]])
+cov_xi = np.array([[1.0, 0.3], [0.3, 0.5]])
 base_dist = MultivariateNormal(mean=mean_xi, cov=cov_xi, seed=123)
 
 # Transform with vector bounds
@@ -70,15 +65,19 @@ theta_dist = TransformedDistribution(base_dist, params)
 theta_samples = theta_dist.get_sample(n=5000)
 
 print(f"\nSampled {len(theta_samples)} parameter vectors")
-print(f"  θ₁ range: [{theta_samples[:, 0].min():.4f}, {theta_samples[:, 0].max():.4f}]")
-print(f"  θ₂ range: [{theta_samples[:, 1].min():.4f}, {theta_samples[:, 1].max():.4f}]")
+print(
+    f"  θ₁ range: [{theta_samples[:, 0].min():.4f}, {theta_samples[:, 0].max():.4f}]"
+)
+print(
+    f"  θ₂ range: [{theta_samples[:, 1].min():.4f}, {theta_samples[:, 1].max():.4f}]"
+)
 print(f"  θ₁ mean: {theta_samples[:, 0].mean():.4f} (expected ~0.5)")
 print(f"  θ₂ mean: {theta_samples[:, 1].mean():.4f} (expected ~1.25)")
 
 # Example 3: Direct use of LogitTransformation
-print("\n" + "="*60)
+print("\n" + "=" * 60)
 print("Example 3: Direct transformation usage")
-print("="*60)
+print("=" * 60)
 
 trans = LogitTransformation(a=0.0, b=1.0)
 
@@ -98,15 +97,19 @@ print("  p (bounded):  ", p_recovered)
 print(f"  Match original: {np.allclose(p_values, p_recovered)}")
 
 # Visualization
-print("\n" + "="*60)
+print("\n" + "=" * 60)
 print("Creating visualization...")
-print("="*60)
+print("=" * 60)
 
 fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
 # Plot 1: Samples from Example 1
 ax = axes[0, 0]
-ax.hist(p_samples.flatten(), bins=50, density=True, alpha=0.7, edgecolor='black')
+ax.hist(p_samples.flatten(),
+        bins=50,
+        density=True,
+        alpha=0.7,
+        edgecolor='black')
 ax.axvline(0.5, color='red', linestyle='--', label='p=0.5 (mean in xi space)')
 ax.set_xlabel('p (probability parameter)')
 ax.set_ylabel('Density')
@@ -150,7 +153,6 @@ ax.legend()
 plt.tight_layout()
 plt.show()
 
-print("\n" + "="*60)
+print("\n" + "=" * 60)
 print("✅ Examples completed successfully!")
-print("="*60)
-
+print("=" * 60)

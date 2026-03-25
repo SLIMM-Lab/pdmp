@@ -15,7 +15,6 @@ from pdmp.distributions import Distribution, MultivariateNormal
 from pdmp import logger
 
 
-
 class StepSampler(Sampler):
     """Base class for step-based samplers."""
 
@@ -695,7 +694,8 @@ class NaiveNUTS(StepSampler):
         ratio = abs((x_lim[1] - x_lim[0]) / (y_lim[1] - y_lim[0]))
         size = 5.
 
-        self._fig, self._ax = plt.subplots(figsize=(size + 1, size / ratio + 1))
+        self._fig, self._ax = plt.subplots(figsize=(size + 1,
+                                                    size / ratio + 1))
 
         x = np.linspace(x_lim[0], x_lim[1], 100)
         y = np.linspace(y_lim[0], y_lim[1], 100)
@@ -788,7 +788,10 @@ class NaiveNUTS(StepSampler):
             self._ax.plot(*np.array([segment["from"], segment["to"]]).T,
                           color=color,
                           alpha=0.8)
-            self._ax.scatter(*segment["to"], color=color, marker='.', alpha=0.8)
+            self._ax.scatter(*segment["to"],
+                             color=color,
+                             marker='.',
+                             alpha=0.8)
 
         self._ax.scatter(*self._state,
                          color='C5',
@@ -823,8 +826,8 @@ class NaiveNUTS(StepSampler):
             # base case: take a single leap-frog step
             if j == 0:
                 C_prime = []
-                p_prime, q_prime = self._leap_frog_step(p, q, v,
-                                                        self._step_scale)
+                p_prime, q_prime = self._leap_frog_step(
+                    p, q, v, self._step_scale)
                 ham = self._get_hamiltonian(p, q)
 
                 if u < np.exp(-ham):
@@ -917,9 +920,9 @@ class NaiveNUTS(StepSampler):
     @override
     def run(self):
         # disable tqdm if running on a cluster or in pycharm
-        disable_tqdm = ('PBS_ENVIRONMENT' in os.environ or
-                        'SLURM_JOB_ID' in os.environ or
-                        'GIO_LAUNCHED_DESKTOP_FILE' in os.environ)
+        disable_tqdm = ('PBS_ENVIRONMENT' in os.environ
+                        or 'SLURM_JOB_ID' in os.environ
+                        or 'GIO_LAUNCHED_DESKTOP_FILE' in os.environ)
 
         with tqdm(total=self._n_samples,
                   file=sys.stdout,
@@ -991,8 +994,8 @@ class EfficientNUTS(NaiveNUTS):
             """
             # base case: take a single leap-frog step
             if j == 0:
-                p_prime, q_prime = self._leap_frog_step(p, q, v,
-                                                        self._step_scale)
+                p_prime, q_prime = self._leap_frog_step(
+                    p, q, v, self._step_scale)
                 ham = self._get_hamiltonian(p_prime, q_prime)
                 n_prime = int(u < np.exp(-ham))
                 s_prime = int(np.log(u) < self._delta_max - ham)
@@ -1289,7 +1292,8 @@ class DualAveragingNUTS(NaiveNUTS):
                             (self._iter + self._t_0)) * self._H_bar + 1 /
                            (self._iter + self._t_0) * (self._delta - a / n_a))
 
-            log_eps = self._mu - np.sqrt(self._iter) / self._gamma * self._H_bar
+            log_eps = self._mu - np.sqrt(
+                self._iter) / self._gamma * self._H_bar
             term_1 = self._iter**(-self._kappa) * log_eps
             term_2 = (1 - self._iter**(-self._kappa)) * np.log(
                 self._epsilon_bar)
@@ -1347,9 +1351,8 @@ if __name__ == '__main__':
 
     for i in range(gx.shape[0]):
         for j in range(gx.shape[1]):
-            gz[i,
-               j] = np.exp(posterior.log_density(np.array([gx[i, j], gy[i,
-                                                                        j]])))
+            gz[i, j] = np.exp(
+                posterior.log_density(np.array([gx[i, j], gy[i, j]])))
             grad_z[i, j, :] = posterior.grad_log_density(
                 np.array([gx[i, j], gy[i, j]]))
 

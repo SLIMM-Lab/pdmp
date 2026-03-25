@@ -36,7 +36,9 @@ def main():
     parser = argparse.ArgumentParser(description="AD vs FD gradient test")
     parser.add_argument("--rho", type=float, default=0.3)
     parser.add_argument("--l-scale", type=float, default=0.1)
-    parser.add_argument("--h", type=float, default=1e-5,
+    parser.add_argument("--h",
+                        type=float,
+                        default=1e-5,
                         help="FD step size (default: 1e-5)")
     parser.add_argument("--mesh-size", type=float, default=mesh_size)
     args = parser.parse_args()
@@ -49,20 +51,28 @@ def main():
     # ── 1. Setup mesh and problem ─────────────────────────────────────
     validate_fiber_placement(fibers, L, args.mesh_size)
     print("Generating mesh ...")
-    mesh, phys_tags = generate_multi_fiber_rve_mesh(
-        L, fibers, args.mesh_size, data_dir, l_scale=args.l_scale,
-        ele_type=ele_type)
+    mesh, phys_tags = generate_multi_fiber_rve_mesh(L,
+                                                    fibers,
+                                                    args.mesh_size,
+                                                    data_dir,
+                                                    l_scale=args.l_scale,
+                                                    ele_type=ele_type)
     print(f"  {len(mesh.points)} nodes, {len(mesh.cells)} elements")
 
     print("Building periodic constraint matrix ...")
     P_mat = build_periodic_pmat(mesh, L, vec=2)
 
     mat_props = dict(
-        E_matrix=E_inf, nu_matrix=nu_matrix,
-        E_aggregate=E_fiber, nu_aggregate=nu_fiber,
+        E_matrix=E_inf,
+        nu_matrix=nu_matrix,
+        E_aggregate=E_fiber,
+        nu_aggregate=nu_fiber,
     )
     problem = LinearElasticRVE(
-        mesh, vec=2, dim=2, ele_type=ele_type,
+        mesh,
+        vec=2,
+        dim=2,
+        ele_type=ele_type,
         additional_info=(phys_tags, mat_props),
     )
     problem.P_mat = P_mat
@@ -78,21 +88,26 @@ def main():
     is_fiber = (phys_tags == 2)
     is_fiber_q = jnp.array(np.broadcast_to(is_fiber[:, None], (nc, nq)))
 
-    nu_q = jnp.array(np.where(
-        is_fiber[:, None], nu_fiber, nu_matrix,
-    ) * np.ones((nc, nq)))
+    nu_q = jnp.array(
+        np.where(
+            is_fiber[:, None],
+            nu_fiber,
+            nu_matrix,
+        ) * np.ones((nc, nq)))
 
     eps_macro_voigt = np.array([1e-3, 0.0, 0.0])
     eps_macro_q = make_eps_macro_q(eps_macro_voigt, nc, nq)
 
     # ── 3. AD wrapper ─────────────────────────────────────────────────
     print("Creating ad_wrapper ...")
-    fwd_pred = ad_wrapper(problem, adjoint_solver_options={"umfpack_solver": {}})
+    fwd_pred = ad_wrapper(problem,
+                          adjoint_solver_options={"umfpack_solver": {}})
 
     # ── 4. Differentiable cost function ───────────────────────────────
     def cost_fn(rho, l_scale):
         # E field from parameters (JAX ops — traced by autodiff)
-        E_matrix_q = E_inf * (1.0 - (1.0 - rho) * jnp.exp(-distances_jnp / l_scale))
+        E_matrix_q = E_inf * (1.0 -
+                              (1.0 - rho) * jnp.exp(-distances_jnp / l_scale))
         E_q = jnp.where(is_fiber_q, E_fiber, E_matrix_q)
 
         params = [E_q, nu_q, eps_macro_q]
@@ -106,8 +121,13 @@ def main():
     rho_val = jnp.float64(args.rho)
     l_val = jnp.float64(args.l_scale)
 
-    print(f"\nComputing AD gradient at rho={args.rho}, l_scale={args.l_scale} ...")
-    cost, (grad_rho_ad, grad_l_ad) = jax.value_and_grad(cost_fn, argnums=(0, 1))(rho_val, l_val)
+    print(
+        f"\nComputing AD gradient at rho={args.rho}, l_scale={args.l_scale} ..."
+    )
+    cost, (grad_rho_ad, grad_l_ad) = jax.value_and_grad(cost_fn,
+                                                        argnums=(0,
+                                                                 1))(rho_val,
+                                                                     l_val)
     print(f"  cost = {float(cost):.6e}")
     print(f"  dJ/d(rho)     [AD] = {float(grad_rho_ad):.6e}")
     print(f"  dJ/d(l_scale) [AD] = {float(grad_l_ad):.6e}")
@@ -137,8 +157,12 @@ def main():
 
     print(f"\n{'Parameter':<12} {'AD':>14} {'FD':>14} {'rel. error':>12}")
     print("-" * 54)
-    print(f"{'rho':<12} {float(grad_rho_ad):>14.6e} {grad_rho_fd:>14.6e} {err_rho:>12.2e}")
-    print(f"{'l_scale':<12} {float(grad_l_ad):>14.6e} {grad_l_fd:>14.6e} {err_l:>12.2e}")
+    print(
+        f"{'rho':<12} {float(grad_rho_ad):>14.6e} {grad_rho_fd:>14.6e} {err_rho:>12.2e}"
+    )
+    print(
+        f"{'l_scale':<12} {float(grad_l_ad):>14.6e} {grad_l_fd:>14.6e} {err_l:>12.2e}"
+    )
 
     tol = 1e-3
     passed = err_rho < tol and err_l < tol

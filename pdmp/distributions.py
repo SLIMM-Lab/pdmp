@@ -12,7 +12,6 @@ from pdmp import logger
 from pdmp.forward_model import Model
 from pdmp.project_field import get_gaussian_random_field_projection_from_dict, get_gaussian_random_field_projection_norm_from_dict
 
-
 small = 1e-12
 large = 1e20
 
@@ -43,7 +42,8 @@ def _safe_cholesky(
     """
     A = np.asarray(A, dtype=float)
     if A.ndim != 2 or A.shape[0] != A.shape[1]:
-        raise ValueError(f"_safe_cholesky expects a square 2D array, got shape {A.shape}")
+        raise ValueError(
+            f"_safe_cholesky expects a square 2D array, got shape {A.shape}")
 
     if symmetrize:
         A = 0.5 * (A + A.T)
@@ -58,7 +58,7 @@ def _safe_cholesky(
 
     last_err: Exception | None = None
     for k in range(max_tries):
-        jitter = (jitter0 * (10.0 ** k)) * diag_scale
+        jitter = (jitter0 * (10.0**k)) * diag_scale
         try:
             L = sp.linalg.cholesky(
                 A + jitter * I,
@@ -67,7 +67,8 @@ def _safe_cholesky(
                 overwrite_a=False,
             )
             if jitter > 0:
-                logger.debug(f"Cholesky stabilized for {name} with jitter={jitter:.3e}")
+                logger.debug(
+                    f"Cholesky stabilized for {name} with jitter={jitter:.3e}")
             return L, float(jitter)
         except Exception as e:  # LinAlgError (and friends)
             last_err = e
@@ -83,14 +84,12 @@ def _safe_cholesky(
         L = sp.linalg.cholesky(A_spd, lower=True, check_finite=check_finite)
         logger.warning(
             f"Cholesky failed for {name} after jitter attempts; used eigenvalue clipping "
-            f"with floor={floor:.3e}. Original error: {last_err}"
-        )
+            f"with floor={floor:.3e}. Original error: {last_err}")
         return L, float(floor)
     except Exception as e:
         raise np.linalg.LinAlgError(
             f"Cholesky failed for {name} even after jitter and eigenvalue clipping. "
-            f"Last errors: {last_err} / {e}"
-        )
+            f"Last errors: {last_err} / {e}")
 
 
 class Distribution:
@@ -192,7 +191,12 @@ class Distribution:
 
 class JointDistribution(Distribution):
     """Independent joint of multiple distributions."""
-    def __init__(self, distributions: list[Distribution], *, rng=None, seed=None):
+
+    def __init__(self,
+                 distributions: list[Distribution],
+                 *,
+                 rng=None,
+                 seed=None):
         super().__init__(rng=rng, seed=seed)
         self.distributions = distributions
         self._dims = [dist.dim for dist in distributions]
@@ -261,7 +265,11 @@ class JointDistribution(Distribution):
         # batch of points
         return np.array([self.hessian_log_density(xi) for xi in x])
 
-def stable_cholesky_and_inv(cov: np.ndarray, *, jitter0: float = 1e-12, max_tries: int = 8):
+
+def stable_cholesky_and_inv(cov: np.ndarray,
+                            *,
+                            jitter0: float = 1e-12,
+                            max_tries: int = 8):
     """
     Compute a numerically stable Cholesky factor and inverse using diagonal jitter.
 
@@ -287,7 +295,7 @@ def stable_cholesky_and_inv(cov: np.ndarray, *, jitter0: float = 1e-12, max_trie
 
     jitter = 0.0
     for k in range(max_tries):
-        jitter = (jitter0 * (10.0 ** k)) * diag_scale
+        jitter = (jitter0 * (10.0**k)) * diag_scale
         try:
             L = np.linalg.cholesky(cov + jitter * I)
             invC = sp.linalg.cho_solve((L, True), I, check_finite=False)
@@ -310,6 +318,7 @@ def stable_cholesky_and_inv(cov: np.ndarray, *, jitter0: float = 1e-12, max_trie
 
 # Usage in your class:
 # self.cov_L, self.inv_C, self._jitter = stable_cholesky_and_inv(self._cov)
+
 
 class MultivariateNormal(Distribution):
     """Multivariate normal distribution."""
@@ -338,14 +347,16 @@ class MultivariateNormal(Distribution):
         self._dim = len(self._mean)
 
         if (cov is None) == (prec is None):
-            raise ValueError("Exactly one of 'cov' or 'prec' must be provided.")
+            raise ValueError(
+                "Exactly one of 'cov' or 'prec' must be provided.")
 
         if cov is not None:
             # Covariance given: use numerically stable Cholesky + inverse.
             self._cov = np.atleast_2d(cov)
             if self._cov.shape != (self._dim, self._dim):
                 raise ValueError("Shape mismatch between mean and cov.")
-            self.cov_L, self.inv_C, self._jitter = stable_cholesky_and_inv(self._cov)
+            self.cov_L, self.inv_C, self._jitter = stable_cholesky_and_inv(
+                self._cov)
         else:
             # Precision given: avoid forming inv(prec) explicitly.
             prec = np.atleast_2d(prec)
@@ -356,9 +367,10 @@ class MultivariateNormal(Distribution):
             # Cholesky factor of precision: P = R^T R  (upper-triangular R)
             R = np.linalg.cholesky(prec)
             # Covariance C = P^{-1} = R^{-1} (R^{-1})^T
-            self.cov_L = sp.linalg.solve_triangular(
-                R, np.eye(self._dim), lower=False, check_finite=False
-            )
+            self.cov_L = sp.linalg.solve_triangular(R,
+                                                    np.eye(self._dim),
+                                                    lower=False,
+                                                    check_finite=False)
             # Inverse covariance is just the precision itself
             self.inv_C = prec
             self._jitter = 0.0
@@ -377,7 +389,8 @@ class MultivariateNormal(Distribution):
         if 'mean' not in params:
             raise ValueError("Parameters must include 'mean'.")
         if ('cov' in params) == ('prec' in params):
-            raise ValueError("Parameters must include exactly one of 'cov' or 'prec'.")
+            raise ValueError(
+                "Parameters must include exactly one of 'cov' or 'prec'.")
         return cls(
             mean=params['mean'],
             cov=params.get('cov', None),
@@ -415,20 +428,23 @@ class MultivariateNormal(Distribution):
             # Single point: always return scalar (float)
             if self._dim == 1:
                 result = self.constant - 0.5 * self.log_det - 0.5 * np.abs(
-                    diff / self.cov_L[0, 0]
-                ) ** 2
+                    diff / self.cov_L[0, 0])**2
                 # Ensure we get a scalar even if result is 1D array
-                return float(np.asarray(result).flat[0]) if hasattr(result, 'flat') else float(result)
+                return float(np.asarray(result).flat[0]) if hasattr(
+                    result, 'flat') else float(result)
             else:
-                y = sp.linalg.solve_triangular(
-                    self.cov_L, diff, lower=True, check_finite=False
-                )
-                return float(self.constant - 0.5 * self.log_det - 0.5 * np.dot(y, y))
+                y = sp.linalg.solve_triangular(self.cov_L,
+                                               diff,
+                                               lower=True,
+                                               check_finite=False)
+                return float(self.constant - 0.5 * self.log_det -
+                             0.5 * np.dot(y, y))
         else:
             # batch of points: return 1D array
-            y = sp.linalg.solve_triangular(
-                self.cov_L, diff.T, lower=True, check_finite=False
-            )
+            y = sp.linalg.solve_triangular(self.cov_L,
+                                           diff.T,
+                                           lower=True,
+                                           check_finite=False)
             quad = np.sum(y * y, axis=0)
             return (self.constant - 0.5 * self.log_det - 0.5 * quad).T
 
@@ -440,19 +456,18 @@ class MultivariateNormal(Distribution):
             return -sp.linalg.solve_triangular(
                 self.cov_L.T,
                 sp.linalg.solve_triangular(
-                    self.cov_L, diff, lower=True, check_finite=False
-                ),
+                    self.cov_L, diff, lower=True, check_finite=False),
                 lower=False,
                 check_finite=False,
             )
         else:
             # Batch of points: solve for all columns at once
-            y = sp.linalg.solve_triangular(
-                self.cov_L, diff.T, lower=True, check_finite=False
-            )
+            y = sp.linalg.solve_triangular(self.cov_L,
+                                           diff.T,
+                                           lower=True,
+                                           check_finite=False)
             return -sp.linalg.solve_triangular(
-                self.cov_L.T, y, lower=False, check_finite=False
-            ).T
+                self.cov_L.T, y, lower=False, check_finite=False).T
 
     @override
     def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
@@ -538,8 +553,7 @@ class GaussianMixture(Distribution):
         mean = self.mean
         for i in range(self.n_components):
             diff = self.dists[i].mean - mean
-            cov += self.weights[i] * (self.dists[i].cov +
-                                      np.outer(diff, diff))
+            cov += self.weights[i] * (self.dists[i].cov + np.outer(diff, diff))
         return cov
 
     @override
@@ -643,11 +657,11 @@ class BananaDistribution(Distribution):
         y = self._gaussian.get_sample(n=n)
         if n == 1:
             x0 = self._a * y[0]
-            x1 = y[1] / self._a - self._b * (x0 ** 2 + self._a ** 2)
+            x1 = y[1] / self._a - self._b * (x0**2 + self._a**2)
             return np.array([x0, x1])
         else:
             x0 = self._a * y[:, 0]
-            x1 = y[:, 1] / self._a - self._b * (x0 ** 2 + self._a ** 2)
+            x1 = y[:, 1] / self._a - self._b * (x0**2 + self._a**2)
             return np.column_stack([x0, x1])
 
     @override
@@ -747,13 +761,12 @@ class MultivariateLogNormal(Distribution):
 
 class GammaDistribution(Distribution):
     """Gamma distribution with shape alpha and scale beta."""
-    def __init__(
-        self,
-        alpha: float,
-        beta: float,
-        rng: np.random.Generator = None,
-        seed: int = None
-    ):
+
+    def __init__(self,
+                 alpha: float,
+                 beta: float,
+                 rng: np.random.Generator = None,
+                 seed: int = None):
         super().__init__(rng=rng, seed=seed)
         self.alpha = alpha
         self.beta = beta
@@ -763,15 +776,16 @@ class GammaDistribution(Distribution):
         self._log_norm = alpha * np.log(beta) + sp.special.gammaln(alpha)
 
     @classmethod
-    def from_dict(
-        cls,
-        params: dict[str, Union[float, np.ndarray]],
-        rng: np.random.Generator = None,
-        seed: int = None
-    ):
+    def from_dict(cls,
+                  params: dict[str, Union[float, np.ndarray]],
+                  rng: np.random.Generator = None,
+                  seed: int = None):
         if 'alpha' not in params or 'beta' not in params:
             raise ValueError("Parameters must include 'alpha' and 'beta'.")
-        return cls(alpha=params['alpha'], beta=params['beta'], rng=rng, seed=seed)
+        return cls(alpha=params['alpha'],
+                   beta=params['beta'],
+                   rng=rng,
+                   seed=seed)
 
     @property
     def dim(self) -> int:
@@ -814,33 +828,34 @@ class GammaDistribution(Distribution):
 
 class BetaDistribution(Distribution):
     """Beta distribution with shape parameters alpha and beta."""
-    def __init__(
-        self,
-        alpha: float,
-        beta: float,
-        rng: np.random.Generator = None,
-        seed: int = None
-    ):
+
+    def __init__(self,
+                 alpha: float,
+                 beta: float,
+                 rng: np.random.Generator = None,
+                 seed: int = None):
         super().__init__(rng=rng, seed=seed)
         self.alpha = alpha
         self.beta = beta
         self._dim = 1
         # E[X] and Var[X]
         self._mean = alpha / (alpha + beta)
-        self._cov = np.array([[alpha * beta / ((alpha + beta)**2 * (alpha + beta + 1))]])
+        self._cov = np.array(
+            [[alpha * beta / ((alpha + beta)**2 * (alpha + beta + 1))]])
         # log normalization constant = ln B(alpha,beta)
         self._log_norm = sp.special.betaln(alpha, beta)
 
     @classmethod
-    def from_dict(
-        cls,
-        params: dict[str, Union[float, np.ndarray]],
-        rng: np.random.Generator = None,
-        seed: int = None
-    ):
+    def from_dict(cls,
+                  params: dict[str, Union[float, np.ndarray]],
+                  rng: np.random.Generator = None,
+                  seed: int = None):
         if 'alpha' not in params or 'beta' not in params:
             raise ValueError("Parameters must include 'alpha' and 'beta'.")
-        return cls(alpha=params['alpha'], beta=params['beta'], rng=rng, seed=seed)
+        return cls(alpha=params['alpha'],
+                   beta=params['beta'],
+                   rng=rng,
+                   seed=seed)
 
     @property
     def dim(self) -> int:
@@ -866,26 +881,21 @@ class BetaDistribution(Distribution):
         xv = np.atleast_1d(x).astype(float)
         xv[xv <= 0] = small
         xv[xv >= 1] = 1 - small
-        return ((self.alpha - 1) * np.log(xv)
-                + (self.beta - 1) * np.log(1 - xv)
-                - self._log_norm)
+        return ((self.alpha - 1) * np.log(xv) +
+                (self.beta - 1) * np.log(1 - xv) - self._log_norm)
 
     @override
     def grad_log_density(self, x: np.ndarray) -> np.ndarray:
         xv = float(x) if x.ndim == 0 else x.flatten()[0]
         xv = max(min(xv, 1 - small), small)
-        return np.array([
-            (self.alpha - 1) / xv - (self.beta - 1) / (1 - xv)
-        ])
+        return np.array([(self.alpha - 1) / xv - (self.beta - 1) / (1 - xv)])
 
     @override
     def hessian_log_density(self, x: np.ndarray) -> np.ndarray:
         xv = float(x) if x.ndim == 0 else x.flatten()[0]
         xv = max(min(xv, 1 - small), small)
-        return np.array([[
-            -(self.alpha - 1) / (xv**2)
-            - (self.beta - 1) / ((1 - xv)**2)
-        ]])
+        return np.array(
+            [[-(self.alpha - 1) / (xv**2) - (self.beta - 1) / ((1 - xv)**2)]])
 
 
 class CubicDistribution(Distribution):
@@ -944,13 +954,13 @@ class CubicDistribution(Distribution):
     def log_density(self, x: np.ndarray) -> Union[float, np.ndarray]:
         d = x - self._normal.mean
         return (np.sum(
-            (1 - 2 * (d > 0)) * self._a / 3 * self.cubic_diag * d ** 3) +
+            (1 - 2 * (d > 0)) * self._a / 3 * self.cubic_diag * d**3) +
                 self._normal.log_density(x))
 
     @override
     def grad_log_density(self, x: np.ndarray) -> np.ndarray:
         d = x - self._normal.mean
-        return ((1 - 2 * (d > 0)) * (self._a * self.cubic_diag * d ** 2) +
+        return ((1 - 2 * (d > 0)) * (self._a * self.cubic_diag * d**2) +
                 self._normal.grad_log_density(x))
 
     @override
@@ -971,7 +981,9 @@ class Likelihood(Distribution):
         super().__init__(rng=rng, seed=seed)
 
     @override
-    def log_density(self, params: np.ndarray, idx: int = None) -> Union[float, np.ndarray]:
+    def log_density(self,
+                    params: np.ndarray,
+                    idx: int = None) -> Union[float, np.ndarray]:
         """Get the log density of the likelihood of the observation given by idx.
 
         Args:
@@ -1036,7 +1048,9 @@ class TemperedLikelihood(Likelihood):
         return self._likelihood.n_obs
 
     @override
-    def log_density(self, params: np.ndarray, idx: int = None) -> Union[float, np.ndarray]:
+    def log_density(self,
+                    params: np.ndarray,
+                    idx: int = None) -> Union[float, np.ndarray]:
         return self._beta * self._likelihood.log_density(params, idx=idx)
 
     @override
@@ -1073,14 +1087,16 @@ class GaussianLikelihood(Likelihood):
         for i in range(self.n_obs):
             self._dists.append(
                 MultivariateNormal(self._u_obs[i],
-                                   sigma ** 2 * np.eye(self._dim)))
+                                   sigma**2 * np.eye(self._dim)))
 
     @property
     def dim(self) -> int:
         return self._dim
 
     @override
-    def log_density(self, params: np.ndarray, idx: int = None) -> Union[float, np.ndarray]:
+    def log_density(self,
+                    params: np.ndarray,
+                    idx: int = None) -> Union[float, np.ndarray]:
         if idx is None:
             log_p = 0.
             for i in range(self.n_obs):
@@ -1140,8 +1156,9 @@ class GaussianLikelihood(Likelihood):
             m = self._model.eval(params, idx=i)
             grad_m = self._model.eval_grad(params, idx=i)
             hess_m = self._model.eval_hessian(params, idx=i)
-            hess += np.einsum('ij,jk,il', self._dists[i].hessian_log_density(m),
-                              grad_m, grad_m)
+            hess += np.einsum('ij,jk,il',
+                              self._dists[i].hessian_log_density(m), grad_m,
+                              grad_m)
             hess += np.einsum('i,ijk->jk', self._dists[i].grad_log_density(m),
                               hess_m)
 
@@ -1172,7 +1189,9 @@ class FlatLikelihood(Likelihood):
         return self._dim
 
     @override
-    def log_density(self, params: np.ndarray, idx: int = None) -> Union[float, np.ndarray]:
+    def log_density(self,
+                    params: np.ndarray,
+                    idx: int = None) -> Union[float, np.ndarray]:
         return 0.0
 
     @override
@@ -1462,7 +1481,8 @@ class ExponentialTransformation(Transformation):
     @override
     def log_det_jacobian(self, xi: np.ndarray) -> float:
         """log |det(J)| = sum(xi) since J is diagonal."""
-        return np.sum(xi, axis=-1)  # log |det(J)| = sum(xi) for diagonal matrix
+        return np.sum(xi,
+                      axis=-1)  # log |det(J)| = sum(xi) for diagonal matrix
 
     @override
     def grad_log_det_jacobian(self, xi: np.ndarray) -> np.ndarray:
@@ -1493,24 +1513,24 @@ class SigmoidTransformation(Transformation):
         b: Upper bound (scalar or array).
     """
 
-    def __init__(self, a: Union[float, np.ndarray] = 0.0, b: Union[float, np.ndarray] = 1.0):
+    def __init__(self,
+                 a: Union[float, np.ndarray] = 0.0,
+                 b: Union[float, np.ndarray] = 1.0):
         self._a = np.atleast_1d(np.asarray(a, dtype=float))
         self._b = np.atleast_1d(np.asarray(b, dtype=float))
         self._range = self._b - self._a
 
         if np.any(self._range <= 0):
-            raise ValueError("Upper bound b must be greater than lower bound a")
+            raise ValueError(
+                "Upper bound b must be greater than lower bound a")
 
     @staticmethod
     def _sigmoid(xi: np.ndarray) -> np.ndarray:
         """Numerically stable sigmoid function."""
         # Clip to avoid overflow
         xi_clipped = np.clip(xi, -500, 500)
-        return np.where(
-            xi_clipped >= 0,
-            1 / (1 + np.exp(-xi_clipped)),
-            np.exp(xi_clipped) / (1 + np.exp(xi_clipped))
-        )
+        return np.where(xi_clipped >= 0, 1 / (1 + np.exp(-xi_clipped)),
+                        np.exp(xi_clipped) / (1 + np.exp(xi_clipped)))
 
     @override
     def transform(self, xi: np.ndarray) -> np.ndarray:
@@ -1565,7 +1585,8 @@ class SigmoidTransformation(Transformation):
         sig = self._sigmoid(xi)
         # For element-wise sigmoid: d²x_i/dξ_i² = (b-a) * σ(ξ_i) * (1 - σ(ξ_i)) * (1 - 2σ(ξ_i))
         idx = np.arange(d)
-        H[idx, idx, idx] = self._range.flatten() * sig * (1 - sig) * (1 - 2 * sig)
+        H[idx, idx,
+          idx] = self._range.flatten() * sig * (1 - sig) * (1 - 2 * sig)
         return H
 
     @override
@@ -1594,24 +1615,24 @@ class LogitTransformation(Transformation):
         b: Upper bound (scalar or array).
     """
 
-    def __init__(self, a: Union[float, np.ndarray] = 0.0, b: Union[float, np.ndarray] = 1.0):
+    def __init__(self,
+                 a: Union[float, np.ndarray] = 0.0,
+                 b: Union[float, np.ndarray] = 1.0):
         self._a = np.atleast_1d(np.asarray(a, dtype=float))
         self._b = np.atleast_1d(np.asarray(b, dtype=float))
         self._range = self._b - self._a
 
         if np.any(self._range <= 0):
-            raise ValueError("Upper bound b must be greater than lower bound a")
+            raise ValueError(
+                "Upper bound b must be greater than lower bound a")
 
     @staticmethod
     def _sigmoid(xi: np.ndarray) -> np.ndarray:
         """Numerically stable sigmoid function."""
         # Clip to avoid overflow
         xi_clipped = np.clip(xi, -500, 500)
-        return np.where(
-            xi_clipped >= 0,
-            1 / (1 + np.exp(-xi_clipped)),
-            np.exp(xi_clipped) / (1 + np.exp(xi_clipped))
-        )
+        return np.where(xi_clipped >= 0, 1 / (1 + np.exp(-xi_clipped)),
+                        np.exp(xi_clipped) / (1 + np.exp(xi_clipped)))
 
     @override
     def transform(self, x: np.ndarray) -> np.ndarray:
@@ -1696,7 +1717,8 @@ class LogitTransformation(Transformation):
         z = np.clip(z, small, 1 - small)
         # For element-wise logit
         idx = np.arange(d)
-        H[idx, idx, idx] = (2 * z - 1) / (self._range.flatten() * z**2 * (1 - z)**2)
+        H[idx, idx,
+          idx] = (2 * z - 1) / (self._range.flatten() * z**2 * (1 - z)**2)
         return H
 
     @override
@@ -1794,11 +1816,9 @@ class CompositeTransformation(Transformation):
         ... )
     """
 
-    def __init__(
-        self,
-        transformations: list[Transformation],
-        indices: list[np.ndarray | slice] | None = None
-    ):
+    def __init__(self,
+                 transformations: list[Transformation],
+                 indices: list[np.ndarray | slice] | None = None):
         self._transformations = transformations
         self._n_transforms = len(transformations)
 
@@ -1822,7 +1842,8 @@ class CompositeTransformation(Transformation):
 
             if not isinstance(self._indices[0], slice):
                 if len(all_indices) != len(set(all_indices)):
-                    raise ValueError("Indices must be disjoint (non-overlapping)")
+                    raise ValueError(
+                        "Indices must be disjoint (non-overlapping)")
                 # Note: We don't check completeness here as dimension is unknown
         else:
             self._indices = None
@@ -1843,16 +1864,14 @@ class CompositeTransformation(Transformation):
             # For now, assume equal split
             raise ValueError(
                 "Must provide indices when creating CompositeTransformation. "
-                "Cannot infer dimensions automatically."
-            )
+                "Cannot infer dimensions automatically.")
 
         # Convert any slices to arrays now that we know total dimension
         converted_indices = []
         for idx in self._indices:
             if isinstance(idx, slice):
                 converted_indices.append(
-                    np.arange(*idx.indices(self._total_dim), dtype=int)
-                )
+                    np.arange(*idx.indices(self._total_dim), dtype=int))
             else:
                 converted_indices.append(idx)
         self._indices = converted_indices
@@ -1865,12 +1884,11 @@ class CompositeTransformation(Transformation):
         if len(all_indices) != self._total_dim:
             raise ValueError(
                 f"Indices must cover all {self._total_dim} dimensions, "
-                f"but only cover {len(all_indices)}"
-            )
-        if not np.array_equal(np.sort(all_indices), np.arange(self._total_dim)):
+                f"but only cover {len(all_indices)}")
+        if not np.array_equal(np.sort(all_indices), np.arange(
+                self._total_dim)):
             raise ValueError(
-                f"Indices must be a partition of [0, {self._total_dim})"
-            )
+                f"Indices must be a partition of [0, {self._total_dim})")
 
     @override
     def transform(self, xi: np.ndarray) -> np.ndarray:
@@ -1998,11 +2016,9 @@ COMPOSITE = 'Composite'
 TRANSFORMATIONS = [EXPONENTIAL, LOG, AFFINE, SIGMOID, LOGIT, COMPOSITE]
 
 
-def get_transformation(
-    params: dict[str, Any],
-    base_object: Union[Distribution, Likelihood] = None,
-    context: str = "Transformation"
-) -> Transformation:
+def get_transformation(params: dict[str, Any],
+                       base_object: Union[Distribution, Likelihood] = None,
+                       context: str = "Transformation") -> Transformation:
     """Create a transformation object from parameter dictionary.
 
     This helper function parses transformation parameters and creates the appropriate
@@ -2046,13 +2062,15 @@ def get_transformation(
             params['M'] = M
 
         if M is None or b is None:
-            raise ValueError(f"AFFINE transformation requires 'M' and 'b' parameters")
+            raise ValueError(
+                f"AFFINE transformation requires 'M' and 'b' parameters")
 
         M_arr = np.asarray(M, dtype=float)
         if np.allclose(M_arr, M_arr.T):
             # Symmetric matrix (e.g. covariance): extract the Cholesky factor so
             # that the affine map xi → C xi + b whitens the space.
-            C, _ = _safe_cholesky(M_arr, name=f"AffineTransformation(M) for {context}")
+            C, _ = _safe_cholesky(
+                M_arr, name=f"AffineTransformation(M) for {context}")
         else:
             # Non-symmetric matrix (e.g. rotation, shear): use directly.
             # Applying _safe_cholesky here would symmetrise M to ~0 and destroy it.
@@ -2090,14 +2108,12 @@ def get_transformation(
                 offset += dim
             logger.info(
                 f"Automatically created indices for JointDistribution: "
-                f"dims = {[len(idx) for idx in indices]}"
-            )
+                f"dims = {[len(idx) for idx in indices]}")
 
         if indices is None:
             raise ValueError(
                 "COMPOSITE transformation requires 'indices' parameter "
-                "(or base_object must be JointDistribution)"
-            )
+                "(or base_object must be JointDistribution)")
 
         # Build transformation objects from specs
         transformations = []
@@ -2129,7 +2145,8 @@ def get_transformation(
                     b = spec.get('b', 1.0)
                     transformations.append(LogitTransformation(a, b))
                 else:
-                    raise ValueError(f"Unknown transformation type: {trans_type}")
+                    raise ValueError(
+                        f"Unknown transformation type: {trans_type}")
             elif isinstance(spec, str):
                 # String specification for simple transformations
                 if spec == EXPONENTIAL:
@@ -2147,27 +2164,25 @@ def get_transformation(
                 else:
                     raise ValueError(
                         f"String specification '{spec}' not supported for COMPOSITE. "
-                        f"Use dict or Transformation object for {spec}."
-                    )
+                        f"Use dict or Transformation object for {spec}.")
             else:
                 raise ValueError(
                     f"Invalid transformation specification: {spec}. "
-                    f"Expected Transformation, dict, or str."
-                )
+                    f"Expected Transformation, dict, or str.")
 
         return CompositeTransformation(transformations, indices)
 
     else:
         raise NotImplementedError(
             f"Transformation {trans_type} not recognized.\n"
-            f"pick any of {TRANSFORMATIONS}"
-        )
+            f"pick any of {TRANSFORMATIONS}")
 
 
 class TransformedDistribution(Distribution):
     """Base class for transformed distributions."""
 
-    def __init__(self, base_distribution: Distribution, params: dict[str, Any]):
+    def __init__(self, base_distribution: Distribution, params: dict[str,
+                                                                     Any]):
         """Initialize a transformed distribution.
 
         Args:
@@ -2183,8 +2198,7 @@ class TransformedDistribution(Distribution):
         self._transformation = get_transformation(
             params,
             base_object=base_distribution,
-            context="TransformedDistribution"
-        )
+            context="TransformedDistribution")
 
     @override
     def get_sample(self, n: int = 1) -> np.ndarray:
@@ -2290,10 +2304,7 @@ class TransformedLikelihood(Likelihood):
         super().__init__(rng=likelihood.rng)
         self._likelihood = likelihood
         self._transformation = get_transformation(
-            params,
-            base_object=likelihood,
-            context="TransformedLikelihood"
-        )
+            params, base_object=likelihood, context="TransformedLikelihood")
 
     @property
     def dim(self) -> int:
@@ -2305,7 +2316,9 @@ class TransformedLikelihood(Likelihood):
         return self._likelihood.dim
 
     @override
-    def log_density(self, xi: np.ndarray, idx: int = None) -> Union[float, np.ndarray]:
+    def log_density(self,
+                    xi: np.ndarray,
+                    idx: int = None) -> Union[float, np.ndarray]:
         """Computes log p(xi).
 
         Args:
@@ -2385,9 +2398,9 @@ def get_likelihood(
 
     if 'name' not in config:
         raise ValueError("Likelihood config must include 'name'.")
-    if ((config['name'] != 'FlatLikelihood') and
-        (config['name'] != 'TransformedLikelihood') and
-        ('observation_file' not in config)):
+    if ((config['name'] != 'FlatLikelihood')
+            and (config['name'] != 'TransformedLikelihood')
+            and ('observation_file' not in config)):
         raise ValueError("Likelihood config must include 'observation_file'.")
 
     if (config['name'] != 'FlatLikelihood') and (config['name']
@@ -2441,7 +2454,8 @@ def find_mean(target: Distribution, x_0: np.ndarray = None) -> np.ndarray:
                 logger.warning(
                     "  Method get_sample not implemented for target.")
 
-        if 'mean' in type(target).__dict__ and not isinstance(type(target).__dict__['mean'], property):
+        if 'mean' in type(target).__dict__ and not isinstance(
+                type(target).__dict__['mean'], property):
             try:
                 x_0 = target.mean
                 success = True
@@ -2454,7 +2468,8 @@ def find_mean(target: Distribution, x_0: np.ndarray = None) -> np.ndarray:
                 x_0 = target.prior.get_sample()
                 success = True
             except NotImplementedError as e:
-                logger.warning("  Method get_sample not implemented for prior.")
+                logger.warning(
+                    "  Method get_sample not implemented for prior.")
 
         if not success and hasattr(target, 'prior') and hasattr(
                 target.prior, 'mean'):

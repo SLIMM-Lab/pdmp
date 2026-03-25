@@ -24,7 +24,8 @@ def example_1d_constant_field():
 
     print(f"Spatial dimension: {basis.spatial_dim}")
     print(f"Domain: {basis.domain}")
-    print(f"Volume (length): {np.prod(basis.domain[:, 1] - basis.domain[:, 0])}")
+    print(
+        f"Volume (length): {np.prod(basis.domain[:, 1] - basis.domain[:, 0])}")
     print(f"Norm: {basis.get_norms()[0, 0]:.4f}")
 
     # Create field with uncertain coefficient
@@ -66,10 +67,10 @@ def example_2d_constant_field():
 
     # Evaluate at 2D points (e.g., mesh nodes or quadrature points)
     x = jnp.array([
-        [0.0, 0.0],    # Corner
-        [5.0, 2.5],    # Center
-        [10.0, 5.0],   # Opposite corner
-        [2.5, 1.25],   # Random point
+        [0.0, 0.0],  # Corner
+        [5.0, 2.5],  # Center
+        [10.0, 5.0],  # Opposite corner
+        [2.5, 1.25],  # Random point
     ])
 
     # Use a specific coefficient value
@@ -118,7 +119,9 @@ def example_3d_constant_field():
     print(f"\nEvaluation at {x.shape[0]} 3D points:")
     print(f"All values equal to {coeffs[0]:.2e} m²:")
     for i, (pt, val) in enumerate(zip(x, values)):
-        print(f"  Point {i}: ({pt[0]:.2f}, {pt[1]:.2f}, {pt[2]:.2f}) -> {val:.2e} m²")
+        print(
+            f"  Point {i}: ({pt[0]:.2f}, {pt[1]:.2f}, {pt[2]:.2f}) -> {val:.2e} m²"
+        )
     print()
 
 
@@ -141,9 +144,15 @@ def example_2d_gradient_computation():
     def loss_fn(coeffs):
         # Evaluate at a grid of points
         x = jnp.array([
-            [0.0, 0.0], [0.5, 0.0], [1.0, 0.0],
-            [0.0, 0.5], [0.5, 0.5], [1.0, 0.5],
-            [0.0, 1.0], [0.5, 1.0], [1.0, 1.0],
+            [0.0, 0.0],
+            [0.5, 0.0],
+            [1.0, 0.0],
+            [0.0, 0.5],
+            [0.5, 0.5],
+            [1.0, 0.5],
+            [0.0, 1.0],
+            [0.5, 1.0],
+            [1.0, 1.0],
         ])
         values = field.evaluate(coeffs, x)
         # Simple loss: sum of squared values
@@ -157,7 +166,8 @@ def example_2d_gradient_computation():
     print(f"Coefficient: {coeffs[0]:.2f}")
     print(f"Loss (sum of 9 points): {loss:.4f}")
     print(f"Gradient w.r.t. coefficient: {grad[0]:.4f}")
-    print(f"Analytical gradient (2 * coeff * n_points): {2 * coeffs[0] * 9:.4f}")
+    print(
+        f"Analytical gradient (2 * coeff * n_points): {2 * coeffs[0] * 9:.4f}")
     print(f"Match: {jnp.allclose(grad[0], 2 * coeffs[0] * 9)}")
     print()
 
@@ -173,7 +183,9 @@ def example_3d_fem_simulation():
     basis = ConstantBasis(domain)
 
     print(f"Component dimensions: {basis.domain[:, 1] * 1000} mm")
-    print(f"Volume: {np.prod(basis.domain[:, 1] - basis.domain[:, 0]) * 1e9:.2f} mm³")
+    print(
+        f"Volume: {np.prod(basis.domain[:, 1] - basis.domain[:, 0]) * 1e9:.2f} mm³"
+    )
 
     # Uncertain material density (kg/m³)
     mean = np.array([7850.0])  # Steel density
@@ -187,21 +199,22 @@ def example_3d_fem_simulation():
 
     # Generate random quadrature points within the domain
     np.random.seed(42)
-    quad_points = np.random.uniform(
-        low=basis.domain[:, 0],
-        high=basis.domain[:, 1],
-        size=(n_cells * n_quads_per_cell, 3)
-    )
+    quad_points = np.random.uniform(low=basis.domain[:, 0],
+                                    high=basis.domain[:, 1],
+                                    size=(n_cells * n_quads_per_cell, 3))
 
     # Sample material property
     sampled_density = field.coefficient_distribution.get_sample()
     print(f"\nSampled density: {sampled_density[0]:.2f} kg/m³")
 
     # Evaluate field at all quadrature points
-    density_field = field.evaluate(jnp.array(sampled_density), jnp.array(quad_points))
+    density_field = field.evaluate(jnp.array(sampled_density),
+                                   jnp.array(quad_points))
 
     print(f"Evaluated at {n_cells * n_quads_per_cell} quadrature points")
-    print(f"All values constant: {jnp.allclose(density_field, sampled_density[0])}")
+    print(
+        f"All values constant: {jnp.allclose(density_field, sampled_density[0])}"
+    )
     print(f"Min value: {jnp.min(density_field):.2f} kg/m³")
     print(f"Max value: {jnp.max(density_field):.2f} kg/m³")
     print(f"Mean value: {jnp.mean(density_field):.2f} kg/m³")

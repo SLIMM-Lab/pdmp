@@ -15,16 +15,16 @@ from pdmp.random_field import get_jax_field
 
 def example_1_custom_gaussian_covariance():
     """Example 1: Gaussian field with custom covariance matrix."""
-    print("="*70)
+    print("=" * 70)
     print("Example 1: Gaussian Field with Custom Covariance")
-    print("="*70)
+    print("=" * 70)
 
     # Custom covariance with strong correlation between adjacent coefficients
     dim = 10
     cov = np.zeros((dim, dim))
     for i in range(dim):
         for j in range(dim):
-            cov[i, j] = 0.9 ** abs(i - j)
+            cov[i, j] = 0.9**abs(i - j)
 
     config = {
         'name': 'JaxRandomField',
@@ -65,16 +65,19 @@ def example_1_custom_gaussian_covariance():
 
 def example_2_kernel_based_gaussian():
     """Example 2: Gaussian field from spatial covariance kernel."""
-    print("="*70)
+    print("=" * 70)
     print("Example 2: Kernel-Based Gaussian Field")
-    print("="*70)
+    print("=" * 70)
 
     config = {
         'name': 'JaxGaussianRandomField',
         'dim': 20,
         'mean': 0.0,
         'interval': [0.0, 1.0],
-        'kernel_params': {'sigma': 1.0, 'l': 0.2},  # Correlation length l=0.2
+        'kernel_params': {
+            'sigma': 1.0,
+            'l': 0.2
+        },  # Correlation length l=0.2
         'basis': 'PiecewiseConstant'
     }
 
@@ -95,8 +98,9 @@ def example_2_kernel_based_gaussian():
 
     plt.xlabel('x')
     plt.ylabel('Field value')
-    plt.title(f"Squared Exponential Kernel: σ={config['kernel_params']['sigma']}, "
-              f"l={config['kernel_params']['l']}")
+    plt.title(
+        f"Squared Exponential Kernel: σ={config['kernel_params']['sigma']}, "
+        f"l={config['kernel_params']['l']}")
     plt.legend()
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
@@ -107,9 +111,9 @@ def example_2_kernel_based_gaussian():
 
 def example_3_compare_correlation_lengths():
     """Example 3: Compare different correlation lengths."""
-    print("="*70)
+    print("=" * 70)
     print("Example 3: Effect of Correlation Length")
-    print("="*70)
+    print("=" * 70)
 
     correlation_lengths = [0.05, 0.15, 0.3]
     x = np.linspace(0, 1, 200)
@@ -122,7 +126,10 @@ def example_3_compare_correlation_lengths():
             'dim': 20,
             'mean': 0.0,
             'interval': [0.0, 1.0],
-            'kernel_params': {'sigma': 1.0, 'l': l},
+            'kernel_params': {
+                'sigma': 1.0,
+                'l': l
+            },
             'basis': 'PiecewiseConstant'
         }
 
@@ -149,9 +156,9 @@ def example_3_compare_correlation_lengths():
 
 def example_4_jax_differentiability():
     """Example 4: JAX automatic differentiation."""
-    print("="*70)
+    print("=" * 70)
     print("Example 4: JAX Automatic Differentiation")
-    print("="*70)
+    print("=" * 70)
 
     import jax
 
@@ -160,7 +167,10 @@ def example_4_jax_differentiability():
         'dim': 10,
         'mean': 0.0,
         'interval': [0.0, 1.0],
-        'kernel_params': {'sigma': 1.0, 'l': 0.3},
+        'kernel_params': {
+            'sigma': 1.0,
+            'l': 0.3
+        },
         'basis': 'PiecewiseConstant'
     }
 
@@ -187,15 +197,11 @@ def example_4_jax_differentiability():
 
 def example_5_constant_field_backward_compatible():
     """Example 5: Constant field (backward compatibility)."""
-    print("="*70)
+    print("=" * 70)
     print("Example 5: Constant Field (Backward Compatible)")
-    print("="*70)
+    print("=" * 70)
 
-    config = {
-        'name': 'JaxConstantField',
-        'mean': 100.0,
-        'std': 20.0
-    }
+    config = {'name': 'JaxConstantField', 'mean': 100.0, 'std': 20.0}
 
     field = get_jax_field(config)
     dist = field.coefficient_distribution
@@ -215,9 +221,9 @@ if __name__ == "__main__":
     import os
     os.makedirs('figures', exist_ok=True)
 
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("JAX Random Field Examples")
-    print("="*70 + "\n")
+    print("=" * 70 + "\n")
 
     example_1_custom_gaussian_covariance()
     example_2_kernel_based_gaussian()
@@ -225,6 +231,6 @@ if __name__ == "__main__":
     example_4_jax_differentiability()
     example_5_constant_field_backward_compatible()
 
-    print("="*70)
+    print("=" * 70)
     print("All examples completed successfully!")
-    print("="*70)
+    print("=" * 70)

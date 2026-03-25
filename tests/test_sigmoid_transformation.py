@@ -87,12 +87,14 @@ class TestSigmoidTransformation:
             xi_plus[i] += eps
             xi_minus[i] -= eps
 
-            grad_numerical[i] = (
-                transform.log_det_jacobian(xi_plus) -
-                transform.log_det_jacobian(xi_minus)
-            ) / (2 * eps)
+            grad_numerical[i] = (transform.log_det_jacobian(xi_plus) -
+                                 transform.log_det_jacobian(xi_minus)) / (2 *
+                                                                          eps)
 
-        np.testing.assert_allclose(grad_analytical, grad_numerical, rtol=1e-5, atol=1e-8)
+        np.testing.assert_allclose(grad_analytical,
+                                   grad_numerical,
+                                   rtol=1e-5,
+                                   atol=1e-8)
 
     def test_hessian_log_det_jacobian_finite_diff(self):
         """Test Hessian of log det Jacobian via finite differences."""
@@ -117,7 +119,10 @@ class TestSigmoidTransformation:
             H_numerical[i, i] = (grad_plus[i] - grad_minus[i]) / (2 * eps)
 
         # Only check diagonal elements (element-wise transformation)
-        np.testing.assert_allclose(np.diag(H_analytical), np.diag(H_numerical), rtol=1e-4, atol=1e-7)
+        np.testing.assert_allclose(np.diag(H_analytical),
+                                   np.diag(H_numerical),
+                                   rtol=1e-4,
+                                   atol=1e-7)
         # Off-diagonal should be zero
         assert np.allclose(H_analytical - np.diag(np.diag(H_analytical)), 0.0)
 
@@ -162,10 +167,14 @@ class TestSigmoidTransformation:
 
     def test_invalid_bounds(self):
         """Test that invalid bounds raise an error."""
-        with pytest.raises(ValueError, match="Upper bound b must be greater than lower bound a"):
+        with pytest.raises(
+                ValueError,
+                match="Upper bound b must be greater than lower bound a"):
             SigmoidTransformation(1.0, 0.0)
 
-        with pytest.raises(ValueError, match="Upper bound b must be greater than lower bound a"):
+        with pytest.raises(
+                ValueError,
+                match="Upper bound b must be greater than lower bound a"):
             SigmoidTransformation(np.array([0.0, 1.0]), np.array([1.0, 0.5]))
 
     def test_numerical_stability(self):

@@ -26,27 +26,31 @@ from solve_j2 import (
     build_periodic_pmat,
     make_eps_macro_q,
     plot_results,
-    L, R, cx, cy, mesh_size,
+    L,
+    R,
+    cx,
+    cy,
+    mesh_size,
 )
 
 
 def main():
     parser = argparse.ArgumentParser(description="2D RVE — linear elasticity")
-    parser.add_argument("--eps-xx",   type=float, default=1e-3)
-    parser.add_argument("--eps-yy",   type=float, default=0.0)
+    parser.add_argument("--eps-xx", type=float, default=1e-3)
+    parser.add_argument("--eps-yy", type=float, default=0.0)
     parser.add_argument("--gamma-xy", type=float, default=0.0)
     args = parser.parse_args()
 
     ele_type = "TRI3"
     data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             "data_linear")
-    fig_dir  = os.path.join(data_dir, "figures")
+    fig_dir = os.path.join(data_dir, "figures")
     os.makedirs(data_dir, exist_ok=True)
 
     mat_props = dict(
-        E_matrix=30e3,       # [MPa]
+        E_matrix=30e3,  # [MPa]
         nu_matrix=0.2,
-        E_aggregate=60e3,    # [MPa]
+        E_aggregate=60e3,  # [MPa]
         nu_aggregate=0.2,
     )
 
@@ -55,7 +59,13 @@ def main():
     # ── 1. Mesh ──────────────────────────────────────────────────────
     print("Generating mesh ...")
     mesh, phys_tags = generate_rve_mesh(
-        L, R, cx, cy, mesh_size, data_dir, ele_type,
+        L,
+        R,
+        cx,
+        cy,
+        mesh_size,
+        data_dir,
+        ele_type,
     )
     print(f"  {len(mesh.points)} nodes, {len(mesh.cells)} elements")
 
@@ -67,7 +77,10 @@ def main():
     # ── 3. Create problem and solve ──────────────────────────────────
     print("Setting up problem ...")
     problem = LinearElasticRVE(
-        mesh, vec=2, dim=2, ele_type=ele_type,
+        mesh,
+        vec=2,
+        dim=2,
+        ele_type=ele_type,
         additional_info=(phys_tags, mat_props),
     )
     problem.P_mat = P_mat
@@ -83,22 +96,20 @@ def main():
           f"{eps_macro_voigt[1]:.2e}, {eps_macro_voigt[2]:.2e}] ...")
     sol_list = solver(problem, {'tol': 1e-8})
 
-    sigma_avg, sigma_cell = problem.compute_avg_stress(
-        sol_list[0], problem.internal_vars)
+    sigma_avg, sigma_cell = problem.compute_avg_stress(sol_list[0],
+                                                       problem.internal_vars)
 
     # ── 4. Results ───────────────────────────────────────────────────
     print(f"  <sigma_xx> = {float(sigma_avg[0,0]):.4f} MPa")
     print(f"  <sigma_yy> = {float(sigma_avg[1,1]):.4f} MPa")
     print(f"  <sigma_xy> = {float(sigma_avg[0,1]):.4f} MPa")
 
-    plot_results(mesh, sol_list[0], phys_tags, sigma_cell,
-                 L, R, cx, cy,
-                 mat_props['nu_matrix'], mat_props['nu_aggregate'],
-                 fig_dir)
+    plot_results(mesh, sol_list[0], phys_tags, sigma_cell, L, R, cx, cy,
+                 mat_props['nu_matrix'], mat_props['nu_aggregate'], fig_dir)
 
     # Total displacement: u_total = u_tilde + eps_macro . x
     eps_macro_tensor = np.array([
-        [eps_macro_voigt[0],       0.5 * eps_macro_voigt[2]],
+        [eps_macro_voigt[0], 0.5 * eps_macro_voigt[2]],
         [0.5 * eps_macro_voigt[2], eps_macro_voigt[1]],
     ])
     u_fluct = np.array(sol_list[0])
@@ -126,23 +137,29 @@ def main():
 
     # Plane-strain sigma_zz = nu * (sigma_xx + sigma_yy)
     nu_cell = np.array(problem.internal_vars[1][:, 0])  # (num_cells,)
-    s11, s22, s12 = sigma_cell_np[:, 0, 0], sigma_cell_np[:, 1, 1], sigma_cell_np[:, 0, 1]
+    s11, s22, s12 = sigma_cell_np[:, 0,
+                                  0], sigma_cell_np[:, 1,
+                                                    1], sigma_cell_np[:, 0, 1]
     s33 = nu_cell * (s11 + s22)
-    von_mises = np.sqrt(0.5 * ((s11 - s22)**2 + (s22 - s33)**2
-                                + (s33 - s11)**2 + 6.0 * s12**2))
+    von_mises = np.sqrt(0.5 * ((s11 - s22)**2 + (s22 - s33)**2 +
+                               (s33 - s11)**2 + 6.0 * s12**2))
 
     vtk_dir = os.path.join(data_dir, "vtk")
     os.makedirs(vtk_dir, exist_ok=True)
     vtk_path = os.path.join(vtk_dir, "rve_linear.vtu")
-    save_sol(problem.fes[0], sol_list[0], vtk_path, cell_infos=[
-        ('stress_xx', s11),
-        ('stress_yy', s22),
-        ('stress_xy', s12),
-        ('von_mises', von_mises),
-        ('strain_xx', eps_cell[:, 0, 0]),
-        ('strain_yy', eps_cell[:, 1, 1]),
-        ('strain_xy', 2.0 * eps_cell[:, 0, 1]),  # engineering shear strain
-    ])
+    save_sol(
+        problem.fes[0],
+        sol_list[0],
+        vtk_path,
+        cell_infos=[
+            ('stress_xx', s11),
+            ('stress_yy', s22),
+            ('stress_xy', s12),
+            ('von_mises', von_mises),
+            ('strain_xx', eps_cell[:, 0, 0]),
+            ('strain_yy', eps_cell[:, 1, 1]),
+            ('strain_xy', 2.0 * eps_cell[:, 0, 1]),  # engineering shear strain
+        ])
     print(f"  Figures saved to {fig_dir}/")
     print(f"  VTK saved to {vtk_path}")
 

@@ -62,7 +62,12 @@ class GaussianRandomField:
         return Φ @ coeffs
 
     @classmethod
-    def from_dict(cls, config: Dict[str, Any], *, rng: Optional[np.random.Generator] = None) -> "GaussianRandomField":
+    def from_dict(
+            cls,
+            config: Dict[str, Any],
+            *,
+            rng: Optional[np.random.Generator] = None
+    ) -> "GaussianRandomField":
         """Construct a GaussianRandomField from a configuration dictionary.
 
         Expected keys:
@@ -74,8 +79,12 @@ class GaussianRandomField:
             basis: one of {'PiecewiseConstant', 'NormPiecewiseConstant'} (default 'PiecewiseConstant')
         """
         if config.get('name', None) not in {'GaussianRandomField'}:
-            raise ValueError("GaussianRandomField config must have name 'GaussianRandomField'.")
-        interval: Tuple[float, float] = tuple(config.get('interval', (0.0, 1.0)))  # type: ignore
+            raise ValueError(
+                "GaussianRandomField config must have name 'GaussianRandomField'."
+            )
+        interval: Tuple[float,
+                        float] = tuple(config.get('interval',
+                                                  (0.0, 1.0)))  # type: ignore
         d = int(config['dim'])
         kernel_params = config.get('kernel_params', {'sigma': 1.0, 'l': 0.3})
         mean_cfg = config.get('mean', 0.0)
@@ -97,19 +106,27 @@ class GaussianRandomField:
                 kernel_params=kernel_params,
             )
         else:
-            raise ValueError(f"Unsupported basis '{basis_name}'. Choose 'PiecewiseConstant' or 'NormPiecewiseConstant'.")
+            raise ValueError(
+                f"Unsupported basis '{basis_name}'. Choose 'PiecewiseConstant' or 'NormPiecewiseConstant'."
+            )
         if np.isscalar(mean_cfg):
             mean = np.ones(d) * float(mean_cfg)
         else:
             mean_arr = np.array(mean_cfg)
-            if mean_arr.shape != (d,):
+            if mean_arr.shape != (d, ):
                 raise ValueError("mean must be scalar or length equal to dim")
             mean = mean_arr
         distribution = MultivariateNormal(mean, cov, rng=rng)
-        return cls(basis=basis, mean=mean, cov=cov, kernel_params=kernel_params, distribution=distribution)
+        return cls(basis=basis,
+                   mean=mean,
+                   cov=cov,
+                   kernel_params=kernel_params,
+                   distribution=distribution)
 
 
-def get_field(config: Dict[str, Any], rng: Optional[np.random.Generator] = None) -> GaussianRandomField:
+def get_field(
+        config: Dict[str, Any],
+        rng: Optional[np.random.Generator] = None) -> GaussianRandomField:
     """Factory for GaussianRandomField objects.
 
     Args:
@@ -156,6 +173,7 @@ class JaxRandomField(Protocol):
             Field values at x, shape (n_points,)
         """
         ...
+
 
 @dataclass
 class JaxRandomFieldBase:
@@ -215,7 +233,11 @@ class JaxRandomFieldBase:
         return phi_jax @ coeffs  # (n_points,)
 
     @classmethod
-    def from_dict(cls, config: Dict[str, Any], *, rng: Optional[np.random.Generator] = None) -> "JaxRandomFieldBase":
+    def from_dict(
+            cls,
+            config: Dict[str, Any],
+            *,
+            rng: Optional[np.random.Generator] = None) -> "JaxRandomFieldBase":
         """Construct from configuration dictionary.
 
         Expected keys:
@@ -244,7 +266,8 @@ class JaxRandomFieldBase:
             }
         """
         if config.get('name', None) != 'JaxRandomField':
-            raise ValueError("JaxRandomFieldBase config must have name 'JaxRandomField'.")
+            raise ValueError(
+                "JaxRandomFieldBase config must have name 'JaxRandomField'.")
 
         # Parse basis
         basis_config = config.get('basis', {})
@@ -271,8 +294,9 @@ class JaxRandomFieldBase:
                 mean = np.ones(basis_dim) * float(mean_cfg)
             else:
                 mean = np.array(mean_cfg)
-                if mean.shape != (basis_dim,):
-                    raise ValueError("mean must be scalar or length equal to basis dim")
+                if mean.shape != (basis_dim, ):
+                    raise ValueError(
+                        "mean must be scalar or length equal to basis dim")
 
             cov_cfg = dist_config.get('cov', None)
             if cov_cfg is None:
@@ -284,8 +308,9 @@ class JaxRandomFieldBase:
 
             coefficient_dist = MultivariateNormal(mean, cov, rng=rng)
         else:
-            raise ValueError(f"Unsupported coefficient distribution '{dist_name}'. "
-                           "Use JaxGaussianRandomField for kernel-based Gaussian fields.")
+            raise ValueError(
+                f"Unsupported coefficient distribution '{dist_name}'. "
+                "Use JaxGaussianRandomField for kernel-based Gaussian fields.")
 
         return cls(basis=basis, coefficient_dist=coefficient_dist)
 
@@ -355,7 +380,12 @@ class JaxGaussianRandomField:
         return phi_jax @ coeffs  # (n_points,)
 
     @classmethod
-    def from_dict(cls, config: Dict[str, Any], *, rng: Optional[np.random.Generator] = None) -> "JaxGaussianRandomField":
+    def from_dict(
+            cls,
+            config: Dict[str, Any],
+            *,
+            rng: Optional[np.random.Generator] = None
+    ) -> "JaxGaussianRandomField":
         """Construct Gaussian field from kernel parameters.
 
         Expected keys:
@@ -377,7 +407,9 @@ class JaxGaussianRandomField:
             }
         """
         if config.get('name', None) != 'JaxGaussianRandomField':
-            raise ValueError("JaxGaussianRandomField config must have name 'JaxGaussianRandomField'.")
+            raise ValueError(
+                "JaxGaussianRandomField config must have name 'JaxGaussianRandomField'."
+            )
 
         interval = tuple(config.get('interval', (0.0, 1.0)))
         dim = int(config['dim'])
@@ -403,20 +435,25 @@ class JaxGaussianRandomField:
                 kernel_params=kernel_params,
             )
         else:
-            raise ValueError(f"Unsupported basis '{basis_name}'. "
-                           "Choose 'PiecewiseConstant' or 'NormPiecewiseConstant'.")
+            raise ValueError(
+                f"Unsupported basis '{basis_name}'. "
+                "Choose 'PiecewiseConstant' or 'NormPiecewiseConstant'.")
 
         # Create mean vector
         if np.isscalar(mean_cfg):
             mean = np.ones(dim) * float(mean_cfg)
         else:
             mean = np.array(mean_cfg)
-            if mean.shape != (dim,):
+            if mean.shape != (dim, ):
                 raise ValueError("mean must be scalar or length equal to dim")
 
         distribution = MultivariateNormal(mean, cov, rng=rng)
 
-        return cls(basis=basis, mean=mean, cov=cov, kernel_params=kernel_params, distribution=distribution)
+        return cls(basis=basis,
+                   mean=mean,
+                   cov=cov,
+                   kernel_params=kernel_params,
+                   distribution=distribution)
 
 
 @dataclass
@@ -471,10 +508,16 @@ class JaxExponentialRecoveryField:
         # Note: if l is 0 or negative, this might blow up physically,
         # but mathematically it evaluates. Distribution should constrain l > 0.
 
-        return self.f_infinity * (1.0 - (1.0 - rho) * jnp.exp(-x_val / l_scale))
+        return self.f_infinity * (1.0 -
+                                  (1.0 - rho) * jnp.exp(-x_val / l_scale))
 
     @classmethod
-    def from_dict(cls, config: Dict[str, Any], *, rng: Optional[np.random.Generator] = None) -> "JaxExponentialRecoveryField":
+    def from_dict(
+        cls,
+        config: Dict[str, Any],
+        *,
+        rng: Optional[np.random.Generator] = None
+    ) -> "JaxExponentialRecoveryField":
         """Construct from config.
 
         Expected keys:
@@ -484,7 +527,8 @@ class JaxExponentialRecoveryField:
             coefficient_distribution: distribution config
         """
         if config.get('name') != 'JaxExponentialRecoveryField':
-            raise ValueError("Config name must be 'JaxExponentialRecoveryField'")
+            raise ValueError(
+                "Config name must be 'JaxExponentialRecoveryField'")
 
         f_infinity = float(config.get('f_infinity', 1.0))
         idx = int(config.get('idx', 0))
@@ -497,11 +541,12 @@ class JaxExponentialRecoveryField:
 
         dist_name = dist_config.get('name', 'MultivariateNormal')
         if dist_name == 'MultivariateNormal':
-            mean_cfg = dist_config.get('mean', [0.5, 1.0]) # default rho=0.5, l=1.0
-            cov_cfg = dist_config.get('cov', [[0.1, 0],[0, 0.1]])
+            mean_cfg = dist_config.get('mean',
+                                       [0.5, 1.0])  # default rho=0.5, l=1.0
+            cov_cfg = dist_config.get('cov', [[0.1, 0], [0, 0.1]])
 
             mean = np.array(mean_cfg)
-            if mean.shape != (2,):
+            if mean.shape != (2, ):
                 raise ValueError("Mean must be length 2 for rho and l")
 
             cov = np.array(cov_cfg)
@@ -510,8 +555,8 @@ class JaxExponentialRecoveryField:
 
             dist = MultivariateNormal(mean, cov, rng=rng)
         else:
-             # Basic support for now
-             raise ValueError(f"Unsupported distribution {dist_name}")
+            # Basic support for now
+            raise ValueError(f"Unsupported distribution {dist_name}")
 
         return cls(f_infinity=f_infinity, idx=idx, coefficient_dist=dist)
 
@@ -551,7 +596,9 @@ class JaxConstantField:
         """
         coeffs = jnp.atleast_1d(coeffs)
         if coeffs.shape[0] != 1:
-            raise ValueError(f"JaxConstantField expects 1 coefficient, got {coeffs.shape[0]}")
+            raise ValueError(
+                f"JaxConstantField expects 1 coefficient, got {coeffs.shape[0]}"
+            )
 
         # Infer output shape from x
         if isinstance(x, (int, float)):
@@ -566,7 +613,11 @@ class JaxConstantField:
         return jnp.full(n_points, coeffs[0])
 
     @classmethod
-    def from_dict(cls, config: Dict[str, Any], *, rng: Optional[np.random.Generator] = None) -> "JaxConstantField":
+    def from_dict(
+            cls,
+            config: Dict[str, Any],
+            *,
+            rng: Optional[np.random.Generator] = None) -> "JaxConstantField":
         """Construct from configuration dictionary.
 
         Expected keys:
@@ -575,10 +626,13 @@ class JaxConstantField:
             std: scalar standard deviation (default 1.0)
         """
         if config.get('name', None) != 'JaxConstantField':
-            raise ValueError("JaxConstantField config must have name 'JaxConstantField'.")
+            raise ValueError(
+                "JaxConstantField config must have name 'JaxConstantField'.")
         mean = float(config.get('mean', 0.0))
         std = float(config.get('std', 1.0))
-        distribution = MultivariateNormal(np.array([mean]), np.array([[std**2]]), rng=rng)
+        distribution = MultivariateNormal(np.array([mean]),
+                                          np.array([[std**2]]),
+                                          rng=rng)
         return cls(distribution=distribution)
 
 
@@ -630,5 +684,7 @@ def get_jax_field(config: Dict[str, Any], rng: Optional[np.random.Generator] = N
     elif name == 'JaxExponentialRecoveryField':
         return JaxExponentialRecoveryField.from_dict(config, rng=rng)
     else:
-        raise ValueError(f"Unknown JAX field type: {name}. "
-                       "Supported types: 'JaxConstantField', 'JaxGaussianRandomField', 'JaxRandomField', 'JaxExponentialRecoveryField'")
+        raise ValueError(
+            f"Unknown JAX field type: {name}. "
+            "Supported types: 'JaxConstantField', 'JaxGaussianRandomField', 'JaxRandomField', 'JaxExponentialRecoveryField'"
+        )

@@ -142,8 +142,8 @@ def yaml_to_numpy(data: Any, exclude_keys: set = None) -> Any:
         # Process dictionaries recursively
         return {
             key:
-                yaml_to_numpy(value, exclude_keys)
-                if key not in exclude_keys else value
+            yaml_to_numpy(value, exclude_keys)
+            if key not in exclude_keys else value
             for key, value in data.items()
         }
     elif isinstance(data, list):
@@ -203,6 +203,7 @@ class CustomDumper(yaml.SafeDumper):
 # Attach the new list representation to our dumper
 CustomDumper.add_representer(list, CustomDumper.represent_list)
 
+
 def dump_yaml_custom_format(data: Any, file_path: str):
     """Dumps YAML data where lists are in bracket format but dictionaries use standard indentation.
 
@@ -216,6 +217,7 @@ def dump_yaml_custom_format(data: Any, file_path: str):
                   Dumper=CustomDumper,
                   sort_keys=False,
                   default_flow_style=False)
+
 
 def get_config(config_path: str) -> dict:
     """Load the configuration from a file.
@@ -234,6 +236,7 @@ def get_config(config_path: str) -> dict:
                            exclude_keys={'hidden_layers', 'update_model'})
 
     return config
+
 
 def save_config(config: dict,
                 save_dir: str,

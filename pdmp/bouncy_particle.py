@@ -16,6 +16,7 @@ from pdmp.surrogates import (SurrogateModel, LaplaceSurrogate, NeuralNetwork,
                              GaussianProcess, DerivativeGaussianProcess,
                              ConstantSurrogate, RandomConstantSurrogate)
 
+
 @register_sampler('BouncyParticle')
 class BouncyParticleSampler(Sampler):
     """
@@ -110,7 +111,8 @@ class BouncyParticleSampler(Sampler):
         # if not specified draw iid standard normal samples as inital position
         if x_0 is None:
             if x_0_lap:
-                lap = LaplaceSurrogate.from_dict(target=self.target, rng=self._rng)
+                lap = LaplaceSurrogate.from_dict(target=self.target,
+                                                 rng=self._rng)
                 self.positions[0] = lap.get_samples(1)
             else:
                 self.positions[0] = self._rng.normal(0, 1, self._dim)
@@ -136,7 +138,8 @@ class BouncyParticleSampler(Sampler):
             # Select the correct event time generation method based on surrogate type
             if isinstance(surrogate, LaplaceSurrogate):
                 self._generate_event_times = self._inverse_cdf_linear
-            elif isinstance(surrogate, (ConstantSurrogate, RandomConstantSurrogate)):
+            elif isinstance(surrogate,
+                            (ConstantSurrogate, RandomConstantSurrogate)):
                 self._generate_event_times = self._inverse_cdf_constant
             else:
                 self._generate_event_times = self._inverse_cdf
@@ -193,8 +196,8 @@ class BouncyParticleSampler(Sampler):
         """
         grad_surrogate = self.surrogate.grad(x)
         rate = np.maximum(
-            -np.dot(grad_surrogate, self.velocities[self._iter]) + self._offset,
-            0) + self._refresh_rate
+            -np.dot(grad_surrogate, self.velocities[self._iter]) +
+            self._offset, 0) + self._refresh_rate
         return rate
 
     def _inverse_cdf(self) -> tuple[float, int]:
@@ -264,13 +267,14 @@ class BouncyParticleSampler(Sampler):
         A = 0.5 * a
         B = b + gamma
         C = -S
-        discriminant = B**2 - 4*A*C
+        discriminant = B**2 - 4 * A * C
         if discriminant < 0:
             tau = float('inf')  # No real solution, treat as infinite
         else:
-            tau = (-B + np.sqrt(discriminant)) / (2*A) if A != 0 else -C/B
+            tau = (-B + np.sqrt(discriminant)) / (2 * A) if A != 0 else -C / B
             if tau < 0:
-                tau = (-B - np.sqrt(discriminant)) / (2*A) if A != 0 else -C/B
+                tau = (-B - np.sqrt(discriminant)) / (2 *
+                                                      A) if A != 0 else -C / B
             if tau < 0:
                 tau = float('inf')
 
@@ -303,7 +307,6 @@ class BouncyParticleSampler(Sampler):
             return tau, 0  # Bounce event
         else:
             return refresh_time, 1  # Refresh event
-
 
     def _step(self):
         """
@@ -417,7 +420,8 @@ class BouncyParticleSampler(Sampler):
         """Run the BouncyParticle sampler."""
 
         logger.warning(
-            f"Running Bouncy Particle Sampler sampler with budget n_max={self._n_max}")
+            f"Running Bouncy Particle Sampler sampler with budget n_max={self._n_max}"
+        )
 
         # disable tqdm if running on a cluster
         disable_tqdm = 'PBS_ENVIRONMENT' in os.environ or 'SLURM_JOB_ID' in os.environ

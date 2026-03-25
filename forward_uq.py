@@ -47,9 +47,12 @@ def flatten_output(out):
 def main():
     parser = argparse.ArgumentParser(description='Forward UQ driver')
     parser.add_argument('config', type=str, help='Path to YAML config file')
-    parser.add_argument('--samples', type=str, default=None,
-                        help='Path to a samples file (.dat). If provided, skips '
-                             'distribution sampling and uses these samples directly.')
+    parser.add_argument(
+        '--samples',
+        type=str,
+        default=None,
+        help='Path to a samples file (.dat). If provided, skips '
+        'distribution sampling and uses these samples directly.')
     args = parser.parse_args()
 
     config = get_config(args.config)
@@ -113,7 +116,9 @@ def main():
     print(f'\nSaved {len(samples)} samples to {out_dir}/')
     print(f'Input dim:  {samples.shape[1]}')
     print(f'Output dim: {outputs.shape[1]}')
-    for i, name in enumerate(legend or [f'out[{j}]' for j in range(outputs.shape[1])]):
+    for i, name in enumerate(legend
+                             or [f'out[{j}]'
+                                 for j in range(outputs.shape[1])]):
         print(f'  {name}: mean = {mean_out[i]:.4f}, std = {std_out[i]:.4f}')
 
 

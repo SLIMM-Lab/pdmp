@@ -13,7 +13,10 @@ def test_random_field_loader_integration():
         'dim': 3,
         'mean': 1.5,
         'interval': [0.0, 1.0],
-        'kernel_params': {'sigma': 1.0, 'l': 0.3},
+        'kernel_params': {
+            'sigma': 1.0,
+            'l': 0.3
+        },
     }
     config = {
         'name': 'BayesianInverse',
@@ -23,8 +26,12 @@ def test_random_field_loader_integration():
             'n_obs_loc': 3,
             'F': [1.0],
         },
-        'prior': {'name': 'FromField'},
-        'likelihood': {'name': 'FlatLikelihood'},
+        'prior': {
+            'name': 'FromField'
+        },
+        'likelihood': {
+            'name': 'FlatLikelihood'
+        },
     }
 
     posterior = get_target(config, rng=rng)
@@ -45,7 +52,10 @@ def test_random_field_direct_usage():
         'dim': 3,
         'mean': 0.7,
         'interval': [0.0, 1.0],
-        'kernel_params': {'sigma': 1.0, 'l': 0.25},
+        'kernel_params': {
+            'sigma': 1.0,
+            'l': 0.25
+        },
     }
     field = get_field(field_cfg, rng=rng)
 
@@ -70,4 +80,3 @@ def test_random_field_direct_usage():
     # Model expects parameter vector of same dimension
     u_val = model.eval(coeff_sample)
     assert u_val.shape[0] == model.get_dim_out()
-

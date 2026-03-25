@@ -1,13 +1,9 @@
 """Test LogitTransformation implementation."""
 import numpy as np
 from scipy.special import logit, expit  # expit is sigmoid
-from pdmp.distributions import (
-    LogitTransformation,
-    SigmoidTransformation,
-    MultivariateNormal,
-    TransformedDistribution,
-    LOGIT
-)
+from pdmp.distributions import (LogitTransformation, SigmoidTransformation,
+                                MultivariateNormal, TransformedDistribution,
+                                LOGIT)
 
 
 def test_logit_transform_basic():
@@ -72,7 +68,8 @@ def test_logit_inverse_of_sigmoid():
 
     # Test the other direction
     # Start with bounded values (make sure they're within [a, b])
-    x = np.array([[0.2, 0.5], [0.5, 1.0], [0.8, 0.0]])  # All in [0, 1] x [-1, 2]
+    x = np.array([[0.2, 0.5], [0.5, 1.0], [0.8,
+                                           0.0]])  # All in [0, 1] x [-1, 2]
 
     # Logit: x -> ξ
     xi_from_logit = logit_trans.transform(x)
@@ -102,7 +99,8 @@ def test_logit_jacobian():
         x_minus = x.copy()
         x_plus[i] += eps
         x_minus[i] -= eps
-        J_numerical[:, i] = (trans.transform(x_plus) - trans.transform(x_minus)) / (2 * eps)
+        J_numerical[:, i] = (trans.transform(x_plus) -
+                             trans.transform(x_minus)) / (2 * eps)
 
     assert np.allclose(J, J_numerical, rtol=1e-5, atol=1e-8), \
         f"Jacobian mismatch:\nAnalytical:\n{J}\nNumerical:\n{J_numerical}"
@@ -143,7 +141,7 @@ def test_logit_grad_log_det_jacobian():
         x_plus[i] += eps
         x_minus[i] -= eps
         grad_numerical[i] = (trans.log_det_jacobian(x_plus) -
-                            trans.log_det_jacobian(x_minus)) / (2 * eps)
+                             trans.log_det_jacobian(x_minus)) / (2 * eps)
 
     assert np.allclose(grad, grad_numerical, rtol=1e-5, atol=1e-8), \
         f"Gradient mismatch:\nAnalytical: {grad}\nNumerical: {grad_numerical}"
@@ -181,9 +179,9 @@ def test_logit_hessian_log_det_jacobian():
             x_mm[j] -= eps
 
             H_numerical[i, j] = (trans.log_det_jacobian(x_pp) -
-                                trans.log_det_jacobian(x_pm) -
-                                trans.log_det_jacobian(x_mp) +
-                                trans.log_det_jacobian(x_mm)) / (4 * eps**2)
+                                 trans.log_det_jacobian(x_pm) -
+                                 trans.log_det_jacobian(x_mp) +
+                                 trans.log_det_jacobian(x_mm)) / (4 * eps**2)
 
     # Check diagonal elements (should match well)
     diag_analytical = np.diag(H)
@@ -208,11 +206,7 @@ def test_logit_transformed_distribution():
     base_dist = MultivariateNormal(mean=mean, cov=cov, seed=42)
 
     # Transform to bounded [0, 1]²
-    params = {
-        'transformation': LOGIT,
-        'a': 0.0,
-        'b': 1.0
-    }
+    params = {'transformation': LOGIT, 'a': 0.0, 'b': 1.0}
 
     transformed_dist = TransformedDistribution(base_dist, params)
 
@@ -246,7 +240,7 @@ def test_logit_scaling():
 
     # Check transform values make sense
     # x=0.0 should map to logit((0-(-1))/(2-(-1))) = logit(1/3)
-    expected_xi_0 = np.log((1/3) / (2/3))  # = np.log(0.5)
+    expected_xi_0 = np.log((1 / 3) / (2 / 3))  # = np.log(0.5)
     assert np.isclose(xi[0], expected_xi_0, rtol=1e-10), \
         f"Transform at midpoint incorrect: {xi[0]} vs {expected_xi_0}"
 
@@ -268,8 +262,7 @@ def test_logit_vectorized():
         f"Vector bounds round-trip failed: x={x}, x_back={x_back}"
 
     # Test batch
-    x_batch = np.array([[0.2, -0.5, 1.0],
-                        [0.8, 0.5, 1.5]])
+    x_batch = np.array([[0.2, -0.5, 1.0], [0.8, 0.5, 1.5]])
     xi_batch = trans.transform(x_batch)
     x_back_batch = trans.inverse_transform(xi_batch)
 
@@ -297,8 +290,3 @@ if __name__ == "__main__":
     test_logit_vectorized()
 
     print("\n✅ All logit transformation tests passed!")
-
-
-
-
-
