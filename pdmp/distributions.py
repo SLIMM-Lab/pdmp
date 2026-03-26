@@ -1107,6 +1107,29 @@ class GaussianLikelihood(Likelihood):
             return self._dists[idx].log_density(
                 self._model.eval(params, idx=idx))
 
+    def _composed_grad_single(self, params: np.ndarray, i: int) -> np.ndarray:
+        """Gradient of log p_i(m(params)) w.r.t. params for a single observation.
+
+        Uses VJP when available (single reverse-mode pass), otherwise forms the
+        full Jacobian and multiplies.
+        """
+        # Prefer single forward + VJP closure
+        if hasattr(self._model, 'linearize'):
+            m, vjp_fun = self._model.linearize(params, idx=i)
+            v = self._dists[i].grad_log_density(m)  # shape (d,)
+            g = vjp_fun(v)  # shape (p,)
+            return np.asarray(g, dtype=float)
+        # Compute forward output once
+        m = self._model.eval(params, idx=i)
+        v = self._dists[i].grad_log_density(m)
+        # If model supplies a direct J^T v path
+        if hasattr(self._model, 'eval_vjp'):
+            g = self._model.eval_vjp(params, idx=i, v=v)
+            return np.asarray(g, dtype=float)
+        # Fallback: form full Jacobian
+        J = self._model.eval_grad(params, idx=i)  # shape (d, p)
+        return np.asarray(v @ J, dtype=float)
+
     @override
     def grad_log_density(self,
                          params: np.ndarray,
@@ -1121,37 +1144,41 @@ class GaussianLikelihood(Likelihood):
         forming the Jacobian via `eval_grad` and doing a matrix product.
         """
 
-        def _grad_single(i: int) -> np.ndarray:
-            # Prefer single forward + VJP closure
-            if hasattr(self._model, 'linearize'):
-                m, vjp_fun = self._model.linearize(params, idx=i)
-                v = self._dists[i].grad_log_density(m)  # shape (d,)
-                g = vjp_fun(v)  # shape (p,)
-                return np.asarray(g, dtype=float)
-            # Compute forward output once
-            m = self._model.eval(params, idx=i)
-            v = self._dists[i].grad_log_density(m)
-            # If model supplies a direct J^T v path
-            if hasattr(self._model, 'eval_vjp'):
-                g = self._model.eval_vjp(params, idx=i, v=v)
-                return np.asarray(g, dtype=float)
-            # Fallback: form full Jacobian
-            J = self._model.eval_grad(params, idx=i)  # shape (d, p)
-            return np.asarray(v @ J, dtype=float)
-
         if idx is None:
             grad = np.zeros(self._n_params_, dtype=float)
             for i in range(self.n_obs):
-                grad += _grad_single(i)
+                grad += self._composed_grad_single(params, i)
             return grad
         else:
-            return _grad_single(idx)
+            return self._composed_grad_single(params, idx)
 
     @override
     def hessian_log_density(self,
                             params: np.ndarray,
-                            idx: int = None) -> np.ndarray:
+                            idx: int = None,
+                            h: float = 1e-5) -> np.ndarray:
 
+        use_vjp = hasattr(self._model, 'linearize') or hasattr(
+            self._model, 'eval_vjp')
+
+        if use_vjp:
+            # Central finite differences of the composed gradient.
+            # Cost: 2 * n_params VJP calls per observation (independent of d_obs).
+            n = self._n_params_
+            hess = np.zeros((n, n))
+            obs_range = range(self.n_obs) if idx is None else [idx]
+            for i in obs_range:
+                for j in range(n):
+                    e_j = np.zeros(n)
+                    e_j[j] = 1.0
+                    g_fwd = self._composed_grad_single(params + h * e_j, i)
+                    g_bwd = self._composed_grad_single(params - h * e_j, i)
+                    hess[:, j] += (g_fwd - g_bwd) / (2 * h)
+            # Symmetrize to correct for finite-difference asymmetry
+            hess = 0.5 * (hess + hess.T)
+            return hess
+
+        # Fallback: form full Jacobian + model Hessian tensor.
         def hess_comp(hess: np.ndarray, i: int):
             m = self._model.eval(params, idx=i)
             grad_m = self._model.eval_grad(params, idx=i)

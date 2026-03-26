@@ -1,4 +1,7 @@
 import numpy as np
+import jax
+jax.config.update("jax_enable_x64", True)
+import jax.numpy as jnp
 from scipy.stats import multivariate_normal, wishart, lognorm
 from scipy.optimize import minimize
 
@@ -9,6 +12,62 @@ from pdmp.distributions import (MultivariateNormal, CubicDistribution,
                                 TransformedDistribution)
 from pdmp.utils import grad_fd, hessian_fd
 from pdmp.forward_model import LinearModel
+
+
+class NonlinearSinModelDirect:
+    """m(θ) = A @ sin(θ) + b  — nonlinear, analytical eval_grad/eval_hessian, no linearize."""
+
+    def __init__(self, A: np.ndarray, b: np.ndarray):
+        self._A = A
+        self._b = b
+        self._dim_in = A.shape[1]
+        self._dim_out = A.shape[0]
+
+    def get_dim_in(self) -> int:
+        return self._dim_in
+
+    def get_dim_out(self) -> int:
+        return self._dim_out
+
+    def get_n_settings(self) -> int:
+        return 1
+
+    def eval(self, params: np.ndarray, **kwargs) -> np.ndarray:
+        return self._A @ np.sin(params) + self._b
+
+    def eval_grad(self, params: np.ndarray, **kwargs) -> np.ndarray:
+        # J[k, j] = A[k, j] * cos(θ_j)
+        return self._A * np.cos(params)[np.newaxis, :]
+
+    def eval_hessian(self, params: np.ndarray, **kwargs) -> np.ndarray:
+        # H[k, j, l] = -A[k, j] * sin(θ_j) * δ_{jl}
+        d, p = self._A.shape
+        H = np.zeros((d, p, p))
+        for j in range(p):
+            H[:, j, j] = -self._A[:, j] * np.sin(params[j])
+        return H
+
+
+class NonlinearSinModel(NonlinearSinModelDirect):
+    """Adds JAX-based linearize to NonlinearSinModelDirect — exercises VJP Hessian path."""
+
+    def __init__(self, A: np.ndarray, b: np.ndarray):
+        super().__init__(A, b)
+        # float64 required for accurate FD-of-gradient Hessian
+        self._A_jax = jnp.array(A, dtype=jnp.float64)
+        self._b_jax = jnp.array(b, dtype=jnp.float64)
+
+    def _forward(self, params):
+        return self._A_jax @ jnp.sin(params) + self._b_jax
+
+    def linearize(self, params: np.ndarray, **kwargs):
+        p = jnp.array(params, dtype=jnp.float64)
+        out, vjp_fn = jax.vjp(self._forward, p)
+
+        def vjp_fun(v):
+            return np.asarray(vjp_fn(jnp.array(v, dtype=jnp.float64))[0])
+
+        return np.asarray(out), vjp_fun
 
 SMALL = 1e-6
 LARGE = 1e6
@@ -273,3 +332,39 @@ def test_transformation():
         hess_fd[:, :, i] = grad_fd(lambda x: t.jacobian(x)[i], x)
 
     assert np.allclose(hess, hess_fd, atol=1e-5)
+
+
+def test_nonlinear_likelihood_hessian_vjp():
+    """VJP-based Hessian path agrees with fallback (analytical) path for a nonlinear model."""
+    rng = np.random.default_rng(42)
+
+    n_params = 4
+    d_obs = 3
+    n_obs = 5
+
+    A = rng.standard_normal((d_obs, n_params))
+    b = rng.standard_normal(d_obs)
+
+    model_vjp = NonlinearSinModel(A, b)          # uses VJP path
+    model_direct = NonlinearSinModelDirect(A, b)  # uses fallback path (eval_grad/eval_hessian)
+
+    params = rng.standard_normal(n_params)
+    sig_obs = 0.5
+    y_obs = np.array([model_vjp.eval(params) + rng.normal(0, sig_obs, d_obs)
+                      for _ in range(n_obs)])
+
+    llh_vjp = GaussianLikelihood(model_vjp, y_obs, sig_obs, rng=rng)
+    llh_direct = GaussianLikelihood(model_direct, y_obs, sig_obs, rng=rng)
+
+    # Full-observation Hessian: VJP path vs fallback
+    hess_vjp = llh_vjp.hessian_log_density(params)
+    hess_ref = llh_direct.hessian_log_density(params)
+    assert np.allclose(hess_vjp, hess_ref, atol=1e-4), (
+        f"Full Hessian mismatch:\n{hess_vjp}\nvs ref:\n{hess_ref}")
+
+    # Per-observation Hessian
+    for i in range(n_obs):
+        hess_vjp_i = llh_vjp.hessian_log_density(params, idx=i)
+        hess_ref_i = llh_direct.hessian_log_density(params, idx=i)
+        assert np.allclose(hess_vjp_i, hess_ref_i, atol=1e-4), (
+            f"Per-obs Hessian mismatch at i={i}")
