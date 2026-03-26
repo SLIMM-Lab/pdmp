@@ -2508,7 +2508,13 @@ def find_mean(target: Distribution, x_0: np.ndarray = None) -> np.ndarray:
         if not success:
             x_0 = np.zeros(target.dim)
 
-    return minimize(n_log_post, x_0, jac=n_grad_log_post, method='BFGS').x
+    return minimize(n_log_post,
+                    x_0,
+                    jac=n_grad_log_post,
+                    method='BFGS',
+                    options={
+                        'disp': True
+                    }).x
 
 
 def find_curvature(
