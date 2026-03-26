@@ -7,7 +7,7 @@ Saves the sensor configuration to a reusable YAML file and the flattened
 displacement observations to a .npy file.
 
 Usage:
-    python generate_measurements.py [N_SENSORS] [POOL] [--plot] [--noise-std=S] [--seed=N]
+    python generate_measurements.py [N_SENSORS] [POOL] [--plot] [--noise-std=S] [--seed=N] [--config=PATH]
 
     N_SENSORS       total number of sensors (default 20)
     POOL            coarsening factor per axis (default 2, must divide 50,50,110)
@@ -16,7 +16,10 @@ Usage:
     --noise-std=S   standard deviation of Gaussian noise added to observations,
                     in microns (default 0.1)
     --seed=N        integer RNG seed for reproducibility (default: random)
+    --config=PATH   path to a config YAML to update with sensors, observations,
+                    and Laplace approximation (M, b) (e.g. bps/config.yaml)
 """
+import copy
 import sys
 import numpy as onp
 import jax
@@ -30,9 +33,15 @@ from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 from jax_fem.problem import Problem
 from jax_fem.solver import ad_wrapper
 from jax_fem.generate_mesh import Mesh
+from jax_fem.utils import save_sol
 
-from pdmp.forward_model import build_sensor_interpolants, evaluate_sensor_displacements
-from pdmp.loader import numpy_to_yaml
+from pdmp.forward_model import (build_sensor_interpolants,
+                                evaluate_sensor_displacements, get_model)
+from pdmp.loader import get_config, numpy_to_yaml, dump_yaml_custom_format
+from pdmp.random_field import get_jax_field
+from pdmp.distributions import (find_mean, find_curvature, get_prior,
+                                get_likelihood, Posterior)
+from pdmp.logger_setup import suppress_external_loggers
 
 # ── Phase definitions ────────────────────────────────────────────────────────
 PORE = 1
@@ -46,7 +55,7 @@ NU = 0.18
 
 VOXEL_SIZE = 2.0  # µm
 Z_THRES = 110.0  # µm — load applied above this z-coordinate
-TOTAL_FORCE = 40.0  # mN
+TOTAL_FORCE = 60.0  # mN
 
 # ── CLI arguments ────────────────────────────────────────────────────────────
 PLOT = '--plot' in sys.argv
@@ -54,8 +63,9 @@ _flags = {
     a.lstrip('-').split('=')[0]: (a.split('=')[1] if '=' in a else None)
     for a in sys.argv[1:] if a.startswith('--')
 }
-SEED = int(_flags['seed']) if 'seed' in _flags else None
+SEED = int(_flags['seed']) if 'seed' in _flags else 42
 NOISE_STD = float(_flags['noise-std']) if 'noise-std' in _flags else 0.05
+CONFIG_PATH = _flags.get('config') if 'config' in _flags else 'bps/config.yaml'
 _pos = [a for a in sys.argv[1:] if not a.startswith('--')]
 N_SENSORS = int(_pos[0]) if len(_pos) > 0 else 20
 POOL = int(_pos[1]) if len(_pos) > 1 else 2
@@ -322,7 +332,7 @@ for s in sensor_specs:
     print(f"  {s['name']} ({s['location_fn']}): {len(s['points'])} sensors")
 
 # ── 5. Save sensor configuration to YAML ────────────────────────────────────
-sensors_path = os.path.join(OUT_DIR, 'sensors.yml')
+sensors_path = os.path.join(OUT_DIR, 'sensors.yaml')
 with open(sensors_path, 'w') as f:
     yaml.dump(numpy_to_yaml({'sensors': sensor_specs}),
               f,
@@ -455,6 +465,51 @@ print("Solving FEM...")
 fwd_pred = ad_wrapper(problem)
 sol_list = fwd_pred(E_arr)
 
+# ── Post-process and save VTK ──────────────────────────────────────────────
+u_grads = problem.fe.sol_to_grad(sol_list[0])
+epsilon = 0.5 * (u_grads + np.swapaxes(u_grads, -1, -2))
+
+lmbda = E_arr * NU / ((1. + NU) * (1. - 2. * NU))
+mu = E_arr / (2. * (1. + NU))
+
+tr_eps = epsilon[:, :, 0, 0] + epsilon[:, :, 1, 1] + epsilon[:, :, 2, 2]
+sigma = (lmbda[:, :, None, None] * tr_eps[:, :, None, None] * np.eye(3) +
+         2. * mu[:, :, None, None] * epsilon)
+
+JxW = problem.fe.JxW
+w = JxW / JxW.sum(axis=1, keepdims=True)
+
+eps_cell = onp.array(np.sum(epsilon * w[:, :, None, None], axis=1))
+sigma_cell = onp.array(np.sum(sigma * w[:, :, None, None], axis=1))
+
+s11, s22, s33 = sigma_cell[:, 0, 0], sigma_cell[:, 1, 1], sigma_cell[:, 2, 2]
+s12, s13, s23 = sigma_cell[:, 0, 1], sigma_cell[:, 0, 2], sigma_cell[:, 1, 2]
+von_mises = onp.sqrt(0.5 * ((s11 - s22)**2 + (s22 - s33)**2 +
+                            (s33 - s11)**2 + 6. * (s12**2 + s13**2 + s23**2)))
+
+vtk_path = os.path.join(OUT_DIR, 'vtk', f'itz_measurements_pool{POOL}.vtu')
+os.makedirs(os.path.dirname(vtk_path), exist_ok=True)
+save_sol(problem.fe,
+         sol_list[0],
+         vtk_path,
+         cell_infos=[
+             ('E', E_per_element.astype(onp.float32)),
+             ('stress_xx', s11.astype(onp.float32)),
+             ('stress_yy', s22.astype(onp.float32)),
+             ('stress_zz', s33.astype(onp.float32)),
+             ('stress_xy', s12.astype(onp.float32)),
+             ('stress_xz', s13.astype(onp.float32)),
+             ('stress_yz', s23.astype(onp.float32)),
+             ('von_mises', von_mises.astype(onp.float32)),
+             ('strain_xx', eps_cell[:, 0, 0].astype(onp.float32)),
+             ('strain_yy', eps_cell[:, 1, 1].astype(onp.float32)),
+             ('strain_zz', eps_cell[:, 2, 2].astype(onp.float32)),
+             ('strain_xy', (2. * eps_cell[:, 0, 1]).astype(onp.float32)),
+             ('strain_xz', (2. * eps_cell[:, 0, 2]).astype(onp.float32)),
+             ('strain_yz', (2. * eps_cell[:, 1, 2]).astype(onp.float32)),
+         ])
+print(f"VTK saved to {vtk_path}")
+
 # ── 9. Extract sensor displacements ────────────────────────────────────────
 sensor_readings = evaluate_sensor_displacements(sol_list[0],
                                                 sensor_interpolants)
@@ -481,6 +536,78 @@ print(
 obs_path = os.path.join(OUT_DIR, 'observations.dat')
 onp.savetxt(obs_path, observations.reshape(1, -1), encoding='utf-8')
 print(f"Observations saved to {obs_path}")
+
+# ── 11. Update config file (if --config provided) ────────────────────────
+if CONFIG_PATH is not None:
+    config_file = os.path.join(SCRIPT_DIR, CONFIG_PATH)
+    config_dir = os.path.dirname(config_file)
+
+    # Write observations first (likelihood will load them)
+    config_obs_path = os.path.join(config_dir, 'observations.dat')
+    onp.savetxt(config_obs_path, observations.reshape(1, -1), encoding='utf-8')
+    print(f"Observations saved to {config_obs_path}")
+
+    # Load config via pdmp loader (converts lists → numpy)
+    config = get_config(config_file)
+
+    # Walk to distribution section: problem.distribution or problem directly
+    section = config['problem']
+    if 'distribution' in section:
+        section = section['distribution']
+
+    # Update sensors and sigma
+    section['model']['sensors'] = numpy_to_yaml(sensor_specs)
+
+    def _find_gaussian_likelihood(d):
+        if isinstance(d, dict):
+            if d.get('name') == 'GaussianLikelihood':
+                return d
+            for v in d.values():
+                result = _find_gaussian_likelihood(v)
+                if result is not None:
+                    return result
+        return None
+
+    gl = _find_gaussian_likelihood(section.get('likelihood', {}))
+    if gl is not None:
+        gl['sigma'] = NOISE_STD
+        print(f"Set likelihood sigma to {NOISE_STD}")
+
+    # Build inner posterior for Laplace approximation
+    print("\nBuilding model from config for Laplace approximation...")
+    rng_laplace = onp.random.default_rng(SEED)
+    field = get_jax_field(section['model']['field'], rng=rng_laplace)
+    model = get_model(section['model'], field=field)
+    suppress_external_loggers()
+
+    dist_cfg = copy.deepcopy(section)
+    obs_abs = os.path.abspath(config_obs_path)
+    gl_copy = _find_gaussian_likelihood(dist_cfg.get('likelihood', {}))
+    if gl_copy is not None:
+        gl_copy['observation_file'] = obs_abs
+
+    inner_prior = get_prior(dist_cfg['prior'], rng=rng_laplace, field=field)
+    inner_likelihood = get_likelihood(dist_cfg['likelihood'],
+                                      model=model,
+                                      rng=rng_laplace)
+    inner_posterior = Posterior(prior=inner_prior,
+                                likelihood=inner_likelihood,
+                                rng=rng_laplace)
+
+    print("Finding MAP point (BFGS)...")
+    b_new = find_mean(inner_posterior, x_0=onp.array([0, 3]))
+    print(f"  b = {b_new}")
+
+    print("Computing Laplace covariance at MAP...")
+    M_new = find_curvature(inner_posterior, b_new)
+    print(f"  M =\n{M_new}")
+
+    config['problem']['M'] = M_new
+    config['problem']['b'] = b_new
+
+    # Write updated config
+    dump_yaml_custom_format(numpy_to_yaml(config), config_file)
+    print(f"\nUpdated config: {config_file}")
 
 print(f"\nDone. {N_SENSORS} sensors, {len(observations)} DOFs "
       f"({N_SENSORS}×3), POOL={POOL}, noise std={NOISE_STD} µm")
