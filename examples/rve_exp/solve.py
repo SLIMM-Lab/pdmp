@@ -43,21 +43,21 @@ from pdmp.rve_utils import (
 
 # ── Default parameters ────────────────────────────────────────────────────
 
-L = 1.0  # RVE side length
-mesh_size = 0.03  # Characteristic element length
+L = 2000.0  # RVE side length [µm]
+mesh_size = 60.0  # Characteristic element length [µm]
 
-# Default fiber layout: (cx, cy, R)
+# Default fiber layout: (cx, cy, R) in µm
 DEFAULT_FIBERS = [
-    (0.25, 0.25, 0.10),
-    (0.70, 0.30, 0.08),
-    (0.30, 0.75, 0.07),
-    (0.75, 0.70, 0.12),
+    (500.0, 500.0, 200.0),
+    (1400.0, 600.0, 160.0),
+    (600.0, 1500.0, 140.0),
+    (1500.0, 1400.0, 240.0),
 ]
 
-E_inf = 30e3  # Far-field matrix E [MPa]
-E_fiber = 200e3  # Fiber E [MPa]
-nu_matrix = 0.35  # Matrix Poisson ratio
-nu_fiber = 0.2  # Fiber Poisson ratio
+E_inf = 30.0  # Far-field matrix E [GPa]
+E_fiber = 99.0  # Fiber E [GPa]
+nu_matrix = 0.18  # Matrix Poisson ratio
+nu_fiber = 0.18  # Fiber Poisson ratio
 
 # ── E-field computation ──────────────────────────────────────────────────
 
@@ -110,12 +110,12 @@ def main():
         description="2D RVE with exponential recovery E-field")
     parser.add_argument("--rho",
                         type=float,
-                        default=0.3,
+                        default=0.4,
                         help="Recovery ratio (default: 0.3)")
     parser.add_argument("--l-scale",
                         type=float,
-                        default=0.1,
-                        help="Recovery length scale (default: 0.1)")
+                        default=200.0,
+                        help="Recovery length scale in µm (default: 200.0)")
     parser.add_argument("--eps-xx",
                         type=float,
                         default=1e-3,
@@ -212,10 +212,10 @@ def main():
 
     print(f"\nE field stats (matrix only):")
     matrix_E = E_q_np[~is_fiber]
-    print(f"  min={matrix_E.min():.1f}, max={matrix_E.max():.1f}, "
-          f"mean={matrix_E.mean():.1f} MPa")
-    print(f"  E at fiber surface = E_inf * rho = {E_inf * rho:.1f} MPa")
-    print(f"  E far field = E_inf = {E_inf:.1f} MPa")
+    print(f"  min={matrix_E.min():.3f}, max={matrix_E.max():.3f}, "
+          f"mean={matrix_E.mean():.3f} GPa")
+    print(f"  E at fiber surface = E_inf * rho = {E_inf * rho:.3f} GPa")
+    print(f"  E far field = E_inf = {E_inf:.3f} GPa")
 
     # ── 7. Set params and solve ──────────────────────────────────────
     eps_macro_voigt = np.array([args.eps_xx, args.eps_yy, args.gamma_xy])
@@ -234,9 +234,9 @@ def main():
                                                        problem.internal_vars)
 
     print(f"\nVolume-averaged stress:")
-    print(f"  <sigma_xx> = {float(sigma_avg[0,0]):.4f} MPa")
-    print(f"  <sigma_yy> = {float(sigma_avg[1,1]):.4f} MPa")
-    print(f"  <sigma_xy> = {float(sigma_avg[0,1]):.4f} MPa")
+    print(f"  <sigma_xx> = {float(sigma_avg[0,0]):.6f} GPa")
+    print(f"  <sigma_yy> = {float(sigma_avg[1,1]):.6f} GPa")
+    print(f"  <sigma_xy> = {float(sigma_avg[0,1]):.6f} GPa")
 
     # ── 9. Plots ─────────────────────────────────────────────────────
     # Cell-averaged distance and E for plotting
@@ -249,23 +249,23 @@ def main():
                "distance", "viridis",
                os.path.join(fig_dir, "distance_field.png"))
 
-    plot_field(mesh, E_cell, fibers, L, "Young's modulus E", "E [MPa]",
+    plot_field(mesh, E_cell, fibers, L, "Young's modulus E", "E [GPa]",
                "viridis", os.path.join(fig_dir, "E_field.png"))
 
     sigma_cell_np = np.array(sigma_cell)
     nu_cell_arr = np.sum(nu_q_np * w, axis=1)
 
     plot_field(mesh, sigma_cell_np[:, 0, 0], fibers, L,
-               r"Stress $\sigma_{xx}$", r"$\sigma_{xx}$ [MPa]", "RdBu_r",
+               r"Stress $\sigma_{xx}$", r"$\sigma_{xx}$ [GPa]", "RdBu_r",
                os.path.join(fig_dir, "stress_xx.png"))
 
     plot_field(mesh, sigma_cell_np[:, 1, 1], fibers, L,
-               r"Stress $\sigma_{yy}$", r"$\sigma_{yy}$ [MPa]", "RdBu_r",
+               r"Stress $\sigma_{yy}$", r"$\sigma_{yy}$ [GPa]", "RdBu_r",
                os.path.join(fig_dir, "stress_yy.png"))
 
     vm = compute_von_mises_from_cell(sigma_cell_np, nu_cell_arr)
     plot_field(mesh, vm, fibers, L, "von Mises stress",
-               r"$\sigma_\mathrm{vM}$ [MPa]", "hot",
+               r"$\sigma_\mathrm{vM}$ [GPa]", "hot",
                os.path.join(fig_dir, "stress_vonmises.png"))
 
     plot_displacement(mesh, sol_list[0], fibers, L, fig_dir)

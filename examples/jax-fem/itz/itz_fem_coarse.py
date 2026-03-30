@@ -32,7 +32,7 @@ ANHYDROUS = 4
 AGGREGATE = 7
 
 # Young's modulus per phase (GPa)
-E_MAP = {OUTER_CSH: 25.0, INNER_CSH: 31.0, ANHYDROUS: 130.0, AGGREGATE: 70.0}
+E_MAP = {OUTER_CSH: 25.0, INNER_CSH: 31.0, ANHYDROUS: 99.0, AGGREGATE: 70.0}
 NU = 0.18
 
 # Voxel geometry
