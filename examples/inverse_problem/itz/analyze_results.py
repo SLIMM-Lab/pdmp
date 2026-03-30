@@ -34,8 +34,11 @@ FIG_DIR = './figures'
 THETA1_MIN, THETA1_MAX = -2, 1  # θ₁ (→ rho via sigmoid)
 THETA2_MIN, THETA2_MAX = 4, 9  # θ₂ (→ l via exp)
 
+XI1_MIN, XI1_MAX = -5.0, 3.0
+XI2_MIN, XI2_MAX = -3.0, 10.0
+
 N_GRID = 50
-N_BPS_SAMPLES = 500  # equidistant samples from BPS trajectory
+N_BPS_SAMPLES = 1000  # equidistant samples from BPS trajectory
 
 # Physical parameter bounds (derived from θ limits via sigmoid / exp)
 RHO_MIN = 1.0 / (1.0 + np.exp(-THETA1_MIN))  # sigmoid(THETA1_MIN)
@@ -310,6 +313,97 @@ def plot_log_joint_physical(theta1_grid, theta2_grid, log_joint_grid,
     plt.close(fig)
 
 
+def evaluate_log_joint_grid_affine(inner_target,
+                                   transformation,
+                                   cache_file,
+                                   force=False):
+    """Evaluate log-joint on a regular grid in affine (whitened) ξ-space."""
+    if os.path.exists(cache_file) and not force:
+        data = np.load(cache_file)
+        if 'log_prior_grid' in data:
+            return (data['xi1_grid'], data['xi2_grid'], data['log_joint_grid'],
+                    data['log_prior_grid'])
+
+    xi1_vals = np.linspace(XI1_MIN, XI1_MAX, N_GRID)
+    xi2_vals = np.linspace(XI2_MIN, XI2_MAX, N_GRID)
+    xi1_grid, xi2_grid = np.meshgrid(xi1_vals, xi2_vals)
+    log_joint_grid = np.full_like(xi1_grid, -np.inf)
+    log_prior_grid = np.full_like(xi1_grid, -np.inf)
+
+    prior = inner_target.prior
+    for i in range(N_GRID):
+        for j in range(N_GRID):
+            xi = np.array([xi1_grid[j, i], xi2_grid[j, i]])
+            theta = transformation.transform(xi)
+            try:
+                log_joint_grid[j, i] = inner_target.log_density(theta)
+                log_prior_grid[j, i] = prior.log_density(theta)
+            except Exception:
+                pass
+        if (i + 1) % 5 == 0:
+            print(f"  Grid progress: {i+1}/{N_GRID}")
+
+    os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+    np.savez(cache_file,
+             xi1_grid=xi1_grid,
+             xi2_grid=xi2_grid,
+             log_joint_grid=log_joint_grid,
+             log_prior_grid=log_prior_grid)
+    return xi1_grid, xi2_grid, log_joint_grid, log_prior_grid
+
+
+def plot_log_joint_affine(xi1_grid, xi2_grid, log_joint_grid, log_prior_grid,
+                          xi_aff_samples):
+    """Contour plot of log-joint in affine (whitened) ξ-space with BPS samples."""
+    os.makedirs(FIG_DIR, exist_ok=True)
+    cmap_post = sns.color_palette('rocket', as_cmap=True)
+
+    xi1_lim = [xi1_grid.min(), xi1_grid.max()]
+    xi2_lim = [xi2_grid.min(), xi2_grid.max()]
+
+    log_norm = log_joint_grid - np.nanmax(log_joint_grid)
+    post_norm = np.exp(log_norm)
+    log_prior_norm = log_prior_grid - np.nanmax(log_prior_grid)
+
+    fig, ax = get_2d_despined_figure(plot_limits=(xi1_lim, xi2_lim),
+                                     figsize=(4., 4.),
+                                     axes_label=(r'\xi_1', r'\xi_2'),
+                                     equal_axes=False,
+                                     keep_ticks=True)
+
+    ax.contour(xi1_grid,
+               xi2_grid,
+               np.exp(log_prior_norm),
+               levels=10,
+               alpha=0.25,
+               cmap='Blues',
+               linestyles='-',
+               zorder=1)
+    ax.contour(xi1_grid,
+               xi2_grid,
+               post_norm,
+               levels=20,
+               alpha=0.7,
+               cmap=cmap_post,
+               zorder=2)
+
+    if xi_aff_samples is not None:
+        ax.scatter(xi_aff_samples[:, 0],
+                   xi_aff_samples[:, 1],
+                   c='C0',
+                   s=10,
+                   alpha=0.6,
+                   label='BPS',
+                   zorder=3,
+                   linewidths=0)
+        ax.legend(loc='upper right', frameon=False)
+
+    fig_path = os.path.join(FIG_DIR, 'log_joint_affine.pdf')
+    fig.savefig(fig_path, bbox_inches='tight')
+    print(f"Saved: {fig_path}")
+    plt.close(fig)
+
+
 # ============================================================================
 # Main
 # ============================================================================
@@ -319,6 +413,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--bps-dir', default='./bps')
     parser.add_argument('--force-grid', action='store_true')
+    parser.add_argument('--grid-space',
+                        choices=['latent', 'affine', 'both'],
+                        default='latent')
     args = parser.parse_args()
 
     global BPS_DIR, FIG_DIR, CACHE_DIR
@@ -361,22 +458,37 @@ def main():
             full_target._transformation.transform(xi) for xi in xi_aff_samples
         ])
 
-    # Evaluate log-joint and log-prior grids (cached in one pass)
-    cache_file = os.path.join(CACHE_DIR, 'log_joint_latent.npz')
-    t1_grid, t2_grid, lj_grid, lp_grid = evaluate_log_joint_grid(
-        inner_target, cache_file, force=args.force_grid)
+    if bps_theta is not None:
+        rho_samples = 1.0 / (1.0 + np.exp(-bps_theta[:, 0]))
+        l_samples = np.exp(bps_theta[:, 1])
+        phys_samples = np.column_stack([rho_samples, l_samples])
+        samples_path = os.path.join(BPS_DIR, 'samples.dat')
+        np.savetxt(samples_path, phys_samples, header='rho l')
+        print(f"Saved physical samples: {samples_path}")
 
-    ll_grid = lj_grid - lp_grid
+    cache_latent = os.path.join(CACHE_DIR, 'log_joint_latent.npz')
+    cache_affine = os.path.join(CACHE_DIR, 'log_joint_affine.npz')
+    tr = full_target._transformation
 
-    # Plot log-joint in latent space
-    plot_log_joint_latent(t1_grid, t2_grid, lj_grid, lp_grid, bps_theta)
+    if args.grid_space in ('latent', 'both'):
+        t1_grid, t2_grid, lj_grid, lp_grid = evaluate_log_joint_grid(
+            inner_target, cache_latent, force=args.force_grid)
+        ll_grid = lj_grid - lp_grid
+        plot_log_joint_latent(t1_grid, t2_grid, lj_grid, lp_grid, bps_theta)
+        plot_log_likelihood_latent(t1_grid, t2_grid, ll_grid)
+        plot_log_likelihood_physical(t1_grid, t2_grid, ll_grid)
+        plot_log_joint_physical(t1_grid, t2_grid, lj_grid, lp_grid, bps_theta)
+        # Affine plot via cheap coordinate mapping (no extra FEM calls)
+        theta_pts = np.column_stack([t1_grid.ravel(), t2_grid.ravel()])
+        xi_pts = (theta_pts - tr._b) @ tr._M_inv.T
+        xi1_g = xi_pts[:, 0].reshape(t1_grid.shape)
+        xi2_g = xi_pts[:, 1].reshape(t1_grid.shape)
+        plot_log_joint_affine(xi1_g, xi2_g, lj_grid, lp_grid, xi_aff_samples)
 
-    # Plot likelihood in latent and physical space
-    plot_log_likelihood_latent(t1_grid, t2_grid, ll_grid)
-    plot_log_likelihood_physical(t1_grid, t2_grid, ll_grid)
-
-    # Plot posterior in physical space
-    plot_log_joint_physical(t1_grid, t2_grid, lj_grid, lp_grid, bps_theta)
+    if args.grid_space in ('affine', 'both'):
+        xi1_g, xi2_g, lj_aff, lp_aff = evaluate_log_joint_grid_affine(
+            inner_target, tr, cache_affine, force=args.force_grid)
+        plot_log_joint_affine(xi1_g, xi2_g, lj_aff, lp_aff, xi_aff_samples)
 
     print("Done.")
 
