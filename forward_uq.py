@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """Forward Uncertainty Quantification driver script.
 
 Draws samples from a distribution (or loads them from a file), evaluates a
@@ -6,9 +7,6 @@ forward model on each sample, and stores the outputs.
 Usage:
     # Sample from a distribution defined in the config
     python forward_uq.py path/to/config.yaml
-
-    # Use an existing samples file (empirical distribution)
-    python forward_uq.py path/to/config.yaml --samples path/to/samples.dat
 """
 
 import argparse
@@ -47,12 +45,6 @@ def flatten_output(out):
 def main():
     parser = argparse.ArgumentParser(description='Forward UQ driver')
     parser.add_argument('config', type=str, help='Path to YAML config file')
-    parser.add_argument(
-        '--samples',
-        type=str,
-        default=None,
-        help='Path to a samples file (.dat). If provided, skips '
-        'distribution sampling and uses these samples directly.')
     args = parser.parse_args()
 
     config = get_config(args.config)
@@ -69,13 +61,15 @@ def main():
             field = get_field(field_cfg)
 
     # Get samples: from file or by drawing from distribution
-    if args.samples is not None:
-        samples = np.loadtxt(args.samples)
+    uq_cfg = config.get('forward_uq', {})
+
+    if 'samples_file' in uq_cfg:
+        samples = np.loadtxt(uq_cfg['samples_file'])
         if samples.ndim == 1:
             samples = samples[:, None]
-        print(f'Loaded {samples.shape[0]} samples from {args.samples}')
+        print(
+            f'Loaded {samples.shape[0]} samples from {uq_cfg["samples_file"]}')
     else:
-        uq_cfg = config.get('forward_uq', {})
         seed = int(uq_cfg.get('seed', 42))
         n_samples = int(uq_cfg.get('n_samples', 1000))
         rng = np.random.default_rng(seed)
