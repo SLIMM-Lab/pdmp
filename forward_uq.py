@@ -244,12 +244,13 @@ def main():
                                  for j in range(outputs.shape[1])]):
         print(f'  {name}: mean = {mean_out[i]:.4f}, std = {std_out[i]:.4f}')
 
-    fig_dir = os.path.join(out_dir, 'figures')
-    os.makedirs(fig_dir, exist_ok=True)
-    print(f'\nSaving figures to {fig_dir}/')
-    plot_output_marginals(outputs, fig_dir, legend)
-    plot_output_pairwise(outputs, fig_dir)
-    plot_input_output_scatter(samples, outputs, fig_dir)
+    if uq_cfg.get('plot', True):
+        fig_dir = os.path.join(out_dir, 'figures')
+        os.makedirs(fig_dir, exist_ok=True)
+        print(f'\nSaving figures to {fig_dir}/')
+        plot_output_marginals(outputs, fig_dir, legend)
+        plot_output_pairwise(outputs, fig_dir)
+        plot_input_output_scatter(samples, outputs, fig_dir)
 
 
 if __name__ == '__main__':
