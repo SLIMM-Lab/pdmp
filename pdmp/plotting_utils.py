@@ -1,3 +1,4 @@
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -12,58 +13,59 @@ def get_2d_despined_figure(plot_limits: tuple[list[float], list[float]] = None,
                            keep_ticks: bool = False,
                            axes_label: Union[tuple[str, ...], str] = '\\theta',
                            equal_axes=True) -> tuple[plt.Figure, plt.Axes]:
-    """Create a 2D despined figure with specified plot limits and formatting.
+    """Create a despined figure with specified plot limits and formatting.
 
     Args:
         plot_limits: A tuple containing two lists, each specifying the x and y axis limits respectively.
+            Only applied when nrows == ncols == 1.
         nrows: Number of rows in the subplot grid. Default is 1.
         ncols: Number of columns in the subplot grid. Default is 1.
         figsize: Size of the figure in inches. Default is (3., 4.).
         constrained_layout: Whether to use constrained layout for the figure. Default is True.
         keep_ticks: Whether to keep the ticks. Mainly for debugging purpose. Default is True.
-        axes_label: Axes label. Default is '\\theta'.
+        axes_label: Axes label. Only applied when nrows == ncols == 1. Default is '\\theta'.
+        equal_axes: Whether to set equal axes. Only applied when nrows == ncols == 1. Default is True.
 
     Returns:
         tuple: A tuple containing the figure and axes objects.
     """
 
     # create figure
-    fig, ax = plt.subplots(nrows,
-                           ncols,
-                           figsize=figsize,
-                           constrained_layout=constrained_layout)
+    fig, axes = plt.subplots(nrows,
+                             ncols,
+                             figsize=figsize,
+                             constrained_layout=constrained_layout)
 
-    # format the plot
-    if plot_limits is not None:
-        ax.set_xlim(plot_limits[0])
-        ax.set_ylim(plot_limits[1])
+    # single-axis-only operations: limits, equal axes, labels
+    if nrows == 1 and ncols == 1:
+        if plot_limits is not None:
+            axes.set_xlim(plot_limits[0])
+            axes.set_ylim(plot_limits[1])
 
-    if equal_axes:
-        ax.axis('equal')
-        ax.autoscale(enable=False)
+        if equal_axes:
+            axes.axis('equal')
+            axes.autoscale(enable=False)
 
-    ax.grid(False)
+        if isinstance(axes_label, tuple):
+            axes.set_xlabel(rf'${axes_label[0]}$')
+            axes.set_ylabel(rf'${axes_label[1]}$')
+        else:
+            axes.set_xlabel(rf'${axes_label}_1$')
+            axes.set_ylabel(rf'${axes_label}_2$')
 
-    # set labels
-    if isinstance(axes_label, tuple):
-        ax.set_xlabel(rf'${axes_label[0]}$')
-        ax.set_ylabel(rf'${axes_label[1]}$')
-    else:
-        ax.set_xlabel(rf'${axes_label}_1$')
-        ax.set_ylabel(rf'${axes_label}_2$')
+    # per-axis style applied to all subplots
+    for ax in np.array(axes).ravel():
+        ax.grid(False)
 
-    # despine the plot
+        if not keep_ticks:
+            ax.set_yticklabels([])
+            ax.set_xticklabels([])
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+        for spine in ['top', 'bottom', 'left', 'right']:
+            ax.spines[spine].set_linewidth(1.)
+
     sns.despine()
 
-    # get rid of the ticks and tick labels
-    if not keep_ticks:
-        ax.set_yticklabels([])
-        ax.set_xticklabels([])
-        ax.set_xticks([])
-        ax.set_yticks([])
-
-    # make the axes linewidths bigger
-    for axis in ['top', 'bottom', 'left', 'right']:
-        ax.spines[axis].set_linewidth(1.)
-
-    return fig, ax
+    return fig, axes

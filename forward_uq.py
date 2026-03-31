@@ -13,12 +13,136 @@ import argparse
 import os
 
 import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import gaussian_kde
 
 from pdmp.loader import get_config
 from pdmp.forward_model import get_model
 from pdmp.distributions import get_prior
 from pdmp.random_field import get_field, get_jax_field
 from pdmp.logger_setup import suppress_external_loggers
+from pdmp.plotting_utils import get_2d_despined_figure
+
+
+def plot_output_marginals(outputs, fig_dir, output_labels=None):
+    """Histogram + KDE for each output dimension."""
+    dim_out = outputs.shape[1]
+    n_cols = min(dim_out, 3)
+    n_rows = (dim_out + n_cols - 1) // n_cols
+    fig, axes = get_2d_despined_figure(nrows=n_rows,
+                                       ncols=n_cols,
+                                       figsize=(4 * n_cols, 3.5 * n_rows),
+                                       keep_ticks=True,
+                                       equal_axes=False)
+    axes = np.array(axes).reshape(n_rows, n_cols)
+
+    for j in range(dim_out):
+        ax = axes[j // n_cols, j % n_cols]
+        y = outputs[:, j]
+        ax.hist(y,
+                bins=40,
+                density=True,
+                alpha=0.4,
+                color='steelblue',
+                label='Histogram')
+
+        kde = gaussian_kde(y)
+        grid = np.linspace(y.min(), y.max(), 300)
+        ax.plot(grid, kde(grid), color='steelblue', lw=2, label='KDE')
+
+        ax.axvline(y.mean(),
+                   color='steelblue',
+                   lw=1.2,
+                   ls='--',
+                   label=f'Empirical mean {y.mean():.3f}')
+
+        label = output_labels[
+            j] if output_labels is not None else f'Output[{j}]'
+        ax.set_xlabel(label)
+        ax.set_ylabel('Density' if j % n_cols == 0 else '')
+        ax.legend(fontsize=8)
+
+    for j in range(dim_out, n_rows * n_cols):
+        axes[j // n_cols, j % n_cols].set_visible(False)
+    path = os.path.join(fig_dir, 'output_marginals.pdf')
+    fig.savefig(path, bbox_inches='tight')
+    print(f'  Saved {path}')
+    plt.close(fig)
+
+
+def plot_output_pairwise(outputs, fig_dir):
+    """Pairwise scatter plots of output dimensions (only if dim_out > 1)."""
+    dim_out = outputs.shape[1]
+    if dim_out < 2:
+        return
+
+    fig, axes = get_2d_despined_figure(nrows=dim_out,
+                                       ncols=dim_out,
+                                       figsize=(3 * dim_out, 3 * dim_out),
+                                       keep_ticks=True,
+                                       equal_axes=False)
+    axes = np.array(axes).reshape(dim_out, dim_out)
+    for i in range(dim_out):
+        for j in range(dim_out):
+            ax = axes[i, j]
+            if i == j:
+                y = outputs[:, i]
+                kde = gaussian_kde(y)
+                grid = np.linspace(y.min(), y.max(), 300)
+                ax.plot(grid, kde(grid), color='steelblue', lw=2, label='KDE')
+                if i == 0:
+                    ax.legend(fontsize=7)
+            else:
+                ax.scatter(outputs[:, j],
+                           outputs[:, i],
+                           s=2,
+                           alpha=0.3,
+                           color='steelblue',
+                           label='Samples')
+            if i == dim_out - 1:
+                ax.set_xlabel(f'Output[{j}]')
+            if j == 0:
+                ax.set_ylabel(f'Output[{i}]')
+    path = os.path.join(fig_dir, 'output_pairwise.pdf')
+    fig.savefig(path, bbox_inches='tight')
+    print(f'  Saved {path}')
+    plt.close(fig)
+
+
+def plot_input_output_scatter(samples, outputs, fig_dir):
+    """Scatter plots: each input vs each output, coloured by output value."""
+    dim_in = samples.shape[1]
+    dim_out = outputs.shape[1]
+
+    fig, axes = get_2d_despined_figure(nrows=dim_out,
+                                       ncols=dim_in,
+                                       figsize=(3.5 * dim_in, 3 * dim_out),
+                                       keep_ticks=True,
+                                       equal_axes=False)
+    axes = np.array(axes).reshape(dim_out, dim_in)
+
+    for i in range(dim_out):
+        sc = None
+        for j in range(dim_in):
+            ax = axes[i, j]
+            sc = ax.scatter(samples[:, j],
+                            outputs[:, i],
+                            s=2,
+                            alpha=0.4,
+                            c=outputs[:, i],
+                            cmap='viridis')
+            if i == dim_out - 1:
+                ax.set_xlabel(f'Input[{j}]')
+            if j == 0:
+                ax.set_ylabel(f'Output[{i}]')
+        fig.colorbar(sc,
+                     ax=axes[i, :].tolist(),
+                     shrink=0.8,
+                     label=f'Output[{i}]')
+    path = os.path.join(fig_dir, 'input_output_scatter.pdf')
+    fig.savefig(path, bbox_inches='tight')
+    print(f'  Saved {path}')
+    plt.close(fig)
 
 
 def flatten_output(out):
@@ -114,6 +238,13 @@ def main():
                              or [f'out[{j}]'
                                  for j in range(outputs.shape[1])]):
         print(f'  {name}: mean = {mean_out[i]:.4f}, std = {std_out[i]:.4f}')
+
+    fig_dir = os.path.join(out_dir, 'figures')
+    os.makedirs(fig_dir, exist_ok=True)
+    print(f'\nSaving figures to {fig_dir}/')
+    plot_output_marginals(outputs, fig_dir, legend)
+    plot_output_pairwise(outputs, fig_dir)
+    plot_input_output_scatter(samples, outputs, fig_dir)
 
 
 if __name__ == '__main__':
