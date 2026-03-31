@@ -1304,6 +1304,21 @@ class RVEModel:
         'max_stress',
         'max_strain',
     }
+    VOIGT_COMPONENTS = {'xx': (0, 0), 'yy': (1, 1), 'xy': (0, 1)}
+    TENSOR_QUANTITIES = {
+        'avg_stress', 'avg_strain', 'cell_stresses', 'cell_strains'
+    }
+    LATEX_LABELS = {
+        'avg_stress_xx': r'$\sigma_{xx}^M$',
+        'avg_stress_yy': r'$\sigma_{yy}^M$',
+        'avg_stress_xy': r'$\sigma_{xy}^M$',
+        'avg_strain_xx': r'$\varepsilon_{xx}^M$',
+        'avg_strain_yy': r'$\varepsilon_{yy}^M$',
+        'avg_strain_xy': r'$\varepsilon_{xy}^M$',
+        'max_von_mises': r'$\sigma_\mathrm{VM}^\mathrm{max}$',
+        'max_stress': r'$\sigma^\mathrm{max}$',
+        'max_strain': r'$\varepsilon^\mathrm{max}$',
+    }
 
     def __init__(self,
                  fibers,
@@ -1316,6 +1331,7 @@ class RVEModel:
                  nu_fiber=0.2,
                  eps_macro=(1e-3, 0.0, 0.0),
                  quantities=None,
+                 components=None,
                  msh_file=None,
                  data_dir=None):
         from pdmp.rve_utils import (
@@ -1335,6 +1351,18 @@ class RVEModel:
         unknown = set(quantities) - self.SUPPORTED_QUANTITIES
         if unknown:
             raise ValueError(f"Unknown quantities: {unknown}")
+
+        if components is None:
+            components = ['xx', 'yy', 'xy']
+        unknown_c = set(components) - set(self.VOIGT_COMPONENTS)
+        if unknown_c:
+            raise ValueError(
+                f"Unknown components: {unknown_c}. Must be 'xx', 'yy', or 'xy'."
+            )
+        self._components = list(components)
+        self._component_indices = [
+            self.VOIGT_COMPONENTS[c] for c in components
+        ]
 
         self.fibers = list(fibers)
         self.L = L
@@ -1460,9 +1488,16 @@ class RVEModel:
         if needs_strain:
             eps_cell = self._problem.compute_avg_strain(sol, self._eps_macro_q)
 
+        def _extract(arr):
+            """Extract selected components from a (..., 2, 2) tensor."""
+            return np.stack(
+                [arr[..., r, c] for r, c in self._component_indices], axis=-1)
+
         for q in self.quantities:
             if q == 'avg_stress':
-                result[q] = np.array(sigma_avg)
+                for comp, val in zip(self._components,
+                                     _extract(np.array(sigma_avg))):
+                    result[f'avg_stress_{comp}'] = float(val)
             elif q == 'avg_strain':
                 eps_qp_avg = self._problem.compute_avg_strain(
                     sol, self._eps_macro_q) if eps_cell is None else eps_cell
@@ -1472,11 +1507,13 @@ class RVEModel:
                 total_vol = jnp.sum(cell_vols)
                 avg = jnp.sum(eps_qp_avg * cell_vols[:, None, None],
                               axis=0) / total_vol
-                result[q] = np.array(avg)
+                for comp, val in zip(self._components,
+                                     _extract(np.array(avg))):
+                    result[f'avg_strain_{comp}'] = float(val)
             elif q == 'cell_stresses':
-                result[q] = np.array(sigma_cell)
+                result[q] = _extract(np.array(sigma_cell))
             elif q == 'cell_strains':
-                result[q] = np.array(eps_cell)
+                result[q] = _extract(np.array(eps_cell))
             elif q == 'displacements':
                 result[q] = np.array(sol)
             elif q == 'max_von_mises':
@@ -1507,6 +1544,7 @@ class RVEModel:
             eps_macro=eps_macro,
             quantities=config.get('quantities',
                                   ['avg_stress', 'max_von_mises']),
+            components=config.get('components', None),
             msh_file=config.get('msh_file', None),
             data_dir=config.get('data_dir', None),
         )
