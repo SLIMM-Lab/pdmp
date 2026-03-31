@@ -41,6 +41,37 @@ def plot_samples(samples: np.ndarray,
     return ax
 
 
+def plot_path(positions: np.ndarray,
+              ax: plt.Axes,
+              color: str = 'C0',
+              linewidth: float = 0.5,
+              alpha: float = 0.7,
+              label: str = None,
+              **kwargs) -> plt.Axes:
+    """Plot a piecewise linear path connecting skeleton positions.
+
+    Args:
+        positions: The skeleton positions, expected to be a 2D array of shape (n, 2).
+        ax: The matplotlib axes object to plot on.
+        color: Line color. Default is 'C0'.
+        linewidth: Line width. Default is 0.5.
+        alpha: Transparency level. Default is 0.7.
+        label: Legend label. Default is None.
+
+    Returns:
+        plt.Axes: The matplotlib axes object with the path plotted.
+    """
+    ax.plot(positions[:, 0],
+            positions[:, 1],
+            c=color,
+            linewidth=linewidth,
+            alpha=alpha,
+            label=label,
+            zorder=2,
+            **kwargs)
+    return ax
+
+
 def plot_trace(samples: np.ndarray,
                components: list[int] = None,
                keep_ticks: bool = True,
