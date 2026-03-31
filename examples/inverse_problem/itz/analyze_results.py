@@ -19,6 +19,7 @@ matplotlib.use('Agg')
 
 from pdmp.loader import get_config, get_target
 from pdmp.logger_setup import suppress_external_loggers
+from pdmp.plotting import plot_path
 from pdmp.plotting_utils import get_2d_despined_figure
 from pdmp.utils import sample_equidistant_along_path
 
@@ -353,7 +354,7 @@ def evaluate_log_joint_grid_affine(inner_target,
 
 
 def plot_log_joint_affine(xi1_grid, xi2_grid, log_joint_grid, log_prior_grid,
-                          xi_aff_samples):
+                          positions):
     """Contour plot of log-joint in affine (whitened) ξ-space with BPS samples."""
     os.makedirs(FIG_DIR, exist_ok=True)
     cmap_post = sns.color_palette('rocket', as_cmap=True)
@@ -387,15 +388,8 @@ def plot_log_joint_affine(xi1_grid, xi2_grid, log_joint_grid, log_prior_grid,
                cmap=cmap_post,
                zorder=2)
 
-    if xi_aff_samples is not None:
-        ax.scatter(xi_aff_samples[:, 0],
-                   xi_aff_samples[:, 1],
-                   c='C0',
-                   s=10,
-                   alpha=0.6,
-                   label='BPS',
-                   zorder=3,
-                   linewidths=0)
+    if positions is not None:
+        plot_path(positions, ax, label='BPS', linewidth=1., alpha=0.6)
         ax.legend(loc='upper right', frameon=False)
 
     fig_path = os.path.join(FIG_DIR, 'log_joint_affine.pdf')
@@ -452,7 +446,7 @@ def main():
     # (which requires the MAP point) we cannot map them to θ.
     bps_theta = None
     # Uncomment once the Laplace issue is resolved and the transformation is available:
-    _, _, _, xi_aff_samples = load_bps_samples(BPS_DIR)
+    positions, _, _, xi_aff_samples = load_bps_samples(BPS_DIR)
     if xi_aff_samples is not None:
         bps_theta = np.array([
             full_target._transformation.transform(xi) for xi in xi_aff_samples
@@ -483,12 +477,12 @@ def main():
         xi_pts = (theta_pts - tr._b) @ tr._M_inv.T
         xi1_g = xi_pts[:, 0].reshape(t1_grid.shape)
         xi2_g = xi_pts[:, 1].reshape(t1_grid.shape)
-        plot_log_joint_affine(xi1_g, xi2_g, lj_grid, lp_grid, xi_aff_samples)
+        plot_log_joint_affine(xi1_g, xi2_g, lj_grid, lp_grid, positions)
 
     if args.grid_space in ('affine', 'both'):
         xi1_g, xi2_g, lj_aff, lp_aff = evaluate_log_joint_grid_affine(
             inner_target, tr, cache_affine, force=args.force_grid)
-        plot_log_joint_affine(xi1_g, xi2_g, lj_aff, lp_aff, xi_aff_samples)
+        plot_log_joint_affine(xi1_g, xi2_g, lj_aff, lp_aff, positions)
 
     print("Done.")
 
