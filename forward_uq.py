@@ -217,6 +217,11 @@ def main():
 
     outputs = np.array(rows)
 
+    # Apply model-specific LaTeX labels if available
+    label_map = getattr(model, 'LATEX_LABELS', {})
+    if label_map and legend is not None:
+        legend = [label_map.get(l, l) for l in legend]
+
     # Save results
     out_dir = config.get('output', {}).get('dir', './results_forward_uq')
     os.makedirs(out_dir, exist_ok=True)
