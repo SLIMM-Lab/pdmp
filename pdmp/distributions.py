@@ -2447,6 +2447,19 @@ def get_likelihood(
     elif config['name'] == 'TransformedLikelihood':
         likelihood = get_likelihood(config['likelihood'], model=model, rng=rng)
         return TransformedLikelihood(likelihood, params=config)
+    elif config['name'] == 'KOGaussianLikelihood':
+        from pdmp.discrepancy import KOGaussianLikelihood
+        if 'x_locs' in config:
+            x_locs = config['x_locs']
+        elif hasattr(model, 'x_obs_'):
+            x_locs = model.x_obs_
+        else:
+            raise ValueError(
+                "KOGaussianLikelihood requires 'x_locs' in config "
+                "or a model with x_obs_ attribute.")
+        psi_prior = get_prior(config['psi_prior'], rng=rng)
+        return KOGaussianLikelihood(model=model, u_obs=obs, x_locs=x_locs,
+                                    psi_prior=psi_prior, rng=rng)
     elif config['name'] == 'FlatLikelihood':
         return FlatLikelihood(dim=model.get_dim_in(), rng=rng)
     else:
