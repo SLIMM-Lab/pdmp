@@ -5,7 +5,7 @@ import numpy as np
 import yaml
 
 from pdmp import logger
-from pdmp.distributions import Distribution, CubicDistribution, MultivariateNormal, Posterior, TransformedDistribution
+from pdmp.distributions import Distribution, CubicDistribution, JointDistribution, MultivariateNormal, Posterior, TransformedDistribution
 from pdmp.distributions import get_prior, get_likelihood
 from pdmp.forward_model import get_model
 from pdmp.sampler import Sampler, SAMPLER_REGISTRY
@@ -58,6 +58,11 @@ def get_target(config: dict[str, Any],
         prior = get_prior(config['prior'], rng=rng, field=field)
         model = get_model(model_cfg, field=field)
         likelihood = get_likelihood(config['likelihood'], model=model, rng=rng)
+
+        # K&O: augment prior with hyperparameter prior if present
+        if hasattr(likelihood, 'psi_prior') and likelihood.psi_prior is not None:
+            prior = JointDistribution([prior, likelihood.psi_prior], rng=rng)
+
         return Posterior(prior=prior, likelihood=likelihood, rng=rng)
 
     elif config['name'] == 'Transformed':
