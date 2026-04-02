@@ -1,0 +1,35 @@
+problem:
+  name: BayesianInverse
+  prior:
+    name: MultivariateNormal
+    mean: [1.5, 2.5]
+    cov: [[4.0, 0.0], [0.0, 4.0]]
+  likelihood:
+    name: KOGaussianLikelihood
+    observation_file: ../observations.dat
+    psi_prior:
+      name: MultivariateNormal
+      # entries: [log(sigma2_delta), log(sigma2_eps), log(rho)]
+      # centred near plausible values: s2d~0.01, s2e~0.001, rho~5
+      mean: [-4.0, -6.0, 1.5]
+      cov: [[4.0, 0.0, 0.0], [0.0, 4.0, 0.0], [0.0, 0.0, 4.0]]
+  model:
+    name: PiecewiseConstant
+    F: [1.0]
+    dim: 2
+    n_obs_loc: 10
+
+sampler:
+  name: RandomWalkMetropolis
+  n_samples: 100000
+  # Initial point: [theta_1, theta_2, log_sigma2_delta, log_sigma2_eps, log_rho]
+  x_0: [1.5, 2.5, -4.0, -6.0, 1.5]
+  sigma: 0.2
+
+output:
+  dir: .
+  logging:
+    level: INFO
+    log_file: inference.log
+
+seed: 42
