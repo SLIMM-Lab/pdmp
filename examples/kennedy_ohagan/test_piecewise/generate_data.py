@@ -39,14 +39,14 @@ from pdmp.distributions import (
 from pdmp.loader import numpy_to_yaml, dump_yaml_custom_format
 
 # ── ground truth ────────────────────────────────────────────────────────────
-THETA_TRUE = np.array([2.0, 3.0])
+THETA_TRUE = np.array([2.0, 5.0])
 SIGMA2_DELTA = 0.01
 SIGMA2_EPS = 0.001
 RHO_TRUE = 5.0
 
 N_OBS_LOC = 10
 F = np.array([1.0])
-SEED = 0
+SEED = 5
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BPS_DIR = os.path.join(HERE, "bps")
@@ -138,7 +138,7 @@ def main():
                 "name": "BayesianInverse",
                 "prior": {
                     "name": "MultivariateNormal",
-                    "mean": np.array([1.5, 2.5]),
+                    "mean": np.array([2.0, 2.0]),
                     "cov": np.diag([4.0, 4.0]),
                 },
                 "likelihood": {
@@ -160,7 +160,7 @@ def main():
         },
         "sampler": {
             "name": "BouncyParticle",
-            "t_max": 500,
+            "t_max": 2000,
             "dt": 0.05,
             "offset_shrinkage": 0.01,
             "refreshment_rate": 0.1,
