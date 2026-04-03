@@ -14,16 +14,14 @@ The sampler operates on the extended parameter vector
 so that all hyperparameters are unconstrained.
 """
 
-import logging
 from typing import Union
 
 import numpy as np
 import scipy.linalg as sla
 
+from pdmp import logger
 from pdmp.distributions import Likelihood, _safe_cholesky
 from pdmp.forward_model import Model
-
-logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
