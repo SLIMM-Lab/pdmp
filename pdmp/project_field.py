@@ -307,24 +307,7 @@ class NormPiecewiseConstantBasis(PiecewiseConstantBasis):
         return self.norms_
 
 
-def squared_exponential_kernel(x: np.ndarray,
-                               y: np.ndarray,
-                               sigma: float = 1.0,
-                               l: float = 1.0,
-                               **kwargs) -> float:
-    """Compute the squared exponential kernel between two points.
-
-    Args:
-        x: The first point.
-        y: The second point.
-        sigma: The standard deviation parameter of the kernel. Default is 1.0.
-        l: The length scale parameter of the kernel. Default is 1.0.
-        kwargs: Additional keyword arguments.
-
-    Returns:
-        float: The computed kernel value.
-    """
-    return sigma**2 * np.exp(-((x - y)**2) / (2 * l**2))
+from pdmp.kernels import squared_exponential_kernel  # noqa: E402, F401
 
 
 def compute_coefficients(kernel: Callable[
