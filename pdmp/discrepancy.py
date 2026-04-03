@@ -22,66 +22,11 @@ import scipy.linalg as sla
 from pdmp import logger
 from pdmp.distributions import Likelihood, _safe_cholesky
 from pdmp.forward_model import Model
-
-
-# ---------------------------------------------------------------------------
-# Kernel functions
-# ---------------------------------------------------------------------------
-
-def rbf_kernel_matrix(x_locs: np.ndarray, rho: np.ndarray) -> np.ndarray:
-    """ARD squared-exponential (RBF) kernel matrix.
-
-    C_ij = exp(-sum_k rho_k (x_ik - x_jk)^2)
-
-    Args:
-        x_locs: (m, d_x) sensor locations.
-        rho: (d_x,) inverse squared length-scale per dimension.
-
-    Returns:
-        (m, m) positive-definite kernel matrix.
-    """
-    x_locs = np.atleast_2d(x_locs)
-    rho = np.atleast_1d(rho).astype(float)
-    # Weighted squared distances: sum_k rho_k (x_ik - x_jk)^2
-    # Compute per-dimension squared differences scaled by rho
-    diff = x_locs[:, np.newaxis, :] - x_locs[np.newaxis, :, :]  # (m, m, d_x)
-    sq_dist = np.sum(rho[np.newaxis, np.newaxis, :] * diff**2, axis=2)  # (m, m)
-    return np.exp(-sq_dist)
-
-
-def _squared_diff_per_dim(x_locs: np.ndarray) -> np.ndarray:
-    """Per-dimension squared difference matrices.
-
-    Args:
-        x_locs: (m, d_x) sensor locations.
-
-    Returns:
-        (d_x, m, m) array where [k, i, j] = (x_ik - x_jk)^2.
-    """
-    x_locs = np.atleast_2d(x_locs)
-    diff = x_locs[:, np.newaxis, :] - x_locs[np.newaxis, :, :]  # (m, m, d_x)
-    return np.transpose(diff**2, (2, 0, 1))  # (d_x, m, m)
-
-
-def rbf_kernel_matrix_drho(x_locs: np.ndarray, rho: np.ndarray,
-                           k: int) -> np.ndarray:
-    """Derivative of the RBF kernel matrix w.r.t. rho_k.
-
-    dC/d(rho_k) = -D_k * C   (element-wise)
-
-    where D_k[i,j] = (x_ik - x_jk)^2.
-
-    Args:
-        x_locs: (m, d_x) sensor locations.
-        rho: (d_x,) inverse squared length-scales.
-        k: dimension index.
-
-    Returns:
-        (m, m) derivative matrix.
-    """
-    C = rbf_kernel_matrix(x_locs, rho)
-    D_k = _squared_diff_per_dim(x_locs)[k]
-    return -D_k * C
+from pdmp.kernels import (  # noqa: F401 — re-exported for backward compat
+    rbf_kernel_matrix,
+    rbf_kernel_matrix_drho,
+    _squared_diff_per_dim,
+)
 
 
 def build_noise_covariance(x_locs: np.ndarray, rho: np.ndarray,
