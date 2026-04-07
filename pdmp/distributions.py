@@ -2501,14 +2501,17 @@ def get_likelihood(
         from pdmp.discrepancy import KOGaussianLikelihood
         if 'x_locs' in config:
             x_locs = config['x_locs']
-        elif hasattr(model, 'x_obs_'):
-            x_locs = model.x_obs_
         else:
-            raise ValueError(
-                "KOGaussianLikelihood requires 'x_locs' in config "
-                "or a model with x_obs_ attribute.")
+            x_locs = model.get_obs_locs()
+            if x_locs is None:
+                raise ValueError(
+                    "KOGaussianLikelihood requires 'x_locs' in config "
+                    "or a model that implements get_obs_locs().")
         psi_prior = get_prior(config['psi_prior'], rng=rng)
-        n_components = config.get('n_components', 1)
+        if 'n_components' in config:
+            n_components = config['n_components']
+        else:
+            n_components = model.get_dim_out() // np.atleast_2d(x_locs).shape[0]
         return KOGaussianLikelihood(model=model, u_obs=obs, x_locs=x_locs,
                                     psi_prior=psi_prior, rng=rng,
                                     n_components=n_components)
