@@ -2508,8 +2508,10 @@ def get_likelihood(
                 "KOGaussianLikelihood requires 'x_locs' in config "
                 "or a model with x_obs_ attribute.")
         psi_prior = get_prior(config['psi_prior'], rng=rng)
+        n_components = config.get('n_components', 1)
         return KOGaussianLikelihood(model=model, u_obs=obs, x_locs=x_locs,
-                                    psi_prior=psi_prior, rng=rng)
+                                    psi_prior=psi_prior, rng=rng,
+                                    n_components=n_components)
     elif config['name'] == 'FlatLikelihood':
         return FlatLikelihood(dim=model.get_dim_in(), rng=rng)
     else:
