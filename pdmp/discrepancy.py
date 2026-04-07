@@ -72,11 +72,12 @@ class KOGaussianLikelihood(Likelihood):
                  model: Model,
                  u_obs: np.ndarray,
                  x_locs: np.ndarray,
-                 psi_prior,
+                 psi_prior=None,
                  rng: np.random.Generator = None,
                  seed: int = None,
                  n_components: int = 1,
-                 kernel: str = "ard"):
+                 kernel: str = "ard",
+                 fixed_psi: dict = None):
         """
         Args:
             model: Forward model providing eval/eval_grad.
@@ -84,8 +85,10 @@ class KOGaussianLikelihood(Likelihood):
             x_locs: (m, d_x) or (m,) sensor locations. When n_components > 1,
                     x_locs contains only the *base* locations (m_base, d_x)
                     where m_base = m // n_components.
-            psi_prior: Distribution over psi = [log_s2d, log_s2e, log_rho...].
-                       Stored as attribute for prior augmentation in get_target.
+            psi_prior: Distribution over the *free* psi parameters (i.e. those
+                       not listed in ``fixed_psi``).  May be ``None`` when all
+                       psi parameters are fixed.  Stored as attribute for prior
+                       augmentation in ``get_target``.
             rng: Random number generator.
             seed: RNG seed.
             n_components: Number of independent output components sharing the
@@ -95,6 +98,12 @@ class KOGaussianLikelihood(Likelihood):
                           independent while spatial correlation is preserved.
             kernel: ``"ard"`` (default) — one length-scale per spatial dimension;
                     ``"isotropic"`` — a single shared length-scale.
+            fixed_psi: Optional dict of ``{name: log_value}`` pairs that fix psi
+                       parameters to deterministic values (in log-space, matching
+                       the sampler's parameter vector).  Valid names are
+                       ``"log_s2d"``, ``"log_s2e"``, and ``"log_rho"``
+                       (isotropic / 1-D ARD) or ``"log_rho_0"``, ``"log_rho_1"``,
+                       … (ARD with d_x > 1).  Parameters not listed are learned.
         """
         super().__init__(rng=rng, seed=seed)
         self._model = model
@@ -131,7 +140,29 @@ class KOGaussianLikelihood(Likelihood):
                     f"match measurement dimension ({self._m}).")
 
         self._n_rho = 1 if self._isotropic else self._d_x
-        self._n_psi = 2 + self._n_rho  # log_s2d, log_s2e, log_rho...
+        self._n_psi = 2 + self._n_rho  # total psi count (fixed + free)
+
+        # Psi parameter names (used for fixed_psi look-up)
+        if self._n_rho == 1:
+            rho_names = ["log_rho"]
+        else:
+            rho_names = [f"log_rho_{k}" for k in range(self._n_rho)]
+        self._psi_names = ["log_s2d", "log_s2e"] + rho_names
+
+        # Build fixed-psi mask: NaN entries are free, finite entries are fixed.
+        fixed_psi_dict = fixed_psi or {}
+        unknown = set(fixed_psi_dict) - set(self._psi_names)
+        if unknown:
+            raise ValueError(
+                f"Unknown psi parameters: {unknown}. "
+                f"Valid names: {self._psi_names}")
+        self._fixed_log_psi = np.array([
+            fixed_psi_dict[n] if n in fixed_psi_dict else np.nan
+            for n in self._psi_names
+        ])
+        self._free_psi_mask = np.isnan(self._fixed_log_psi)
+        self._n_psi_free = int(self._free_psi_mask.sum())
+
         self._constant = -0.5 * self._m * np.log(2.0 * np.pi)
 
         # Pre-compute per-dimension squared differences on the base locations.
@@ -147,13 +178,19 @@ class KOGaussianLikelihood(Likelihood):
 
     # ----- helpers -----
 
+    def _fill_psi(self, free_log_psi: np.ndarray) -> np.ndarray:
+        """Reconstruct full log_psi (length n_psi) from free entries only."""
+        log_psi = self._fixed_log_psi.copy()
+        log_psi[self._free_psi_mask] = free_log_psi
+        return log_psi
+
     def _split_params(self, params):
-        """Split [theta, log_psi] and exponentiate psi.
+        """Split [theta, free_log_psi] and exponentiate psi.
 
         Returns rho with shape (n_rho,): (1,) for isotropic, (d_x,) for ARD.
         """
         theta = params[:self._n_theta]
-        log_psi = params[self._n_theta:]
+        log_psi = self._fill_psi(params[self._n_theta:])
         sigma2_delta = np.exp(log_psi[0])
         sigma2_eps = np.exp(log_psi[1])
         rho = np.exp(log_psi[2:])
@@ -272,9 +309,8 @@ class KOGaussianLikelihood(Likelihood):
                 grad_log_rho[ki] += (rho_raw[ki] * sigma2_delta * 0.5 *
                                      (-tr_Sinv_dC[ki] + adCa))
 
-        grad_psi = np.concatenate(
-            [[grad_log_s2d, grad_log_s2e], grad_log_rho])
-        return np.concatenate([grad_theta, grad_psi])
+        grad_psi_full = np.concatenate([[grad_log_s2d, grad_log_s2e], grad_log_rho])
+        return np.concatenate([grad_theta, grad_psi_full[self._free_psi_mask]])
 
     # ----- hessian_log_density -----
 
@@ -282,7 +318,7 @@ class KOGaussianLikelihood(Likelihood):
                             idx: int = None,
                             h: float = 1e-5) -> np.ndarray:
         """Hessian via central finite differences of grad_log_density."""
-        n = self._n_theta + self._n_psi
+        n = self._n_theta + self._n_psi_free
         hess = np.zeros((n, n))
         for j in range(n):
             e_j = np.zeros(n)
