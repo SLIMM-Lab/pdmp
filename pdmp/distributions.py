@@ -2507,15 +2507,18 @@ def get_likelihood(
                 raise ValueError(
                     "KOGaussianLikelihood requires 'x_locs' in config "
                     "or a model that implements get_obs_locs().")
-        psi_prior = get_prior(config['psi_prior'], rng=rng)
+        psi_prior = (get_prior(config['psi_prior'], rng=rng)
+                     if 'psi_prior' in config else None)
         if 'n_components' in config:
             n_components = config['n_components']
         else:
             n_components = model.get_dim_out() // np.atleast_2d(x_locs).shape[0]
         kernel = config.get('kernel', 'ard')
+        fixed_psi = config.get('fixed_psi', None)
         return KOGaussianLikelihood(model=model, u_obs=obs, x_locs=x_locs,
                                     psi_prior=psi_prior, rng=rng,
-                                    n_components=n_components, kernel=kernel)
+                                    n_components=n_components, kernel=kernel,
+                                    fixed_psi=fixed_psi)
     elif config['name'] == 'FlatLikelihood':
         return FlatLikelihood(dim=model.get_dim_in(), rng=rng)
     else:
