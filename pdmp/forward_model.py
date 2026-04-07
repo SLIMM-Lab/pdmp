@@ -70,6 +70,19 @@ class Model:
         """
         raise NotImplementedError
 
+    def get_obs_locs(self) -> np.ndarray:
+        """Return observation locations as an (m, d) array, or None if unavailable.
+
+        Each row is the spatial coordinate of one *base* observation location.
+        For models where each location yields multiple outputs (e.g. 3 DOFs per
+        sensor point), this returns the per-point coordinates only — the total
+        number of outputs is get_dim_out() = m * n_components.
+
+        Returns:
+            (m, d) array of observation coordinates, or None.
+        """
+        return None
+
     def get_n_settings(self) -> int:
         """Get number of settings.
 
@@ -297,6 +310,9 @@ class PiecewiseConstantModel(Model):
 
     def get_dim_out(self) -> int:
         return len(self.x_obs_)
+
+    def get_obs_locs(self) -> np.ndarray:
+        return self.x_obs_.reshape(-1, 1)
 
     @override
     def get_n_settings(self):
@@ -988,6 +1004,15 @@ class JaxFemModel(Model):
     def get_dim_out(self) -> int:
         return self._d_obs
 
+    def get_obs_locs(self) -> np.ndarray:
+        """Return sensor point coordinates as (n_pts_total, 3).
+
+        Each sensor group contributes its points array; all groups are stacked.
+        The total number of observations equals n_pts_total * vec_dim (DOFs per
+        point), so n_components = get_dim_out() // get_obs_locs().shape[0].
+        """
+        return np.vstack([s["points"] for s in self.sensor_interpolants])
+
     def _eval_obs(self, params: jnp.ndarray, idx: int = 0) -> jnp.ndarray:
         """JAX-compatible forward map params -> observation vector.
 
@@ -1025,8 +1050,14 @@ class JaxFemModel(Model):
         sol_list = self.fwd_pred([param_field])
         sensor_readings = evaluate_sensor_displacements(
             sol_list[0], self.sensor_interpolants)
-        u_list = [jnp.ravel(reading["u"]) for reading in sensor_readings]
-        return jnp.concatenate(u_list, axis=0) if u_list else jnp.array([])
+        if not sensor_readings:
+            return jnp.array([])
+        # Stack all sensor groups: (n_pts_total, vec_dim)
+        u_all = jnp.vstack([reading["u"] for reading in sensor_readings])
+        # Transpose and ravel → grouped order: [all ux, all uy, all uz]
+        # This matches the block-diagonal covariance structure used by
+        # KOGaussianLikelihood (n_components = vec_dim independent GP components).
+        return u_all.T.ravel()
 
     def eval(self,
              params: np.ndarray,
