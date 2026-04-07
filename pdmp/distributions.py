@@ -1426,6 +1426,48 @@ class Transformation:
         raise NotImplementedError
 
 
+class IdentityTransformation(Transformation):
+    """Identity (pass-through) transformation.
+
+    Useful as a placeholder in CompositeTransformation when some parameter
+    dimensions should remain untransformed.
+    """
+
+    @override
+    def transform(self, xi: np.ndarray) -> np.ndarray:
+        return np.asarray(xi, dtype=float)
+
+    @override
+    def inverse_transform(self, x: np.ndarray) -> np.ndarray:
+        return np.asarray(x, dtype=float)
+
+    @override
+    def jacobian(self, xi: np.ndarray) -> np.ndarray:
+        return np.eye(len(xi))
+
+    @override
+    def inv_jacobian(self, xi: np.ndarray) -> np.ndarray:
+        return np.eye(len(xi))
+
+    @override
+    def log_det_jacobian(self, xi: np.ndarray) -> float:
+        return 0.0
+
+    @override
+    def grad_log_det_jacobian(self, xi: np.ndarray) -> np.ndarray:
+        return np.zeros_like(xi, dtype=float)
+
+    @override
+    def hessian(self, xi: np.ndarray) -> np.ndarray:
+        n = len(xi)
+        return np.zeros((n, n, n))
+
+    @override
+    def hessian_log_det_jacobian(self, xi: np.ndarray) -> np.ndarray:
+        n = len(xi)
+        return np.zeros((n, n))
+
+
 class LogTransformation(Transformation):
     """Implements logarithmic transformation ξ = log(x).
 
@@ -2040,7 +2082,8 @@ AFFINE = 'Affine'
 SIGMOID = 'Sigmoid'
 LOGIT = 'Logit'
 COMPOSITE = 'Composite'
-TRANSFORMATIONS = [EXPONENTIAL, LOG, AFFINE, SIGMOID, LOGIT, COMPOSITE]
+IDENTITY = 'Identity'
+TRANSFORMATIONS = [EXPONENTIAL, LOG, AFFINE, SIGMOID, LOGIT, COMPOSITE, IDENTITY]
 
 
 def get_transformation(params: dict[str, Any],
@@ -2069,7 +2112,10 @@ def get_transformation(params: dict[str, Any],
     """
     trans_type = params.get('transformation')
 
-    if trans_type == EXPONENTIAL:
+    if trans_type == IDENTITY:
+        return IdentityTransformation()
+
+    elif trans_type == EXPONENTIAL:
         return ExponentialTransformation()
 
     elif trans_type == LOG:
@@ -2171,6 +2217,8 @@ def get_transformation(params: dict[str, Any],
                     a = spec.get('a', 0.0)
                     b = spec.get('b', 1.0)
                     transformations.append(LogitTransformation(a, b))
+                elif trans_type == IDENTITY:
+                    transformations.append(IdentityTransformation())
                 else:
                     raise ValueError(
                         f"Unknown transformation type: {trans_type}")
@@ -2188,6 +2236,8 @@ def get_transformation(params: dict[str, Any],
                     a = params.get('a', 0.0)
                     b = params.get('b', 1.0)
                     transformations.append(LogitTransformation(a, b))
+                elif spec == IDENTITY:
+                    transformations.append(IdentityTransformation())
                 else:
                     raise ValueError(
                         f"String specification '{spec}' not supported for COMPOSITE. "
