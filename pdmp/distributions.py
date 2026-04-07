@@ -2512,9 +2512,10 @@ def get_likelihood(
             n_components = config['n_components']
         else:
             n_components = model.get_dim_out() // np.atleast_2d(x_locs).shape[0]
+        kernel = config.get('kernel', 'ard')
         return KOGaussianLikelihood(model=model, u_obs=obs, x_locs=x_locs,
                                     psi_prior=psi_prior, rng=rng,
-                                    n_components=n_components)
+                                    n_components=n_components, kernel=kernel)
     elif config['name'] == 'FlatLikelihood':
         return FlatLikelihood(dim=model.get_dim_in(), rng=rng)
     else:
