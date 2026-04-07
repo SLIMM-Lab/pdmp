@@ -73,16 +73,24 @@ class KOGaussianLikelihood(Likelihood):
                  x_locs: np.ndarray,
                  psi_prior,
                  rng: np.random.Generator = None,
-                 seed: int = None):
+                 seed: int = None,
+                 n_components: int = 1):
         """
         Args:
             model: Forward model providing eval/eval_grad.
             u_obs: (n_settings, m) observation matrix.
-            x_locs: (m, d_x) or (m,) sensor locations.
+            x_locs: (m, d_x) or (m,) sensor locations. When n_components > 1,
+                    x_locs contains only the *base* locations (m_base, d_x)
+                    where m_base = m // n_components.
             psi_prior: Distribution over psi = [log_s2d, log_s2e, log_rho...].
                        Stored as attribute for prior augmentation in get_target.
             rng: Random number generator.
             seed: RNG seed.
+            n_components: Number of independent output components sharing the
+                          same spatial kernel. When > 1 the full covariance is
+                          block_diag(C_z, ..., C_z) with n_components blocks,
+                          so different components at the same sensor are exactly
+                          independent while spatial correlation is preserved.
         """
         super().__init__(rng=rng, seed=seed)
         self._model = model
@@ -90,6 +98,7 @@ class KOGaussianLikelihood(Likelihood):
         self._u_obs = np.atleast_2d(u_obs)
         self.n_obs = self._u_obs.shape[0]
         self._m = self._u_obs.shape[1]  # measurement dimension per setting
+        self._n_components = n_components
 
         # Sensor locations — ensure 2D
         self._x_locs = np.atleast_2d(x_locs)
@@ -98,16 +107,27 @@ class KOGaussianLikelihood(Likelihood):
             self._x_locs = self._x_locs.T
         self._d_x = self._x_locs.shape[1]
 
-        if self._x_locs.shape[0] != self._m:
-            raise ValueError(
-                f"Number of sensor locations ({self._x_locs.shape[0]}) must "
-                f"match measurement dimension ({self._m}).")
+        if n_components > 1:
+            m_base = self._x_locs.shape[0]
+            if self._m % n_components != 0:
+                raise ValueError(
+                    f"m={self._m} must be divisible by n_components={n_components}.")
+            if m_base != self._m // n_components:
+                raise ValueError(
+                    f"With n_components={n_components}, x_locs must have "
+                    f"{self._m // n_components} rows (got {m_base}).")
+        else:
+            if self._x_locs.shape[0] != self._m:
+                raise ValueError(
+                    f"Number of sensor locations ({self._x_locs.shape[0]}) must "
+                    f"match measurement dimension ({self._m}).")
 
         self._n_psi = 2 + self._d_x  # log_s2d, log_s2e, log_rho_1..d
         self._constant = -0.5 * self._m * np.log(2.0 * np.pi)
 
-        # Pre-compute per-dimension squared differences (fixed geometry)
-        self._sq_diff = _squared_diff_per_dim(self._x_locs)  # (d_x, m, m)
+        # Pre-compute per-dimension squared differences on the base locations.
+        # Shape (d_x, m_base, m_base) where m_base = m // n_components (or m).
+        self._sq_diff = _squared_diff_per_dim(self._x_locs)
 
         # Store psi prior for use by get_target()
         self.psi_prior = psi_prior
@@ -128,20 +148,27 @@ class KOGaussianLikelihood(Likelihood):
         return theta, sigma2_delta, sigma2_eps, rho
 
     def _build_cholesky(self, sigma2_delta, sigma2_eps, rho):
-        """Build Sigma and return (L, Sigma_inv, C_delta)."""
-        C_delta = rbf_kernel_matrix(self._x_locs, rho)
+        """Build Sigma and return (L, Sigma_inv, C_delta, C_z).
+
+        C_z is the base (m_base × m_base) kernel matrix.  When n_components=1
+        C_delta == C_z; otherwise C_delta = block_diag(C_z, ..., C_z).
+        """
+        C_z = rbf_kernel_matrix(self._x_locs, rho)
+        if self._n_components > 1:
+            C_delta = sla.block_diag(*[C_z] * self._n_components)
+        else:
+            C_delta = C_z
         Sigma = sigma2_delta * C_delta + sigma2_eps * np.eye(self._m)
         L, _ = _safe_cholesky(Sigma, name="KO_Sigma")
-        # Compute Sigma_inv via Cholesky solve
         Sigma_inv = sla.cho_solve((L, True), np.eye(self._m))
-        return L, Sigma_inv, C_delta
+        return L, Sigma_inv, C_delta, C_z
 
     # ----- log_density -----
 
     def log_density(self, params: np.ndarray,
                     idx: int = None) -> Union[float, np.ndarray]:
         theta, sigma2_delta, sigma2_eps, rho = self._split_params(params)
-        L, _, _ = self._build_cholesky(sigma2_delta, sigma2_eps, rho)
+        L, _, _, _ = self._build_cholesky(sigma2_delta, sigma2_eps, rho)
         log_det = 2.0 * np.sum(np.log(np.diag(L)))
 
         settings = range(self.n_obs) if idx is None else [idx]
@@ -168,8 +195,8 @@ class KOGaussianLikelihood(Likelihood):
     def grad_log_density(self, params: np.ndarray,
                          idx: int = None) -> np.ndarray:
         theta, sigma2_delta, sigma2_eps, rho = self._split_params(params)
-        L, Sigma_inv, C_delta = self._build_cholesky(sigma2_delta, sigma2_eps,
-                                                     rho)
+        L, Sigma_inv, C_delta, C_z = self._build_cholesky(sigma2_delta,
+                                                           sigma2_eps, rho)
 
         settings = range(self.n_obs) if idx is None else [idx]
 
@@ -183,11 +210,17 @@ class KOGaussianLikelihood(Likelihood):
         tr_SinvC = np.sum(Sigma_inv * C_delta)
         tr_Sinv = np.trace(Sigma_inv)
 
-        # Per-dimension kernel derivatives and their traces
+        # Per-dimension kernel derivatives and their traces.
+        # For the block-diagonal case dC/d(rho_k) is also block-diagonal with
+        # blocks equal to the base-kernel derivative.
         dC_drho = []  # list of (m, m)
         tr_Sinv_dC = np.zeros(self._d_x)
         for k in range(self._d_x):
-            dCk = -self._sq_diff[k] * C_delta  # dC/d(rho_k)
+            if self._n_components > 1:
+                dCk_z = -self._sq_diff[k] * C_z  # (m_base, m_base)
+                dCk = sla.block_diag(*[dCk_z] * self._n_components)
+            else:
+                dCk = -self._sq_diff[k] * C_delta  # dC/d(rho_k)
             dC_drho.append(dCk)
             tr_Sinv_dC[k] = np.sum(Sigma_inv * dCk)
 

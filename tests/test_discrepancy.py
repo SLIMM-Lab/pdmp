@@ -216,6 +216,36 @@ class TestKOGaussianLikelihood:
         # Should be symmetric
         np.testing.assert_allclose(H, H.T, atol=1e-8)
 
+    def test_grad_block_diagonal(self):
+        """Analytic gradient matches FD for block-diagonal C_delta (n_components=3)."""
+        rng = np.random.default_rng(7)
+        n_components = 3
+        m_base = 4  # 4 base sensor locations
+        m = m_base * n_components  # 12 total observations
+
+        F = np.array([1.0])
+        x_obs_full = np.linspace(0.1, 1.0, m)
+        model = PiecewiseConstantModel(F=F, n_params=2, x_obs=x_obs_full)
+
+        x_base = np.linspace(0.1, 1.0, m_base).reshape(-1, 1)  # (4, 1)
+        theta_true = np.array([2.0, 3.0])
+        eta = model.eval(theta_true, idx=0)
+        u_obs = (eta + rng.normal(0, 0.05, m)).reshape(1, -1)
+
+        psi_prior = MultivariateNormal(
+            mean=np.array([-4.0, -6.0, 1.5]),
+            cov=4.0 * np.eye(3),
+            rng=rng,
+        )
+        lik = KOGaussianLikelihood(model=model, u_obs=u_obs, x_locs=x_base,
+                                   psi_prior=psi_prior, rng=rng,
+                                   n_components=n_components)
+
+        params = np.array([2.0, 3.0, -4.0, -6.0, 1.5])
+        grad_analytic = lik.grad_log_density(params)
+        grad_fd = _fd_gradient(lik.log_density, params)
+        np.testing.assert_allclose(grad_analytic, grad_fd, rtol=1e-4, atol=1e-7)
+
 
 class TestKOPosterior:
 
