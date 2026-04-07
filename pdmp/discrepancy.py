@@ -10,7 +10,8 @@ After marginalizing delta, the likelihood covariance becomes
     Sigma = sigma2_delta * C_delta(rho) + sigma2_eps * I
 
 The sampler operates on the extended parameter vector
-    [theta, log_sigma2_delta, log_sigma2_eps, log_rho_1, ..., log_rho_d]
+    ARD:       [theta, log_sigma2_delta, log_sigma2_eps, log_rho_1, ..., log_rho_d]
+    isotropic: [theta, log_sigma2_delta, log_sigma2_eps, log_rho]
 so that all hyperparameters are unconstrained.
 """
 
@@ -74,7 +75,8 @@ class KOGaussianLikelihood(Likelihood):
                  psi_prior,
                  rng: np.random.Generator = None,
                  seed: int = None,
-                 n_components: int = 1):
+                 n_components: int = 1,
+                 kernel: str = "ard"):
         """
         Args:
             model: Forward model providing eval/eval_grad.
@@ -91,6 +93,8 @@ class KOGaussianLikelihood(Likelihood):
                           block_diag(C_z, ..., C_z) with n_components blocks,
                           so different components at the same sensor are exactly
                           independent while spatial correlation is preserved.
+            kernel: ``"ard"`` (default) — one length-scale per spatial dimension;
+                    ``"isotropic"`` — a single shared length-scale.
         """
         super().__init__(rng=rng, seed=seed)
         self._model = model
@@ -99,6 +103,10 @@ class KOGaussianLikelihood(Likelihood):
         self.n_obs = self._u_obs.shape[0]
         self._m = self._u_obs.shape[1]  # measurement dimension per setting
         self._n_components = n_components
+
+        if kernel not in ("ard", "isotropic"):
+            raise ValueError(f"kernel must be 'ard' or 'isotropic', got '{kernel}'.")
+        self._isotropic = kernel == "isotropic"
 
         # Sensor locations — ensure 2D
         self._x_locs = np.atleast_2d(x_locs)
@@ -122,7 +130,8 @@ class KOGaussianLikelihood(Likelihood):
                     f"Number of sensor locations ({self._x_locs.shape[0]}) must "
                     f"match measurement dimension ({self._m}).")
 
-        self._n_psi = 2 + self._d_x  # log_s2d, log_s2e, log_rho_1..d
+        self._n_rho = 1 if self._isotropic else self._d_x
+        self._n_psi = 2 + self._n_rho  # log_s2d, log_s2e, log_rho...
         self._constant = -0.5 * self._m * np.log(2.0 * np.pi)
 
         # Pre-compute per-dimension squared differences on the base locations.
@@ -139,7 +148,10 @@ class KOGaussianLikelihood(Likelihood):
     # ----- helpers -----
 
     def _split_params(self, params):
-        """Split [theta, log_psi] and exponentiate psi."""
+        """Split [theta, log_psi] and exponentiate psi.
+
+        Returns rho with shape (n_rho,): (1,) for isotropic, (d_x,) for ARD.
+        """
         theta = params[:self._n_theta]
         log_psi = params[self._n_theta:]
         sigma2_delta = np.exp(log_psi[0])
@@ -147,13 +159,24 @@ class KOGaussianLikelihood(Likelihood):
         rho = np.exp(log_psi[2:])
         return theta, sigma2_delta, sigma2_eps, rho
 
+    def _expand_rho(self, rho: np.ndarray) -> np.ndarray:
+        """Expand rho to shape (d_x,) for kernel evaluation.
+
+        For isotropic kernels rho has shape (1,) and is broadcast to all
+        spatial dimensions.  For ARD kernels rho is returned unchanged.
+        """
+        if self._isotropic:
+            return np.repeat(rho, self._d_x)
+        return rho
+
     def _build_cholesky(self, sigma2_delta, sigma2_eps, rho):
         """Build Sigma and return (L, Sigma_inv, C_delta, C_z).
 
+        rho: (n_rho,) — (1,) for isotropic, (d_x,) for ARD.
         C_z is the base (m_base × m_base) kernel matrix.  When n_components=1
         C_delta == C_z; otherwise C_delta = block_diag(C_z, ..., C_z).
         """
-        C_z = rbf_kernel_matrix(self._x_locs, rho)
+        C_z = rbf_kernel_matrix(self._x_locs, self._expand_rho(rho))
         if self._n_components > 1:
             C_delta = sla.block_diag(*[C_z] * self._n_components)
         else:
@@ -203,7 +226,7 @@ class KOGaussianLikelihood(Likelihood):
         grad_theta = np.zeros(self._n_theta)
         grad_log_s2d = 0.0
         grad_log_s2e = 0.0
-        grad_log_rho = np.zeros(self._d_x)
+        grad_log_rho = np.zeros(self._n_rho)
 
         # Pre-compute traces (shared across settings)
         # tr(Sigma_inv @ C_delta) via Frobenius inner product
@@ -213,16 +236,24 @@ class KOGaussianLikelihood(Likelihood):
         # Per-dimension kernel derivatives and their traces.
         # For the block-diagonal case dC/d(rho_k) is also block-diagonal with
         # blocks equal to the base-kernel derivative.
-        dC_drho = []  # list of (m, m)
-        tr_Sinv_dC = np.zeros(self._d_x)
+        # For isotropic kernels, aggregate all d_x per-dimension matrices into
+        # one (dC/d(rho) = sum_k dC/d(rho_k)) so the gradient loop is unified.
+        dC_per_dim = []
         for k in range(self._d_x):
             if self._n_components > 1:
                 dCk_z = -self._sq_diff[k] * C_z  # (m_base, m_base)
                 dCk = sla.block_diag(*[dCk_z] * self._n_components)
             else:
                 dCk = -self._sq_diff[k] * C_delta  # dC/d(rho_k)
-            dC_drho.append(dCk)
-            tr_Sinv_dC[k] = np.sum(Sigma_inv * dCk)
+            dC_per_dim.append(dCk)
+
+        if self._isotropic:
+            dC_drho = [sum(dC_per_dim)]          # single (m, m) aggregate
+        else:
+            dC_drho = dC_per_dim                 # d_x (m, m) matrices
+
+        tr_Sinv_dC = np.array([np.sum(Sigma_inv * dCk) for dCk in dC_drho])
+        rho_raw = rho  # (n_rho,)
 
         for i in settings:
             r = self._u_obs[i] - self._model.eval(theta, idx=i)
@@ -236,10 +267,10 @@ class KOGaussianLikelihood(Likelihood):
             grad_log_s2d += sigma2_delta * 0.5 * (-tr_SinvC + aCa)
             grad_log_s2e += sigma2_eps * 0.5 * (-tr_Sinv + alpha @ alpha)
 
-            for k in range(self._d_x):
-                adCa = alpha @ dC_drho[k] @ alpha
-                grad_log_rho[k] += (rho[k] * sigma2_delta * 0.5 *
-                                    (-tr_Sinv_dC[k] + adCa))
+            for ki, dCk in enumerate(dC_drho):
+                adCa = alpha @ dCk @ alpha
+                grad_log_rho[ki] += (rho_raw[ki] * sigma2_delta * 0.5 *
+                                     (-tr_Sinv_dC[ki] + adCa))
 
         grad_psi = np.concatenate(
             [[grad_log_s2d, grad_log_s2e], grad_log_rho])
