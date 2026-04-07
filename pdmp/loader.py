@@ -238,7 +238,7 @@ def get_config(config_path: str) -> dict:
 
     # convert the configuration to numpy arrays
     config = yaml_to_numpy(config,
-                           exclude_keys={'hidden_layers', 'update_model'})
+                           exclude_keys={'hidden_layers', 'update_model', 'indices'})
 
     return config
 
