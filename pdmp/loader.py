@@ -60,7 +60,8 @@ def get_target(config: dict[str, Any],
         likelihood = get_likelihood(config['likelihood'], model=model, rng=rng)
 
         # K&O: augment prior with hyperparameter prior if present
-        if hasattr(likelihood, 'psi_prior') and likelihood.psi_prior is not None:
+        if hasattr(likelihood,
+                   'psi_prior') and likelihood.psi_prior is not None:
             prior = JointDistribution([prior, likelihood.psi_prior], rng=rng)
 
         if isinstance(likelihood, TransformedLikelihood) and hasattr(
@@ -243,8 +244,8 @@ def get_config(config_path: str) -> dict:
         config = yaml.safe_load(f)
 
     # convert the configuration to numpy arrays
-    config = yaml_to_numpy(config,
-                           exclude_keys={'hidden_layers', 'update_model', 'indices'})
+    config = yaml_to_numpy(
+        config, exclude_keys={'hidden_layers', 'update_model', 'indices'})
 
     return config
 
