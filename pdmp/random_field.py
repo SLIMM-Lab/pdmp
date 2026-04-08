@@ -462,19 +462,20 @@ class JaxExponentialRecoveryField:
 
     F(x) = F_inf * (1 - (1 - rho) * exp(-x/l))
 
-    Parameters to infer: [rho, l]
-    Fixed parameter: F_inf
+    Parameters to infer: [rho, l] (and optionally F_inf when infer_f_infinity=True)
+    Fixed parameter: F_inf (when infer_f_infinity=False)
 
     The field varies along the first spatial dimension and is constant along others.
     """
     f_infinity: float
     idx: int  # index of spatial dimension for recovery (default 0)
     coefficient_dist: Distribution
+    infer_f_infinity: bool = False
 
     @property
     def dim(self) -> int:
-        """Two parameters: rho and l."""
-        return 2
+        """Two parameters [rho, l], or three [rho, l, f_inf] when infer_f_infinity=True."""
+        return 3 if self.infer_f_infinity else 2
 
     @property
     def coefficient_distribution(self) -> Distribution:
@@ -494,6 +495,7 @@ class JaxExponentialRecoveryField:
         # coeffs[1] -> l
         rho = coeffs[0]
         l_scale = coeffs[1]
+        f_inf = coeffs[2] if self.infer_f_infinity else self.f_infinity
 
         # Ensure x is JAX array
         x = jnp.atleast_1d(x)
@@ -508,8 +510,7 @@ class JaxExponentialRecoveryField:
         # Note: if l is 0 or negative, this might blow up physically,
         # but mathematically it evaluates. Distribution should constrain l > 0.
 
-        return self.f_infinity * (1.0 -
-                                  (1.0 - rho) * jnp.exp(-x_val / l_scale))
+        return f_inf * (1.0 - (1.0 - rho) * jnp.exp(-x_val / l_scale))
 
     @classmethod
     def from_dict(
@@ -532,33 +533,34 @@ class JaxExponentialRecoveryField:
 
         f_infinity = float(config.get('f_infinity', 1.0))
         idx = int(config.get('idx', 0))
+        infer_f_infinity = bool(config.get('infer_f_infinity', False))
+        n_dim = 3 if infer_f_infinity else 2
 
         dist_config = config.get('coefficient_distribution', {})
-        # Load distribution using some factory or manual parsing?
-        # JaxRandomFieldBase uses manual parsing for MultivariateNormal but
-        # here we might want more general distributions from distributions.py
-        # For now, let's support MultivariateNormal as in JaxRandomFieldBase
 
         dist_name = dist_config.get('name', 'MultivariateNormal')
         if dist_name == 'MultivariateNormal':
-            mean_cfg = dist_config.get('mean',
-                                       [0.5, 1.0])  # default rho=0.5, l=1.0
-            cov_cfg = dist_config.get('cov', [[0.1, 0], [0, 0.1]])
+            default_mean = [0.5, 1.0, 1.0] if infer_f_infinity else [0.5, 1.0]
+            default_cov = (np.eye(n_dim) * 0.1).tolist()
+            mean_cfg = dist_config.get('mean', default_mean)
+            cov_cfg = dist_config.get('cov', default_cov)
 
             mean = np.array(mean_cfg)
-            if mean.shape != (2, ):
-                raise ValueError("Mean must be length 2 for rho and l")
+            if mean.shape != (n_dim,):
+                raise ValueError(
+                    f"Mean must have length {n_dim} "
+                    f"({'rho, l, f_inf' if infer_f_infinity else 'rho, l'})")
 
             cov = np.array(cov_cfg)
-            if cov.shape != (2, 2):
-                raise ValueError("Covariance must be 2x2")
+            if cov.shape != (n_dim, n_dim):
+                raise ValueError(f"Covariance must be ({n_dim}, {n_dim})")
 
             dist = MultivariateNormal(mean, cov, rng=rng)
         else:
-            # Basic support for now
             raise ValueError(f"Unsupported distribution {dist_name}")
 
-        return cls(f_infinity=f_infinity, idx=idx, coefficient_dist=dist)
+        return cls(f_infinity=f_infinity, idx=idx, coefficient_dist=dist,
+                   infer_f_infinity=infer_f_infinity)
 
 
 @dataclass
