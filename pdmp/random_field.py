@@ -546,7 +546,7 @@ class JaxExponentialRecoveryField:
             cov_cfg = dist_config.get('cov', default_cov)
 
             mean = np.array(mean_cfg)
-            if mean.shape != (n_dim,):
+            if mean.shape != (n_dim, ):
                 raise ValueError(
                     f"Mean must have length {n_dim} "
                     f"({'rho, l, f_inf' if infer_f_infinity else 'rho, l'})")
@@ -559,7 +559,9 @@ class JaxExponentialRecoveryField:
         else:
             raise ValueError(f"Unsupported distribution {dist_name}")
 
-        return cls(f_infinity=f_infinity, idx=idx, coefficient_dist=dist,
+        return cls(f_infinity=f_infinity,
+                   idx=idx,
+                   coefficient_dist=dist,
                    infer_f_infinity=infer_f_infinity)
 
 

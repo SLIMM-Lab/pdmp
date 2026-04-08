@@ -2083,7 +2083,9 @@ SIGMOID = 'Sigmoid'
 LOGIT = 'Logit'
 COMPOSITE = 'Composite'
 IDENTITY = 'Identity'
-TRANSFORMATIONS = [EXPONENTIAL, LOG, AFFINE, SIGMOID, LOGIT, COMPOSITE, IDENTITY]
+TRANSFORMATIONS = [
+    EXPONENTIAL, LOG, AFFINE, SIGMOID, LOGIT, COMPOSITE, IDENTITY
+]
 
 
 def get_transformation(params: dict[str, Any],
@@ -2512,12 +2514,17 @@ def get_likelihood(
         if 'n_components' in config:
             n_components = config['n_components']
         else:
-            n_components = model.get_dim_out() // np.atleast_2d(x_locs).shape[0]
+            n_components = model.get_dim_out() // np.atleast_2d(
+                x_locs).shape[0]
         kernel = config.get('kernel', 'ard')
         fixed_psi = config.get('fixed_psi', None)
-        return KOGaussianLikelihood(model=model, u_obs=obs, x_locs=x_locs,
-                                    psi_prior=psi_prior, rng=rng,
-                                    n_components=n_components, kernel=kernel,
+        return KOGaussianLikelihood(model=model,
+                                    u_obs=obs,
+                                    x_locs=x_locs,
+                                    psi_prior=psi_prior,
+                                    rng=rng,
+                                    n_components=n_components,
+                                    kernel=kernel,
                                     fixed_psi=fixed_psi)
     elif config['name'] == 'FlatLikelihood':
         return FlatLikelihood(dim=model.get_dim_in(), rng=rng)
