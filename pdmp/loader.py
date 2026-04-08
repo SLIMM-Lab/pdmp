@@ -63,6 +63,12 @@ def get_target(config: dict[str, Any],
         if hasattr(likelihood, 'psi_prior') and likelihood.psi_prior is not None:
             prior = JointDistribution([prior, likelihood.psi_prior], rng=rng)
 
+        if isinstance(likelihood, TransformedLikelihood) and hasattr(
+                likelihood._likelihood,
+                'psi_prior') and likelihood._likelihood.psi_prior is not None:
+            prior = JointDistribution(
+                [prior, likelihood._likelihood.psi_prior])
+
         return Posterior(prior=prior, likelihood=likelihood, rng=rng)
 
     elif config['name'] == 'Transformed':
