@@ -5,7 +5,7 @@ import numpy as np
 import yaml
 
 from pdmp import logger
-from pdmp.distributions import Distribution, CubicDistribution, JointDistribution, MultivariateNormal, Posterior, TransformedDistribution
+from pdmp.distributions import Distribution, CubicDistribution, JointDistribution, MultivariateNormal, Posterior, TransformedDistribution, TransformedLikelihood
 from pdmp.distributions import get_prior, get_likelihood
 from pdmp.forward_model import get_model
 from pdmp.sampler import Sampler, SAMPLER_REGISTRY
