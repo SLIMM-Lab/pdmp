@@ -45,6 +45,11 @@ THETA_LATENT_NAMES = [
     r'$\theta_1 = \log\,l$',
     r'$\theta_2 = \log\,f_\infty$',
 ]
+PSI_PHYSICAL_NAMES = [
+    r'$\sigma^2_\delta$', r'$\sigma^2_\varepsilon$',
+    r'$\rho_\mathrm{KO}$'
+]
+ALL_PHYSICAL_NAMES = THETA_NAMES + PSI_PHYSICAL_NAMES
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -606,6 +611,159 @@ def _plot_marginals_comparison(separate_posts, joint_post, prior_physical,
         print(f"Saved {path}")
 
 
+def _physical_to_theta(post, f_inf):
+    """Inverse of the composite transform for columns 0–2.
+
+    Columns 3–5 (log-psi) are returned unchanged — they are already in θ-space.
+    """
+    out = post.copy()
+    rho = np.clip(post[:, 0], 1e-8, 1 - 1e-8)
+    out[:, 0] = np.log(rho / (1.0 - rho))          # logit(ρ)
+    out[:, 1] = np.log(post[:, 1])                  # log(l)
+    f = np.clip(post[:, 2], 1e-8, f_inf - 1e-8)
+    out[:, 2] = np.log(f / (f_inf - f))             # logit(f_∞ / f_inf)
+    return out
+
+
+def _plot_theta_latent_comparison(separate_posts, joint_post, f_inf,
+                                   prior_mean, prior_cov, fig_dir):
+    """Overlaid KDE comparison for logit(ρ), log l, logit(f_∞/f_inf)."""
+    prior_std = np.sqrt(np.diag(prior_cov))
+    theta_xlims = _theta_xlims(prior_mean[:3], prior_std[:3])
+
+    separate_thetas = [_physical_to_theta(p, f_inf)
+                       for p in separate_posts.values()]
+    mixture_theta = np.concatenate(separate_thetas, axis=0)
+    joint_theta = _physical_to_theta(joint_post, f_inf)
+    n_geoms = len(separate_thetas)
+
+    fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+    for k, ax in enumerate(axes):
+        lo, hi = theta_xlims[k]
+
+        all_vals = np.concatenate(
+            [t[:, k] for t in separate_thetas] + [joint_theta[:, k]])
+        xs = np.linspace(max(lo, float(np.percentile(all_vals, 0.5))),
+                         min(hi, float(np.percentile(all_vals, 99.5))), 400)
+
+        for idx, t in enumerate(separate_thetas):
+            vals = t[:, k]
+            vals = vals[(vals >= xs[0]) & (vals <= xs[-1])]
+            if len(vals) < 2:
+                continue
+            ax.plot(xs, _kde_on_grid(vals, xs), color='steelblue', lw=0.7,
+                    alpha=0.35, label='separate' if idx == 0 else None)
+
+        mix_vals = mixture_theta[:, k]
+        mix_vals = mix_vals[(mix_vals >= xs[0]) & (mix_vals <= xs[-1])]
+        ax.plot(xs, _kde_on_grid(mix_vals, xs), color='steelblue', lw=2.0,
+                ls='--', label=f'mixture (n={n_geoms})')
+        ax.axvline(np.median(mix_vals), color='steelblue', lw=1.0, ls=':',
+                   alpha=0.7)
+
+        j_vals = joint_theta[:, k]
+        j_vals = j_vals[(j_vals >= xs[0]) & (j_vals <= xs[-1])]
+        ax.plot(xs, _kde_on_grid(j_vals, xs), color='C1', lw=2.0,
+                label='joint')
+        ax.axvline(np.median(j_vals), color='C1', lw=1.0, ls=':',
+                   alpha=0.7)
+
+        from scipy.stats import norm
+        ax.plot(xs, norm.pdf(xs, prior_mean[k], prior_std[k]),
+                color='C2', lw=1.5, ls='--', label='prior')
+
+        ax.set_xlim(xs[0], xs[-1])
+        ax.set_xlabel(THETA_LATENT_NAMES[k], fontsize=9)
+        ax.set_ylabel('density', fontsize=9)
+        ax.tick_params(labelsize=8)
+        if k == 0:
+            ax.legend(fontsize=7)
+
+    fig.suptitle(
+        r'$\theta$ marginals (latent space): separate vs joint'
+        r' — $\mathrm{logit}(\rho)$, $\log\,l$, $\mathrm{logit}(f_\infty/f_\infty^{\max})$',
+        fontsize=10)
+    fig.tight_layout()
+    path = os.path.join(fig_dir, 'theta_latent_marginals_comparison.pdf')
+    fig.savefig(path, bbox_inches='tight')
+    plt.close(fig)
+    print(f"Saved {path}")
+
+
+def _psi_to_physical(post):
+    """Exp-transform columns 3–5 (log-psi) to linear physical units."""
+    out = post.copy()
+    out[:, 3:] = np.exp(post[:, 3:])
+    return out
+
+
+def _plot_psi_comparison_physical(separate_posts, joint_post, prior_physical_psi,
+                                   fig_dir):
+    """KDE comparison for σ²_δ, σ²_ε, ρ_KO in linear (physical) units.
+
+    prior_physical_psi: array (n × 3) of prior samples already exp-transformed.
+    """
+    separate_list = [_psi_to_physical(p) for p in separate_posts.values()]
+    mixture = np.concatenate(separate_list, axis=0)
+    joint_phys = _psi_to_physical(joint_post)
+    n_geoms = len(separate_list)
+
+    fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+    for k, ax in enumerate(axes):
+        i = k + 3  # column index in the full array
+
+        all_vals = np.concatenate(
+            [p[:, i] for p in separate_list] + [joint_phys[:, i]])
+        xs = np.linspace(float(np.percentile(all_vals, 1)),
+                         float(np.percentile(all_vals, 99)), 400)
+
+        for idx, post in enumerate(separate_list):
+            vals = post[:, i]
+            vals = vals[(vals >= xs[0]) & (vals <= xs[-1])]
+            if len(vals) < 2:
+                continue
+            ax.plot(xs, _kde_on_grid(vals, xs), color='steelblue', lw=0.7,
+                    alpha=0.35, label='separate' if idx == 0 else None)
+
+        mix_vals = mixture[:, i]
+        mix_vals = mix_vals[(mix_vals >= xs[0]) & (mix_vals <= xs[-1])]
+        ax.plot(xs, _kde_on_grid(mix_vals, xs), color='steelblue', lw=2.0,
+                ls='--', label=f'mixture (n={n_geoms})')
+        ax.axvline(np.median(mix_vals), color='steelblue', lw=1.0, ls=':',
+                   alpha=0.7)
+
+        j_vals = joint_phys[:, i]
+        j_vals = j_vals[(j_vals >= xs[0]) & (j_vals <= xs[-1])]
+        ax.plot(xs, _kde_on_grid(j_vals, xs), color='C1', lw=2.0,
+                label='joint')
+        ax.axvline(np.median(j_vals), color='C1', lw=1.0, ls=':',
+                   alpha=0.7)
+
+        if prior_physical_psi is not None:
+            p_vals = prior_physical_psi[:, k]
+            xs_p = np.linspace(float(np.percentile(p_vals, 1)),
+                               float(np.percentile(p_vals, 99)), 400)
+            ax.plot(xs_p, _kde_on_grid(p_vals, xs_p), color='C2', lw=1.5,
+                    ls='--', label='prior')
+
+        ax.set_xlim(xs[0], xs[-1])
+        ax.set_xlabel(PSI_PHYSICAL_NAMES[k], fontsize=9)
+        ax.set_ylabel('density', fontsize=9)
+        ax.tick_params(labelsize=8)
+        if k == 0:
+            ax.legend(fontsize=7)
+
+    fig.suptitle(
+        r'$\psi$ marginals (physical units): separate vs joint'
+        r' — $\sigma^2_\delta$, $\sigma^2_\varepsilon$, $\rho_\mathrm{KO}$',
+        fontsize=10)
+    fig.tight_layout()
+    path = os.path.join(fig_dir, 'psi_marginals_comparison_physical.pdf')
+    fig.savefig(path, bbox_inches='tight')
+    plt.close(fig)
+    print(f"Saved {path}")
+
+
 def _plot_pairplot_comparison(separate_posts, joint_post, fig_dir,
                                theta_xlims=None, outlier_pct=1.0):
     """3×3 pairwise scatter for ρ, l, f_∞: mixture of separate (blue) vs joint (orange)."""
@@ -724,6 +882,14 @@ def main():
         _plot_marginals_comparison(separate_posts, joint_post, prior_physical,
                                    psi_prior_mean, psi_prior_std,
                                    fig_dir, theta_xlims=theta_xlims)
+        _plot_theta_latent_comparison(separate_posts, joint_post, f_inf,
+                                      prior_mean, prior_cov, fig_dir)
+        _rng = np.random.default_rng(0)
+        _psi_log_samples = _rng.multivariate_normal(
+            psi_prior_mean, np.diag(psi_prior_std**2), size=200_000)
+        prior_psi_physical = np.exp(_psi_log_samples)
+        _plot_psi_comparison_physical(separate_posts, joint_post,
+                                      prior_psi_physical, fig_dir)
         _plot_pairplot_comparison(separate_posts, joint_post, fig_dir,
                                   theta_xlims=theta_xlims, outlier_pct=1.0)
         print(f"\nComparison figures written to {fig_dir}/")
