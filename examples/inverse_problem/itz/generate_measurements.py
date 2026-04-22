@@ -19,6 +19,7 @@ Usage:
     --plot              save sensor position figures for each geometry
     --noise-std=S       Gaussian noise std in microns (default 0.05)
     --seed=N            base RNG seed; geometry i uses seed+i (default 42)
+    --recompute         ignore cached FEM solutions and re-run all solves
 """
 import copy
 import sys
@@ -57,11 +58,12 @@ TOTAL_FORCE = 60.0  # mN
 # ── CLI arguments ────────────────────────────────────────────────────────────
 # Supports both --flag=value and --flag value forms.
 PLOT = '--plot' in sys.argv
+RECOMPUTE = '--recompute' in sys.argv
 _argv = sys.argv[1:]
 _flags = {}
 _skip_idx = set()
 for _i, _a in enumerate(_argv):
-    if _a.startswith('--') and _a != '--plot':
+    if _a.startswith('--') and _a not in ('--plot', '--recompute'):
         if '=' in _a:
             _k, _v = _a.lstrip('-').split('=', 1)
             _flags[_k] = _v
@@ -86,10 +88,33 @@ GEOM_DIR = os.path.join(SCRIPT_DIR, 'geometries')
 JOINT_DIR = os.path.join(SCRIPT_DIR, 'joint')
 SEPARATE_DIR = os.path.join(SCRIPT_DIR, 'separate')
 
+CACHE_DIR = os.path.join(SCRIPT_DIR, 'cache')
+
 geom_files = sorted(glob(os.path.join(GEOM_DIR, '*.npy')))
 if not geom_files:
     raise FileNotFoundError(f"No .npy files found in {GEOM_DIR}")
 print(f"Found {len(geom_files)} geometry files")
+
+
+# ── FEM solution cache ───────────────────────────────────────────────────────
+def _cache_path(geom_name):
+    return os.path.join(CACHE_DIR, f'{geom_name}_pool{POOL}.npz')
+
+
+def _load_cached_u(geom_name):
+    """Return cached displacement field or None if missing / --recompute set."""
+    if RECOMPUTE:
+        return None
+    path = _cache_path(geom_name)
+    if os.path.exists(path):
+        return onp.load(path)['u']
+    return None
+
+
+def _save_cached_u(geom_name, u):
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    onp.savez(_cache_path(geom_name), u=u)
+
 
 # ── Inference config template (shared by joint and separate) ─────────────────
 # Hyperparameter values are calibrated from prior_exploration.py.
@@ -103,12 +128,22 @@ _CONFIG_TEMPLATE = {
                 'name': 'FromField'
             },
             'likelihood': {
-                'name': 'TransformedLikelihood',
-                'transformation': 'Composite',
+                'name':
+                'TransformedLikelihood',
+                'transformation':
+                'Composite',
                 'transformations': [
-                    {'a': 0.0, 'b': 1.0, 'type': 'Sigmoid'},
+                    {
+                        'a': 0.0,
+                        'b': 1.0,
+                        'type': 'Sigmoid'
+                    },
                     'Exponential',
-                    {'a': 0.0, 'b': 130, 'type': 'Sigmoid'},
+                    {
+                        'a': 0.0,
+                        'b': 130,
+                        'type': 'Sigmoid'
+                    },
                     'Identity',
                 ],
                 'indices': [[0], [1], [2], [3, 4, 5]],
@@ -117,7 +152,8 @@ _CONFIG_TEMPLATE = {
                     'observation_file': 'observations.dat',
                     'kernel': 'isotropic',
                     'psi_prior': {
-                        'name': 'MultivariateNormal',
+                        'name':
+                        'MultivariateNormal',
                         'mean': [-2.64916, -3.06994, 4.66406],
                         'cov': [
                             [0.693147, 0.0, 0.0],
@@ -139,7 +175,8 @@ _CONFIG_TEMPLATE = {
                             [0.0, 0.223144, 0.0],
                             [0.0, 0.0, 0.904241],
                         ],
-                        'name': 'MultivariateNormal',
+                        'name':
+                        'MultivariateNormal',
                     },
                     'infer_f_infinity': True,
                     'idx': 2,
@@ -156,7 +193,7 @@ _CONFIG_TEMPLATE = {
     },
     'sampler': {
         'name': 'RandomWalkMetropolis',
-        'n_samples': 10000,
+        'n_samples': 500,
         'sigma': 0.94,
         'x_0': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     },
@@ -454,16 +491,22 @@ for geom_idx, geom_path in enumerate(geom_files):
         f"Traction: {_traction_y[0]:.6e} GPa  (loaded area {A_loaded:.2f} µm²)"
     )
 
-    num_quads = problem.fe.num_quads
-    E_arr = np.repeat(E_per_element[:, None], num_quads, axis=1)
-
-    print("Solving FEM...")
-    fwd_pred = ad_wrapper(problem)
-    sol_list = fwd_pred(E_arr)
+    # ── Solve FEM (or load cached displacement field) ────────────────────────
+    u_sol = _load_cached_u(geom_name)
+    if u_sol is not None:
+        print("FEM: loaded from cache.")
+    else:
+        num_quads = problem.fe.num_quads
+        E_arr = np.repeat(E_per_element[:, None], num_quads, axis=1)
+        print("Solving FEM...")
+        fwd_pred = ad_wrapper(problem)
+        sol_list = fwd_pred(E_arr)
+        u_sol = onp.array(sol_list[0])
+        _save_cached_u(geom_name, u_sol)
+        print(f"FEM: solution cached to {_cache_path(geom_name)}")
 
     # ── Extract sensor displacements and add noise ───────────────────────────
-    sensor_readings = evaluate_sensor_displacements(sol_list[0],
-                                                    sensor_interpolants)
+    sensor_readings = evaluate_sensor_displacements(u_sol, sensor_interpolants)
 
     obs_parts = []
     for reading in sensor_readings:
@@ -515,5 +558,7 @@ dump_yaml_custom_format(joint_cfg, joint_cfg_path)
 print(f"Joint config written: {joint_cfg_path}")
 
 print(f"\nDone.")
-print(f"  joint:    {len(geom_files)} geometries, {len(observations)} total DOFs")
+print(
+    f"  joint:    {len(geom_files)} geometries, {len(observations)} total DOFs"
+)
 print(f"  separate: {len(geom_files)} folders under separate/")
