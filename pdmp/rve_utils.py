@@ -270,8 +270,44 @@ def make_eps_macro_q(eps_macro_voigt, nc, nq):
 # ── Distance field computation ──────────────────────────────────────────
 
 
+def compute_per_fiber_distance_assignment(quad_points, fibers):
+    """Per-fiber distances and Voronoi nearest-fiber index for each quad point.
+
+    Parameters
+    ----------
+    quad_points : ndarray (nc, nq, 2)
+    fibers : list of (cx, cy, R)
+
+    Returns
+    -------
+    distances_per_fiber : ndarray (nc, nq, n_fibers)
+        Distance from each quad point to each fiber surface, clamped at 0.
+    nearest_fiber_idx : ndarray (nc, nq), int32
+        Index of the closest fiber for each quad point (Voronoi cell id).
+    nearest_distance : ndarray (nc, nq)
+        Distance to the closest fiber surface, clamped at 0.
+    """
+    nc, nq, _ = quad_points.shape
+    n_fibers = len(fibers)
+    per_fiber = np.empty((nc, nq, n_fibers), dtype=np.float64)
+
+    for f, (cx, cy, R) in enumerate(fibers):
+        d = np.sqrt((quad_points[:, :, 0] - cx)**2 +
+                    (quad_points[:, :, 1] - cy)**2) - R
+        per_fiber[:, :, f] = np.maximum(d, 0.0)
+
+    nearest_fiber_idx = np.argmin(per_fiber, axis=2).astype(np.int32)
+    nearest_distance = np.take_along_axis(per_fiber,
+                                          nearest_fiber_idx[:, :, None],
+                                          axis=2).squeeze(-1)
+    return per_fiber, nearest_fiber_idx, nearest_distance
+
+
 def compute_distance_to_nearest_fiber(quad_points, fibers):
     """Compute minimum distance from each quad point to nearest fiber surface.
+
+    Thin wrapper around :func:`compute_per_fiber_distance_assignment` kept for
+    backwards compatibility.
 
     Parameters
     ----------
@@ -283,15 +319,8 @@ def compute_distance_to_nearest_fiber(quad_points, fibers):
     distances : ndarray (nc, nq)
         Distance to nearest fiber surface, clamped at 0.
     """
-    nc, nq, _ = quad_points.shape
-    distances = np.full((nc, nq), np.inf)
-
-    for cx, cy, R in fibers:
-        d = np.sqrt((quad_points[:, :, 0] - cx)**2 +
-                    (quad_points[:, :, 1] - cy)**2) - R
-        distances = np.minimum(distances, d)
-
-    return np.maximum(distances, 0.0)
+    _, _, nearest = compute_per_fiber_distance_assignment(quad_points, fibers)
+    return nearest
 
 
 # ── Post-processing ────────────────────────────────────────────────────
