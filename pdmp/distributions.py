@@ -1237,6 +1237,160 @@ class FlatLikelihood(Likelihood):
         return np.zeros((self._dim, self._dim))
 
 
+class PerFiberEmpiricalMixture(Distribution):
+    """Per-fiber empirical mixture of geometry-specific posterior chains.
+
+    For each forward-UQ sample, the distribution stacks ``n_fibers``
+    independent draws into one flat row of length
+    ``n_fibers * len(param_indices)``. Each fiber-block is produced by
+
+      1. sampling a geometry index ``g`` according to ``weights`` (uniform by
+         default) — either freshly per UQ sample (``per_sample`` mode) or
+         once per run (``fixed`` mode), and
+      2. picking a uniform-random row from chain ``g`` and selecting
+         ``param_indices``.
+
+    Designed for use with ``forward_uq.py``: ``log_density`` is intentionally
+    not implemented (forward UQ never calls it).
+    """
+
+    def __init__(self,
+                 sample_files: list[str],
+                 n_fibers: int,
+                 param_indices: list = None,
+                 weights: np.ndarray = None,
+                 assignment_mode: str = 'fixed',
+                 burn_in: int = 0,
+                 rng: np.random.Generator = None,
+                 seed: int = None):
+        super().__init__(rng=rng, seed=seed)
+
+        if param_indices is None:
+            param_indices = [0, 1, 2]
+        if len(sample_files) == 0:
+            raise ValueError(
+                "PerFiberEmpiricalMixture: no sample files given.")
+        if assignment_mode not in ('per_sample', 'fixed'):
+            raise ValueError(
+                f"assignment_mode must be 'per_sample' or 'fixed', "
+                f"got {assignment_mode!r}")
+
+        self.sample_files = list(sample_files)
+        self.n_fibers = int(n_fibers)
+        self.param_indices = np.asarray(param_indices, dtype=int).ravel()
+        self.assignment_mode = assignment_mode
+
+        # Load every chain into memory (each is small, ~500 × 6). ndmin=2
+        # guards against single-row or single-column files where loadtxt
+        # would otherwise return a 0-D / 1-D array.
+        self.chains = []
+        for path in self.sample_files:
+            arr = np.loadtxt(path, ndmin=2)
+            if burn_in > 0:
+                arr = arr[burn_in:]
+            if arr.shape[0] == 0:
+                raise ValueError(
+                    f"Sample file '{path}' has no rows after burn_in={burn_in}."
+                )
+            if self.param_indices.max() >= arr.shape[1]:
+                raise ValueError(
+                    f"param_indices {self.param_indices.tolist()} out of range "
+                    f"for chain '{path}' with {arr.shape[1]} columns.")
+            self.chains.append(arr[:, self.param_indices])
+
+        n_geoms = len(self.chains)
+        if weights is None:
+            self.weights = np.full(n_geoms, 1.0 / n_geoms)
+        else:
+            w = np.asarray(weights, dtype=float).ravel()
+            if w.size != n_geoms:
+                raise ValueError(
+                    f"weights length {w.size} != number of chains {n_geoms}")
+            if np.any(w < 0):
+                raise ValueError("weights must be non-negative.")
+            total = w.sum()
+            if total <= 0:
+                raise ValueError("weights sum must be positive.")
+            self.weights = w / total
+
+        self._dim = self.n_fibers * self.param_indices.size
+
+        if assignment_mode == 'fixed':
+            self._fixed_geom_idx = self.rng.choice(n_geoms,
+                                                   size=self.n_fibers,
+                                                   p=self.weights)
+        else:
+            self._fixed_geom_idx = None
+
+    @property
+    def dim(self) -> int:
+        return self._dim
+
+    @override
+    def get_sample(self, n: int = 1) -> np.ndarray:
+        k = self.param_indices.size
+        out = np.empty((n, self.n_fibers * k), dtype=np.float64)
+        n_geoms = len(self.chains)
+
+        for i in range(n):
+            if self.assignment_mode == 'fixed':
+                geom_idx = self._fixed_geom_idx
+            else:
+                geom_idx = self.rng.choice(n_geoms,
+                                           size=self.n_fibers,
+                                           p=self.weights)
+            for f in range(self.n_fibers):
+                chain = self.chains[geom_idx[f]]
+                row = self.rng.integers(0, chain.shape[0])
+                out[i, f * k:(f + 1) * k] = chain[row]
+
+        return out[0] if n == 1 else out
+
+    @override
+    def log_density(self, x: np.ndarray) -> Union[float, np.ndarray]:
+        raise NotImplementedError(
+            "PerFiberEmpiricalMixture is sample-only — log_density is not "
+            "defined (each chain is an empirical posterior; the mixture is "
+            "only meant for forward-UQ propagation).")
+
+    @classmethod
+    def from_dict(cls,
+                  config: dict,
+                  rng: np.random.Generator = None,
+                  seed: int = None):
+        sample_files = config.get('sample_files', None)
+        glob_pattern = config.get('sample_files_glob', None)
+        if sample_files is None and glob_pattern is None:
+            raise ValueError(
+                "PerFiberEmpiricalMixture requires 'sample_files' or "
+                "'sample_files_glob' in the config.")
+        if sample_files is None:
+            from glob import glob as _glob
+            sample_files = sorted(_glob(glob_pattern))
+            if not sample_files:
+                raise ValueError(
+                    f"sample_files_glob '{glob_pattern}' matched no files.")
+
+        weights_cfg = config.get('weights', None)
+        if isinstance(weights_cfg, np.ndarray):
+            weights = weights_cfg
+        elif weights_cfg is None:
+            weights = None
+        else:
+            weights = np.asarray(weights_cfg, dtype=float)
+
+        return cls(
+            sample_files=list(sample_files),
+            n_fibers=int(config['n_fibers']),
+            param_indices=config.get('param_indices', (0, 1, 2)),
+            weights=weights,
+            assignment_mode=config.get('assignment_mode', 'per_sample'),
+            burn_in=int(config.get('burn_in', 0)),
+            rng=rng,
+            seed=seed,
+        )
+
+
 def get_prior(
     config: dict[str, Union[str, np.ndarray, float]],
     rng: np.random.Generator = None,
@@ -1272,6 +1426,8 @@ def get_prior(
         return GammaDistribution.from_dict(config, rng=rng)
     elif config['name'] == 'Beta':
         return BetaDistribution.from_dict(config, rng=rng)
+    elif config['name'] == 'PerFiberEmpiricalMixture':
+        return PerFiberEmpiricalMixture.from_dict(config, rng=rng)
     elif config['name'] == 'FromField':
         if field is None:
             raise ValueError("Prior 'FromField' requires a field instance.")

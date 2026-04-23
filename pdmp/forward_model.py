@@ -477,6 +477,8 @@ def get_model(config: dict, field=None):
         return JaxFemModel.from_dict(config, field=field)
     elif config['name'] == 'RVE':
         return RVEModel.from_dict(config)
+    elif config['name'] == 'RVEPerFiber':
+        return PerFiberRVEModel.from_dict(config)
     else:
         raise ValueError(f"Model {config['name']} not recognized.")
 
@@ -1474,33 +1476,58 @@ class RVEModel:
         self._fwd_pred = ad_wrapper(
             self._problem, adjoint_solver_options={"umfpack_solver": {}})
 
+    def _matrix_E_from_params(self, params):
+        """Build the matrix-domain Young's modulus field from recovery params.
+
+        Parameters
+        ----------
+        params : array-like of shape (2,) or (3,)
+            ``[rho, l_scale]`` — uses ``self.E_inf`` as the far-field stiffness.
+            ``[rho, l_scale, E_inf]`` — uses the provided ``E_inf`` instead.
+
+        Returns
+        -------
+        E_matrix_q : jnp.ndarray (nc, nq)
+            Matrix-domain Young's modulus at every quad point. Combined with
+            the fiber phase via :meth:`eval`.
+        """
+        params = np.asarray(params, dtype=np.float64)
+        rho = jnp.float64(params[0])
+        l_scale = jnp.float64(params[1])
+        E_inf = jnp.float64(params[2]) if params.size == 3 else self.E_inf
+        return E_inf * (
+            1.0 - (1.0 - rho) * jnp.exp(-self._distances_jnp / l_scale))
+
     def eval(self, params):
         """Evaluate the RVE model for given exponential recovery parameters.
 
         Parameters
         ----------
-        params : array-like of shape (2,)
-            [rho, l_scale] — recovery ratio and length scale.
+        params : array-like of shape (2,) or (3,)
+            ``[rho, l_scale]`` — uses the far-field stiffness set at init.
+            ``[rho, l_scale, E_inf]`` — overrides the init value for this call.
 
         Returns
         -------
         dict
             Requested output quantities as numpy arrays.
         """
-        from pdmp.rve_utils import compute_von_mises_from_cell
-
-        params = np.asarray(params, dtype=np.float64)
-        rho = jnp.float64(params[0])
-        l_scale = jnp.float64(params[1])
-
-        # Compute E field from parameters
-        E_matrix_q = self.E_inf * (
-            1.0 - (1.0 - rho) * jnp.exp(-self._distances_jnp / l_scale))
+        E_matrix_q = self._matrix_E_from_params(params)
         E_q = jnp.where(self._is_fiber_q, self.E_fiber, E_matrix_q)
 
         fem_params = [E_q, self._nu_q, self._eps_macro_q]
         self._problem.set_params(fem_params)
         sol = self._fwd_pred(fem_params)[0]
+
+        return self._assemble_outputs(sol, fem_params)
+
+    def _assemble_outputs(self, sol, fem_params):
+        """Compute the requested output quantities from a solved FEM state.
+
+        Shared between :class:`RVEModel` and :class:`PerFiberRVEModel` so the
+        post-solve quantity extraction stays in one place.
+        """
+        from pdmp.rve_utils import compute_von_mises_from_cell
 
         result = {}
         needs_stress = any(
@@ -1578,6 +1605,156 @@ class RVEModel:
             components=config.get('components', None),
             msh_file=config.get('msh_file', None),
             data_dir=config.get('data_dir', None),
+        )
+
+
+class PerFiberRVEModel(RVEModel):
+    """RVE forward model where every fiber owns its own ITZ parameters.
+
+    The matrix Young's modulus at each quad point is built from per-fiber
+    exponential-recovery parameters ``(rho_f, l_scale_f, [f_inf_f])``. Two
+    assembly modes are offered:
+
+    * ``"voronoi"`` — each quad point uses the parameters of its nearest
+      fiber, giving sharp ITZ boundaries at the midplanes between fibers.
+    * ``"softmin"`` — softmax(-d/T) weights blend per-fiber recovery fields
+      smoothly. ``softmin_temperature`` controls sharpness; default is half
+      the minimum inter-fiber center distance.
+
+    Parameters layout for :meth:`eval` is a flat vector of length
+    ``n_fibers * k``, with ``k = 3`` when ``f_inf_scope='per_fiber'`` (each
+    fiber has its own asymptotic matrix stiffness) and ``k = 2`` when
+    ``f_inf_scope='global'`` (all fibers share ``E_inf``). Inside
+    ``eval`` the vector is reshaped to ``(n_fibers, k)``.
+    """
+
+    def __init__(self,
+                 *args,
+                 assembly: str = 'voronoi',
+                 f_inf_scope: str = 'per_fiber',
+                 softmin_temperature: float = None,
+                 **kwargs):
+        super().__init__(*args, **kwargs)
+
+        if assembly not in ('voronoi', 'softmin'):
+            raise ValueError(
+                f"assembly must be 'voronoi' or 'softmin', got {assembly!r}")
+        if f_inf_scope not in ('per_fiber', 'global'):
+            raise ValueError(
+                f"f_inf_scope must be 'per_fiber' or 'global', "
+                f"got {f_inf_scope!r}")
+
+        self.assembly = assembly
+        self.f_inf_scope = f_inf_scope
+        self._params_per_fiber = 3 if f_inf_scope == 'per_fiber' else 2
+
+        from pdmp.rve_utils import compute_per_fiber_distance_assignment
+        quad_points = np.array(self._problem.physical_quad_points)
+        per_fiber, nearest_idx, _ = compute_per_fiber_distance_assignment(
+            quad_points, self.fibers)
+        # (nc, nq, n_fibers) and (nc, nq) — reused on every eval, never written.
+        self._distances_per_fiber_jnp = jnp.array(per_fiber)
+        self._nearest_fiber_idx_jnp = jnp.array(nearest_idx)
+
+        if softmin_temperature is None:
+            n = len(self.fibers)
+            if n < 2:
+                softmin_temperature = 1.0
+            else:
+                centers = np.array([(cx, cy) for cx, cy, _ in self.fibers])
+                dmat = np.linalg.norm(
+                    centers[:, None, :] - centers[None, :, :], axis=-1)
+                np.fill_diagonal(dmat, np.inf)
+                softmin_temperature = 0.5 * float(dmat.min())
+        self.softmin_temperature = float(softmin_temperature)
+
+    def _matrix_E_from_params(self, params):
+        """Build the matrix Young's modulus field from per-fiber params.
+
+        Overrides :meth:`RVEModel._matrix_E_from_params` so that
+        :meth:`RVEModel.eval` (inherited) automatically uses the per-fiber
+        assembly without further changes.
+
+        Parameters
+        ----------
+        params : array-like
+            Flat parameter vector. Expected lengths:
+
+            * ``f_inf_scope='per_fiber'``: ``n_fibers * 3``
+              — each fiber contributes ``[rho_f, l_f, E_inf_f]``.
+            * ``f_inf_scope='global'``: ``n_fibers * 2``
+              — uses ``self.E_inf``; or ``n_fibers * 2 + 1``
+              — last element overrides ``self.E_inf`` for this call.
+        """
+        params = np.asarray(params, dtype=np.float64)
+        n_fibers = len(self.fibers)
+        k = self._params_per_fiber
+        base_len = n_fibers * k
+
+        if self.f_inf_scope == 'global' and params.size == base_len + 1:
+            E_inf_global = float(params[-1])
+            params = params[:base_len]
+        else:
+            E_inf_global = self.E_inf
+            if params.size != base_len:
+                raise ValueError(
+                    f"PerFiberRVEModel expected a parameter vector of length "
+                    f"{base_len} ({n_fibers} fibers × {k} params each), "
+                    f"got {params.size}")
+
+        per_fiber = jnp.asarray(params.reshape(n_fibers, k))
+
+        rho_f = per_fiber[:, 0]              # (n_fibers,)
+        l_f = per_fiber[:, 1]                # (n_fibers,)
+        if self.f_inf_scope == 'per_fiber':
+            Einf_f = per_fiber[:, 2]         # (n_fibers,)
+        else:
+            Einf_f = jnp.full((n_fibers, ), E_inf_global, dtype=jnp.float64)
+
+        # Per-fiber recovery field, shape (nc, nq, n_fibers):
+        #   E_f(x) = Einf_f * (1 - (1 - rho_f) * exp(-d_xf / l_f))
+        d = self._distances_per_fiber_jnp                  # (nc, nq, n_fibers)
+        E_per_fiber = Einf_f[None, None, :] * (
+            1.0 - (1.0 - rho_f[None, None, :]) *
+            jnp.exp(-d / l_f[None, None, :]))
+
+        if self.assembly == 'voronoi':
+            return jnp.take_along_axis(E_per_fiber,
+                                       self._nearest_fiber_idx_jnp[:, :, None],
+                                       axis=2).squeeze(-1)
+
+        # Softmin blend: weights are softmax(-d / T) over the fiber axis.
+        T = self.softmin_temperature
+        logits = -d / T
+        weights = jax.nn.softmax(logits, axis=-1)          # (nc, nq, n_fibers)
+        return jnp.sum(weights * E_per_fiber, axis=-1)
+
+    @staticmethod
+    def from_dict(config):
+        """Construct a PerFiberRVEModel from a configuration dictionary."""
+        fibers = [tuple(f) for f in config['fibers']]
+        eps_macro = tuple(config.get('eps_macro', (1e-3, 0.0, 0.0)))
+        softmin_T = config.get('softmin_temperature', None)
+        if softmin_T is not None:
+            softmin_T = float(softmin_T)
+        return PerFiberRVEModel(
+            fibers=fibers,
+            L=config.get('L', 1.0),
+            mesh_size=config.get('mesh_size', 0.03),
+            ele_type=config.get('ele_type', 'TRI3'),
+            E_inf=config.get('E_inf', 30e3),
+            E_fiber=config.get('E_fiber', 200e3),
+            nu_matrix=config.get('nu_matrix', 0.35),
+            nu_fiber=config.get('nu_fiber', 0.2),
+            eps_macro=eps_macro,
+            quantities=config.get('quantities',
+                                  ['avg_stress', 'max_von_mises']),
+            components=config.get('components', None),
+            msh_file=config.get('msh_file', None),
+            data_dir=config.get('data_dir', None),
+            assembly=config.get('assembly', 'voronoi'),
+            f_inf_scope=config.get('f_inf_scope', 'per_fiber'),
+            softmin_temperature=softmin_T,
         )
 
 
