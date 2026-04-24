@@ -1494,11 +1494,11 @@ class RVEModel:
         params = np.asarray(params, dtype=np.float64)
         rho = jnp.float64(params[0])
         l_scale = jnp.float64(params[1])
-        E_inf = jnp.float64(params[2]) if params.size == 3 else self.E_inf
-        return E_inf * (
-            1.0 - (1.0 - rho) * jnp.exp(-self._distances_jnp / l_scale))
+        E_inf = jnp.float64(params[2]) if params.size > 2 else self.E_inf
+        return E_inf * (1.0 -
+                        (1.0 - rho) * jnp.exp(-self._distances_jnp / l_scale))
 
-    def eval(self, params):
+    def eval(self, params, save_dir=None):
         """Evaluate the RVE model for given exponential recovery parameters.
 
         Parameters
@@ -1506,6 +1506,9 @@ class RVEModel:
         params : array-like of shape (2,) or (3,)
             ``[rho, l_scale]`` — uses the far-field stiffness set at init.
             ``[rho, l_scale, E_inf]`` — overrides the init value for this call.
+        save_dir : str or None
+            If given, writes ``<save_dir>/vtk/u.vtu`` containing the
+            displacement field and the cell-averaged Young's modulus E.
 
         Returns
         -------
@@ -1519,7 +1522,22 @@ class RVEModel:
         self._problem.set_params(fem_params)
         sol = self._fwd_pred(fem_params)[0]
 
+        if save_dir is not None:
+            self._write_vtk(sol, E_q, save_dir)
+
         return self._assemble_outputs(sol, fem_params)
+
+    def _write_vtk(self, sol, E_q, save_dir):
+        """Write displacement and E field to a VTK file."""
+        from jax_fem.utils import save_sol
+
+        vtk_path = os.path.join(save_dir, 'vtk', 'u.vtu')
+        os.makedirs(os.path.dirname(vtk_path), exist_ok=True)
+        E_cell = np.array(jnp.mean(E_q, axis=1))
+        save_sol(self._problem.fe,
+                 np.array(sol),
+                 vtk_path,
+                 cell_infos=[('E', E_cell)])
 
     def _assemble_outputs(self, sol, fem_params):
         """Compute the requested output quantities from a solved FEM state.
@@ -1640,9 +1658,8 @@ class PerFiberRVEModel(RVEModel):
             raise ValueError(
                 f"assembly must be 'voronoi' or 'softmin', got {assembly!r}")
         if f_inf_scope not in ('per_fiber', 'global'):
-            raise ValueError(
-                f"f_inf_scope must be 'per_fiber' or 'global', "
-                f"got {f_inf_scope!r}")
+            raise ValueError(f"f_inf_scope must be 'per_fiber' or 'global', "
+                             f"got {f_inf_scope!r}")
 
         self.assembly = assembly
         self.f_inf_scope = f_inf_scope
@@ -1662,8 +1679,9 @@ class PerFiberRVEModel(RVEModel):
                 softmin_temperature = 1.0
             else:
                 centers = np.array([(cx, cy) for cx, cy, _ in self.fibers])
-                dmat = np.linalg.norm(
-                    centers[:, None, :] - centers[None, :, :], axis=-1)
+                dmat = np.linalg.norm(centers[:, None, :] -
+                                      centers[None, :, :],
+                                      axis=-1)
                 np.fill_diagonal(dmat, np.inf)
                 softmin_temperature = 0.5 * float(dmat.min())
         self.softmin_temperature = float(softmin_temperature)
@@ -1704,19 +1722,19 @@ class PerFiberRVEModel(RVEModel):
 
         per_fiber = jnp.asarray(params.reshape(n_fibers, k))
 
-        rho_f = per_fiber[:, 0]              # (n_fibers,)
-        l_f = per_fiber[:, 1]                # (n_fibers,)
+        rho_f = per_fiber[:, 0]  # (n_fibers,)
+        l_f = per_fiber[:, 1]  # (n_fibers,)
         if self.f_inf_scope == 'per_fiber':
-            Einf_f = per_fiber[:, 2]         # (n_fibers,)
+            Einf_f = per_fiber[:, 2]  # (n_fibers,)
         else:
             Einf_f = jnp.full((n_fibers, ), E_inf_global, dtype=jnp.float64)
 
         # Per-fiber recovery field, shape (nc, nq, n_fibers):
         #   E_f(x) = Einf_f * (1 - (1 - rho_f) * exp(-d_xf / l_f))
-        d = self._distances_per_fiber_jnp                  # (nc, nq, n_fibers)
+        d = self._distances_per_fiber_jnp  # (nc, nq, n_fibers)
         E_per_fiber = Einf_f[None, None, :] * (
-            1.0 - (1.0 - rho_f[None, None, :]) *
-            jnp.exp(-d / l_f[None, None, :]))
+            1.0 -
+            (1.0 - rho_f[None, None, :]) * jnp.exp(-d / l_f[None, None, :]))
 
         if self.assembly == 'voronoi':
             return jnp.take_along_axis(E_per_fiber,
@@ -1726,7 +1744,7 @@ class PerFiberRVEModel(RVEModel):
         # Softmin blend: weights are softmax(-d / T) over the fiber axis.
         T = self.softmin_temperature
         logits = -d / T
-        weights = jax.nn.softmax(logits, axis=-1)          # (nc, nq, n_fibers)
+        weights = jax.nn.softmax(logits, axis=-1)  # (nc, nq, n_fibers)
         return jnp.sum(weights * E_per_fiber, axis=-1)
 
     @staticmethod
