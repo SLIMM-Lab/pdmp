@@ -1,0 +1,30 @@
+problem:
+  name: BayesianInverse
+  prior:
+    name: MultivariateNormal
+    mean: [1.5, 2.5]
+    cov: [[4.0, 0.0], [0.0, 4.0]]
+  likelihood:
+    name: GaussianLikelihood
+    observation_file: ../observations.dat
+    # sigma fixed at sqrt(sigma2_eps_true) = sqrt(0.001); no discrepancy term
+    sigma: 0.031623
+  model:
+    name: PiecewiseConstant
+    F: [1.0]
+    dim: 2
+    n_obs_loc: 10
+
+sampler:
+  name: RandomWalkMetropolis
+  n_samples: 100000
+  x_0: [1.5, 2.5]
+  sigma: 0.2
+
+output:
+  dir: .
+  logging:
+    level: INFO
+    log_file: inference.log
+
+seed: 42
