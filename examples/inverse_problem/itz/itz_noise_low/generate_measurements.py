@@ -193,7 +193,7 @@ _CONFIG_TEMPLATE = {
     },
     'sampler': {
         'name': 'RandomWalkMetropolis',
-        'n_samples': 500,
+        'n_samples': 10000,
         'sigma': 0.94,
         'x_0': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     },
