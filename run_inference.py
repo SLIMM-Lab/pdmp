@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import os
 import yaml
 import argparse
 import torch
@@ -34,6 +35,11 @@ def main():
 
     # parse input arguments
     args = parse_args()
+
+    # Resolve all relative paths (observation_file, output dir, msh files)
+    # against the config file's own directory, not the shell's CWD.
+    os.chdir(os.path.dirname(os.path.abspath(args.config)))
+
     config = get_config(args.config)
 
     setup_file_handler(logger, config['output']['dir'],
