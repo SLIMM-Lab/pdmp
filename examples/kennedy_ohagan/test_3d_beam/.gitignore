@@ -1,0 +1,8 @@
+# local gitigore to not track files that can be created via generate_data.py
+ground_truth.dat
+observations.dat
+psi_marginals.pdf
+rwm/
+rwm_no_ko/
+theta_marginals.pdf
+traces.pdf
