@@ -54,7 +54,7 @@ DEFAULT_FIBERS = [
     (1500.0, 1400.0, 240.0),
 ]
 
-E_inf = 30.0  # Far-field matrix E [GPa]
+E_inf = 120.0  # Far-field matrix E [GPa]
 E_fiber = 99.0  # Fiber E [GPa]
 nu_matrix = 0.18  # Matrix Poisson ratio
 nu_fiber = 0.18  # Fiber Poisson ratio
@@ -114,7 +114,7 @@ def main():
                         help="Recovery ratio (default: 0.3)")
     parser.add_argument("--l-scale",
                         type=float,
-                        default=200.0,
+                        default=500.0,
                         help="Recovery length scale in µm (default: 200.0)")
     parser.add_argument("--eps-xx",
                         type=float,
