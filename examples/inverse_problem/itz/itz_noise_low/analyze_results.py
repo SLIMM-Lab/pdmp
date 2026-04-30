@@ -228,13 +228,22 @@ def _plot_marginals(post,
     print(f"Saved {path}")
 
 
-def _plot_pairplot(post, fig_dir, theta_xlims=None, outlier_pct=None):
+def _plot_pairplot(post,
+                   fig_dir,
+                   theta_xlims=None,
+                   outlier_pct=None,
+                   max_scatter=1000):
     params = post[:, :3]
     if outlier_pct is not None:
         mask = np.ones(len(params), dtype=bool)
         for k in range(3):
             mask &= _filter_outliers(params[:, k], outlier_pct)
         params = params[mask]
+    rng = np.random.default_rng(0)
+    idx = rng.choice(len(params),
+                     size=min(max_scatter, len(params)),
+                     replace=False)
+    scatter_params = params[idx]
     names = THETA_NAMES
     d = 3
     fig, axes = plt.subplots(d, d, figsize=(8, 8))
@@ -252,8 +261,8 @@ def _plot_pairplot(post, fig_dir, theta_xlims=None, outlier_pct=None):
                 if theta_xlims is not None and theta_xlims[i] is not None:
                     ax.set_xlim(right=theta_xlims[i])
             elif i > j:
-                ax.scatter(params[:, j],
-                           params[:, i],
+                ax.scatter(scatter_params[:, j],
+                           scatter_params[:, i],
                            s=2,
                            alpha=0.25,
                            color='steelblue',
@@ -840,7 +849,8 @@ def _plot_pairplot_comparison(separate_posts,
                               joint_post,
                               fig_dir,
                               theta_xlims=None,
-                              outlier_pct=1.0):
+                              outlier_pct=1.0,
+                              max_scatter=1000):
     """3×3 pairwise scatter for ρ, l, f_∞: mixture of separate (blue) vs joint (orange)."""
     separate_list = list(separate_posts.values())
     mixture = np.concatenate(separate_list, axis=0)[:, :3]
@@ -855,6 +865,16 @@ def _plot_pairplot_comparison(separate_posts,
             mask_jnt &= _filter_outliers(joint_params[:, k], outlier_pct)
         mixture = mixture[mask_mix]
         joint_params = joint_params[mask_jnt]
+
+    rng = np.random.default_rng(0)
+    idx_mix = rng.choice(len(mixture),
+                         size=min(max_scatter, len(mixture)),
+                         replace=False)
+    idx_jnt = rng.choice(len(joint_params),
+                         size=min(max_scatter, len(joint_params)),
+                         replace=False)
+    scatter_mix = mixture[idx_mix]
+    scatter_jnt = joint_params[idx_jnt]
 
     names = THETA_NAMES
     d = 3
@@ -885,16 +905,16 @@ def _plot_pairplot_comparison(separate_posts,
                 if i == 0:
                     ax.legend(fontsize=7)
             elif i > j:
-                ax.scatter(mixture[:, j],
-                           mixture[:, i],
-                           s=1.5,
-                           alpha=0.2,
+                ax.scatter(scatter_mix[:, j],
+                           scatter_mix[:, i],
+                           s=2.5,
+                           alpha=0.4,
                            color='steelblue',
                            linewidths=0)
-                ax.scatter(joint_params[:, j],
-                           joint_params[:, i],
-                           s=1.5,
-                           alpha=0.2,
+                ax.scatter(scatter_jnt[:, j],
+                           scatter_jnt[:, i],
+                           s=2.5,
+                           alpha=0.4,
                            color='C1',
                            linewidths=0)
                 ax.set_xlabel(names[j], fontsize=8)
@@ -990,7 +1010,7 @@ def main():
                                   joint_post,
                                   fig_dir,
                                   theta_xlims=theta_xlims,
-                                  outlier_pct=1.0)
+                                  outlier_pct=0.0)
         print(f"\nComparison figures written to {fig_dir}/")
 
     print("\nDone.")
