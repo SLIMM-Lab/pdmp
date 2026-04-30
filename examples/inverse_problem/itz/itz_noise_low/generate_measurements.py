@@ -74,7 +74,7 @@ for _i, _a in enumerate(_argv):
             _flags[_a.lstrip('-')] = None
 
 SEED = int(_flags['seed']) if 'seed' in _flags else 42
-NOISE_STD = float(_flags['noise-std']) if 'noise-std' in _flags else 0.05
+NOISE_STD = float(_flags['noise-std']) if 'noise-std' in _flags else 0.01
 _pos = [
     _a for _i, _a in enumerate(_argv)
     if not _a.startswith('--') and _i not in _skip_idx
