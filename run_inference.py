@@ -1,6 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+# import jax
+#
+# jax.config.update("jax_log_compiles", True)
+#
+# import logging
+#
+# for name in ("jax", "jax._src.dispatch", "jax._src.interpreters.pxla",
+#              "jax._src.compiler"):
+#     logging.getLogger(name).setLevel(logging.DEBUG)
+#     logging.getLogger(name).propagate = True
+#
 import os
 import yaml
 import argparse

@@ -982,15 +982,23 @@ class JaxFemModel(Model):
         self.sensor_interpolants = build_sensor_interpolants(
             self.problem.fe, sensors, location_fn_map) if sensors else []
 
-        # Use UMFPACK (direct solver) for the adjoint.  The default JAX BiCGStab
-        # starts from a zero initial guess and can hit a numerical breakdown
-        # (ρ → 0 in the BiCGStab recurrence) for certain RHS vectors, causing
-        # sporadic "adjoint solver did not converge" failures near MAP points.
-        # UMFPACK is a direct sparse solver and is unconditionally robust here.
-        # might need to have two wrappers for problem bc umfpack does not scale well with dofs
-        # BiCGStab only caused problems at the MAP so far, expected to work for the rest of domain
+        # Use UMFPACK (direct solver) for both forward and adjoint.
+        # Forward: jax-fem's default jax_solve uses jax.scipy.sparse.linalg.bicgstab
+        # which constructs a fresh preconditioner lambda each call. JAX caches the
+        # internal while_loop by closure identity, so every Newton iteration
+        # recompiles an identical HLO graph. On clusters with default
+        # vm.max_map_count (65530), accumulated executable mappings exhaust the
+        # limit after a few hundred samples and XLA's mmap fails with ENOMEM.
+        # Adjoint: BiCGStab from a zero initial guess can break down (ρ → 0) near
+        # the MAP, causing sporadic "did not converge" failures.
+        # UMFPACK is a direct sparse LU with no JAX while_loop and no iterative
+        # convergence concerns; the only tradeoff is poorer scaling at very high
+        # DOF counts.
         self.fwd_pred = ad_wrapper(
-            self.problem, adjoint_solver_options={"umfpack_solver": {}})
+            self.problem,
+            solver_options={"umfpack_solver": {}},
+            adjoint_solver_options={"umfpack_solver": {}},
+        )
 
         # total observed dofs = total point-wise displacements from all sensors
         sample_sol = jnp.zeros((self.problem.fe.num_total_nodes, 3))
@@ -1472,9 +1480,13 @@ class RVEModel:
         nu_q_np = np.array(self._nu_q)
         self._nu_cell = np.sum(nu_q_np * w, axis=1)
 
-        # AD wrapper for solving
+        # AD wrapper for solving — see JaxFemModel.__init__ for why UMFPACK is
+        # used for both forward and adjoint.
         self._fwd_pred = ad_wrapper(
-            self._problem, adjoint_solver_options={"umfpack_solver": {}})
+            self._problem,
+            solver_options={"umfpack_solver": {}},
+            adjoint_solver_options={"umfpack_solver": {}},
+        )
 
     def _matrix_E_from_params(self, params):
         """Build the matrix-domain Young's modulus field from recovery params.
