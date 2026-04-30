@@ -228,7 +228,7 @@ class RandomWalkMetropolisSampler(StepSampler):
                                              self._dim *
                                              self._get_sample_covariance())
 
-                if (i % self._rescale_interval == 0) and (i < 2000):
+                if (i % self._rescale_interval == 0) and (i < 100000):
                     logger.info(f"Iteration: {i}")
                     logger.info(
                         f"Acceptance rate: {self._n_accept_last / self._rescale_interval}"
