@@ -46,8 +46,7 @@ THETA_LATENT_NAMES = [
     r'$\theta_2 = \log\,f_\infty$',
 ]
 PSI_PHYSICAL_NAMES = [
-    r'$\sigma^2_\delta$', r'$\sigma^2_\varepsilon$',
-    r'$\rho_\mathrm{KO}$'
+    r'$\sigma^2_\delta$', r'$\sigma^2_\varepsilon$', r'$\rho_\mathrm{KO}$'
 ]
 ALL_PHYSICAL_NAMES = THETA_NAMES + PSI_PHYSICAL_NAMES
 
@@ -333,7 +332,10 @@ def analyze_one_separate(geom_name, rwm_dir, burnin_frac):
     theta_xlims = _standard_xlims()
     theta_latent_xlims = _theta_xlims(prior_mean[:3], prior_std[:3])
 
-    _plot_traces(chain_physical, burnin, fig_dir, title_suffix=f'geom {geom_name}')
+    _plot_traces(chain_physical,
+                 burnin,
+                 fig_dir,
+                 title_suffix=f'geom {geom_name}')
     _plot_marginals(post, [0, 1, 2],
                     THETA_NAMES,
                     r'$\theta$ posterior marginals  ($\rho$, $l$, $f_\infty$)'
@@ -378,7 +380,8 @@ def analyze_all_separate(separate_dir, burnin_frac):
 
     Returns a dict mapping geom_name → post-burnin physical samples array.
     """
-    candidates = sorted(glob(os.path.join(separate_dir, '*', 'rwm', 'samples.dat')))
+    candidates = sorted(
+        glob(os.path.join(separate_dir, '*', 'rwm', 'samples.dat')))
     if not candidates:
         print(f"No separate samples.dat found under {separate_dir}")
         return {}
@@ -406,8 +409,7 @@ def load_separate_physical(separate_dir):
             "Run without --skip-separate first.")
     results = {}
     for path in candidates:
-        geom_name = os.path.basename(
-            os.path.dirname(os.path.dirname(path)))
+        geom_name = os.path.basename(os.path.dirname(os.path.dirname(path)))
         results[geom_name] = np.loadtxt(path, comments='#')
         print(f"Loaded separate physical samples: geom {geom_name} "
               f"({results[geom_name].shape[0]} samples)")
@@ -449,21 +451,23 @@ def analyze_joint(joint_dir, burnin_frac):
     theta_latent_xlims = _theta_xlims(prior_mean[:3], prior_std[:3])
 
     _plot_traces(chain_physical, burnin, fig_dir, title_suffix='joint')
-    _plot_marginals(post, [0, 1, 2],
-                    THETA_NAMES,
-                    r'$\theta$ posterior marginals  ($\rho$, $l$, $f_\infty$) — joint',
-                    'theta_marginals.pdf',
-                    fig_dir,
-                    xlims=theta_xlims,
-                    outlier_pct=(0.0, 0.0),
-                    prior_samples=prior_physical)
-    _plot_marginals(post, [3, 4, 5],
-                    PSI_NAMES,
-                    r'$\psi$ posterior marginals (KO hyper-parameters) — joint',
-                    'psi_marginals.pdf',
-                    fig_dir,
-                    prior_mean=psi_prior_mean,
-                    prior_std=psi_prior_std)
+    _plot_marginals(
+        post, [0, 1, 2],
+        THETA_NAMES,
+        r'$\theta$ posterior marginals  ($\rho$, $l$, $f_\infty$) — joint',
+        'theta_marginals.pdf',
+        fig_dir,
+        xlims=theta_xlims,
+        outlier_pct=(0.0, 0.0),
+        prior_samples=prior_physical)
+    _plot_marginals(
+        post, [3, 4, 5],
+        PSI_NAMES,
+        r'$\psi$ posterior marginals (KO hyper-parameters) — joint',
+        'psi_marginals.pdf',
+        fig_dir,
+        prior_mean=psi_prior_mean,
+        prior_std=psi_prior_std)
     _plot_marginals(post_theta, [0, 1, 2],
                     THETA_LATENT_NAMES,
                     r'$\theta$ posterior marginals (latent space) — joint',
@@ -493,8 +497,7 @@ def load_joint_physical(joint_dir):
             "Run without --skip-joint first.")
     post = np.loadtxt(path, comments='#')
     print(f"Loaded joint physical samples: {post.shape[0]} samples")
-    config_used = get_config(
-        os.path.join(joint_dir, 'rwm', 'config_used.yml'))
+    config_used = get_config(os.path.join(joint_dir, 'rwm', 'config_used.yml'))
     _, _, f_inf, prior_mean, prior_cov, psi_prior_mean, psi_prior_std = \
         _extract_config_params(config_used)
     prior_physical = _sample_physical_prior(prior_mean, prior_cov, f_inf=f_inf)
@@ -511,9 +514,13 @@ def _kde_on_grid(vals, xs):
         return np.zeros_like(xs)
 
 
-def _plot_marginals_comparison(separate_posts, joint_post, prior_physical,
-                               psi_prior_mean, psi_prior_std,
-                               fig_dir, theta_xlims=None):
+def _plot_marginals_comparison(separate_posts,
+                               joint_post,
+                               prior_physical,
+                               psi_prior_mean,
+                               psi_prior_std,
+                               fig_dir,
+                               theta_xlims=None):
     """Two-panel figure: θ marginals and ψ marginals side by side, comparing
     each separate posterior, their mixture, the joint posterior, and the prior.
     """
@@ -524,12 +531,14 @@ def _plot_marginals_comparison(separate_posts, joint_post, prior_physical,
     for param_indices, names, filename, title, xlims, prior_kws in [
         ([0, 1, 2], THETA_NAMES, 'theta_marginals_comparison.pdf',
          r'$\theta$ marginals: separate vs joint  ($\rho$, $l$, $f_\infty$)',
-         theta_xlims,
-         {'prior_samples': prior_physical}),
+         theta_xlims, {
+             'prior_samples': prior_physical
+         }),
         ([3, 4, 5], PSI_NAMES, 'psi_marginals_comparison.pdf',
-         r'$\psi$ marginals: separate vs joint (KO hyper-parameters)',
-         None,
-         {'prior_mean': psi_prior_mean, 'prior_std': psi_prior_std}),
+         r'$\psi$ marginals: separate vs joint (KO hyper-parameters)', None, {
+             'prior_mean': psi_prior_mean,
+             'prior_std': psi_prior_std
+         }),
     ]:
         n = len(param_indices)
         fig, axes = plt.subplots(1, n, figsize=(4 * n, 4))
@@ -539,16 +548,19 @@ def _plot_marginals_comparison(separate_posts, joint_post, prior_physical,
         for k, (ax, i) in enumerate(zip(axes, param_indices)):
             xlim = None
             if xlims is not None:
-                xlim = xlims[k] if not hasattr(xlims[k], '__len__') else xlims[k]
+                xlim = xlims[k] if not hasattr(xlims[k],
+                                               '__len__') else xlims[k]
 
             # Collect all values to set a common x-range
-            all_vals = np.concatenate(
-                [post[:, i] for post in separate_list] + [joint_post[:, i]])
+            all_vals = np.concatenate([post[:, i] for post in separate_list] +
+                                      [joint_post[:, i]])
             if xlim is not None:
-                lo = 0.0 if k == 0 and param_indices[0] == 0 else float(all_vals.min())
+                lo = 0.0 if k == 0 and param_indices[0] == 0 else float(
+                    all_vals.min())
                 xs = np.linspace(lo, float(xlim), 400)
             else:
-                xs = np.linspace(float(all_vals.min()), float(all_vals.max()), 400)
+                xs = np.linspace(float(all_vals.min()), float(all_vals.max()),
+                                 400)
 
             # Individual separate posteriors
             for idx, post in enumerate(separate_list):
@@ -559,39 +571,64 @@ def _plot_marginals_comparison(separate_posts, joint_post, prior_physical,
                     continue
                 kde_y = _kde_on_grid(vals, xs)
                 label = 'separate' if idx == 0 else None
-                ax.plot(xs, kde_y, color='steelblue', lw=0.7, alpha=0.35,
+                ax.plot(xs,
+                        kde_y,
+                        color='steelblue',
+                        lw=0.7,
+                        alpha=0.35,
                         label=label)
 
             # Mixture of separate posteriors
             mix_vals = mixture[:, i]
             if xlim is not None:
                 mix_vals = mix_vals[mix_vals <= xlim]
-            ax.plot(xs, _kde_on_grid(mix_vals, xs), color='steelblue', lw=2.0,
-                    ls='--', label=f'mixture (n={n_geoms})')
-            ax.axvline(np.median(mix_vals), color='steelblue', lw=1.0, ls=':',
+            ax.plot(xs,
+                    _kde_on_grid(mix_vals, xs),
+                    color='steelblue',
+                    lw=2.0,
+                    ls='--',
+                    label=f'mixture (n={n_geoms})')
+            ax.axvline(np.median(mix_vals),
+                       color='steelblue',
+                       lw=1.0,
+                       ls=':',
                        alpha=0.7)
 
             # Joint posterior
             j_vals = joint_post[:, i]
             if xlim is not None:
                 j_vals = j_vals[j_vals <= xlim]
-            ax.plot(xs, _kde_on_grid(j_vals, xs), color='C1', lw=2.0,
+            ax.plot(xs,
+                    _kde_on_grid(j_vals, xs),
+                    color='C1',
+                    lw=2.0,
                     label='joint')
-            ax.axvline(np.median(j_vals), color='C1', lw=1.0, ls=':',
+            ax.axvline(np.median(j_vals),
+                       color='C1',
+                       lw=1.0,
+                       ls=':',
                        alpha=0.7)
 
             # Prior
             if 'prior_samples' in prior_kws:
                 p_vals = prior_kws['prior_samples'][:, i]
-                xs_p = np.linspace(float(p_vals.min()), float(p_vals.max()), 400)
-                ax.plot(xs_p, _kde_on_grid(p_vals, xs_p), color='C2', lw=1.5,
-                        ls='--', label='prior')
+                xs_p = np.linspace(float(p_vals.min()), float(p_vals.max()),
+                                   400)
+                ax.plot(xs_p,
+                        _kde_on_grid(p_vals, xs_p),
+                        color='C2',
+                        lw=1.5,
+                        ls='--',
+                        label='prior')
             elif 'prior_mean' in prior_kws:
                 from scipy.stats import norm
                 ax.plot(xs,
                         norm.pdf(xs, prior_kws['prior_mean'][k],
                                  prior_kws['prior_std'][k]),
-                        color='C2', lw=1.5, ls='--', label='prior')
+                        color='C2',
+                        lw=1.5,
+                        ls='--',
+                        label='prior')
 
             if xlim is not None:
                 lo_x = 0.0 if param_indices[0] == 0 and k == 0 else xs[0]
@@ -618,21 +655,22 @@ def _physical_to_theta(post, f_inf):
     """
     out = post.copy()
     rho = np.clip(post[:, 0], 1e-8, 1 - 1e-8)
-    out[:, 0] = np.log(rho / (1.0 - rho))          # logit(ρ)
-    out[:, 1] = np.log(post[:, 1])                  # log(l)
+    out[:, 0] = np.log(rho / (1.0 - rho))  # logit(ρ)
+    out[:, 1] = np.log(post[:, 1])  # log(l)
     f = np.clip(post[:, 2], 1e-8, f_inf - 1e-8)
-    out[:, 2] = np.log(f / (f_inf - f))             # logit(f_∞ / f_inf)
+    out[:, 2] = np.log(f / (f_inf - f))  # logit(f_∞ / f_inf)
     return out
 
 
 def _plot_theta_latent_comparison(separate_posts, joint_post, f_inf,
-                                   prior_mean, prior_cov, fig_dir):
+                                  prior_mean, prior_cov, fig_dir):
     """Overlaid KDE comparison for logit(ρ), log l, logit(f_∞/f_inf)."""
     prior_std = np.sqrt(np.diag(prior_cov))
     theta_xlims = _theta_xlims(prior_mean[:3], prior_std[:3])
 
-    separate_thetas = [_physical_to_theta(p, f_inf)
-                       for p in separate_posts.values()]
+    separate_thetas = [
+        _physical_to_theta(p, f_inf) for p in separate_posts.values()
+    ]
     mixture_theta = np.concatenate(separate_thetas, axis=0)
     joint_theta = _physical_to_theta(joint_post, f_inf)
     n_geoms = len(separate_thetas)
@@ -641,8 +679,8 @@ def _plot_theta_latent_comparison(separate_posts, joint_post, f_inf,
     for k, ax in enumerate(axes):
         lo, hi = theta_xlims[k]
 
-        all_vals = np.concatenate(
-            [t[:, k] for t in separate_thetas] + [joint_theta[:, k]])
+        all_vals = np.concatenate([t[:, k] for t in separate_thetas] +
+                                  [joint_theta[:, k]])
         xs = np.linspace(max(lo, float(np.percentile(all_vals, 0.5))),
                          min(hi, float(np.percentile(all_vals, 99.5))), 400)
 
@@ -651,26 +689,43 @@ def _plot_theta_latent_comparison(separate_posts, joint_post, f_inf,
             vals = vals[(vals >= xs[0]) & (vals <= xs[-1])]
             if len(vals) < 2:
                 continue
-            ax.plot(xs, _kde_on_grid(vals, xs), color='steelblue', lw=0.7,
-                    alpha=0.35, label='separate' if idx == 0 else None)
+            ax.plot(xs,
+                    _kde_on_grid(vals, xs),
+                    color='steelblue',
+                    lw=0.7,
+                    alpha=0.35,
+                    label='separate' if idx == 0 else None)
 
         mix_vals = mixture_theta[:, k]
         mix_vals = mix_vals[(mix_vals >= xs[0]) & (mix_vals <= xs[-1])]
-        ax.plot(xs, _kde_on_grid(mix_vals, xs), color='steelblue', lw=2.0,
-                ls='--', label=f'mixture (n={n_geoms})')
-        ax.axvline(np.median(mix_vals), color='steelblue', lw=1.0, ls=':',
+        ax.plot(xs,
+                _kde_on_grid(mix_vals, xs),
+                color='steelblue',
+                lw=2.0,
+                ls='--',
+                label=f'mixture (n={n_geoms})')
+        ax.axvline(np.median(mix_vals),
+                   color='steelblue',
+                   lw=1.0,
+                   ls=':',
                    alpha=0.7)
 
         j_vals = joint_theta[:, k]
         j_vals = j_vals[(j_vals >= xs[0]) & (j_vals <= xs[-1])]
-        ax.plot(xs, _kde_on_grid(j_vals, xs), color='C1', lw=2.0,
+        ax.plot(xs,
+                _kde_on_grid(j_vals, xs),
+                color='C1',
+                lw=2.0,
                 label='joint')
-        ax.axvline(np.median(j_vals), color='C1', lw=1.0, ls=':',
-                   alpha=0.7)
+        ax.axvline(np.median(j_vals), color='C1', lw=1.0, ls=':', alpha=0.7)
 
         from scipy.stats import norm
-        ax.plot(xs, norm.pdf(xs, prior_mean[k], prior_std[k]),
-                color='C2', lw=1.5, ls='--', label='prior')
+        ax.plot(xs,
+                norm.pdf(xs, prior_mean[k], prior_std[k]),
+                color='C2',
+                lw=1.5,
+                ls='--',
+                label='prior')
 
         ax.set_xlim(xs[0], xs[-1])
         ax.set_xlabel(THETA_LATENT_NAMES[k], fontsize=9)
@@ -697,8 +752,8 @@ def _psi_to_physical(post):
     return out
 
 
-def _plot_psi_comparison_physical(separate_posts, joint_post, prior_physical_psi,
-                                   fig_dir):
+def _plot_psi_comparison_physical(separate_posts, joint_post,
+                                  prior_physical_psi, fig_dir):
     """KDE comparison for σ²_δ, σ²_ε, ρ_KO in linear (physical) units.
 
     prior_physical_psi: array (n × 3) of prior samples already exp-transformed.
@@ -712,8 +767,8 @@ def _plot_psi_comparison_physical(separate_posts, joint_post, prior_physical_psi
     for k, ax in enumerate(axes):
         i = k + 3  # column index in the full array
 
-        all_vals = np.concatenate(
-            [p[:, i] for p in separate_list] + [joint_phys[:, i]])
+        all_vals = np.concatenate([p[:, i] for p in separate_list] +
+                                  [joint_phys[:, i]])
         xs = np.linspace(float(np.percentile(all_vals, 1)),
                          float(np.percentile(all_vals, 99)), 400)
 
@@ -722,29 +777,46 @@ def _plot_psi_comparison_physical(separate_posts, joint_post, prior_physical_psi
             vals = vals[(vals >= xs[0]) & (vals <= xs[-1])]
             if len(vals) < 2:
                 continue
-            ax.plot(xs, _kde_on_grid(vals, xs), color='steelblue', lw=0.7,
-                    alpha=0.35, label='separate' if idx == 0 else None)
+            ax.plot(xs,
+                    _kde_on_grid(vals, xs),
+                    color='steelblue',
+                    lw=0.7,
+                    alpha=0.35,
+                    label='separate' if idx == 0 else None)
 
         mix_vals = mixture[:, i]
         mix_vals = mix_vals[(mix_vals >= xs[0]) & (mix_vals <= xs[-1])]
-        ax.plot(xs, _kde_on_grid(mix_vals, xs), color='steelblue', lw=2.0,
-                ls='--', label=f'mixture (n={n_geoms})')
-        ax.axvline(np.median(mix_vals), color='steelblue', lw=1.0, ls=':',
+        ax.plot(xs,
+                _kde_on_grid(mix_vals, xs),
+                color='steelblue',
+                lw=2.0,
+                ls='--',
+                label=f'mixture (n={n_geoms})')
+        ax.axvline(np.median(mix_vals),
+                   color='steelblue',
+                   lw=1.0,
+                   ls=':',
                    alpha=0.7)
 
         j_vals = joint_phys[:, i]
         j_vals = j_vals[(j_vals >= xs[0]) & (j_vals <= xs[-1])]
-        ax.plot(xs, _kde_on_grid(j_vals, xs), color='C1', lw=2.0,
+        ax.plot(xs,
+                _kde_on_grid(j_vals, xs),
+                color='C1',
+                lw=2.0,
                 label='joint')
-        ax.axvline(np.median(j_vals), color='C1', lw=1.0, ls=':',
-                   alpha=0.7)
+        ax.axvline(np.median(j_vals), color='C1', lw=1.0, ls=':', alpha=0.7)
 
         if prior_physical_psi is not None:
             p_vals = prior_physical_psi[:, k]
             xs_p = np.linspace(float(np.percentile(p_vals, 1)),
                                float(np.percentile(p_vals, 99)), 400)
-            ax.plot(xs_p, _kde_on_grid(p_vals, xs_p), color='C2', lw=1.5,
-                    ls='--', label='prior')
+            ax.plot(xs_p,
+                    _kde_on_grid(p_vals, xs_p),
+                    color='C2',
+                    lw=1.5,
+                    ls='--',
+                    label='prior')
 
         ax.set_xlim(xs[0], xs[-1])
         ax.set_xlabel(PSI_PHYSICAL_NAMES[k], fontsize=9)
@@ -764,8 +836,11 @@ def _plot_psi_comparison_physical(separate_posts, joint_post, prior_physical_psi
     print(f"Saved {path}")
 
 
-def _plot_pairplot_comparison(separate_posts, joint_post, fig_dir,
-                               theta_xlims=None, outlier_pct=1.0):
+def _plot_pairplot_comparison(separate_posts,
+                              joint_post,
+                              fig_dir,
+                              theta_xlims=None,
+                              outlier_pct=1.0):
     """3×3 pairwise scatter for ρ, l, f_∞: mixture of separate (blue) vs joint (orange)."""
     separate_list = list(separate_posts.values())
     mixture = np.concatenate(separate_list, axis=0)[:, :3]
@@ -790,11 +865,19 @@ def _plot_pairplot_comparison(separate_posts, joint_post, fig_dir,
             xlim = theta_xlims[j] if theta_xlims is not None else None
             ylim = theta_xlims[i] if theta_xlims is not None else None
             if i == j:
-                ax.hist(mixture[:, i], bins=40, density=True,
-                        color='steelblue', alpha=0.4, edgecolor='none',
+                ax.hist(mixture[:, i],
+                        bins=40,
+                        density=True,
+                        color='steelblue',
+                        alpha=0.4,
+                        edgecolor='none',
                         label='mixture')
-                ax.hist(joint_params[:, i], bins=40, density=True,
-                        color='C1', alpha=0.4, edgecolor='none',
+                ax.hist(joint_params[:, i],
+                        bins=40,
+                        density=True,
+                        color='C1',
+                        alpha=0.4,
+                        edgecolor='none',
                         label='joint')
                 ax.set_xlabel(names[i], fontsize=8)
                 if xlim is not None:
@@ -802,10 +885,18 @@ def _plot_pairplot_comparison(separate_posts, joint_post, fig_dir,
                 if i == 0:
                     ax.legend(fontsize=7)
             elif i > j:
-                ax.scatter(mixture[:, j], mixture[:, i],
-                           s=1.5, alpha=0.2, color='steelblue', linewidths=0)
-                ax.scatter(joint_params[:, j], joint_params[:, i],
-                           s=1.5, alpha=0.2, color='C1', linewidths=0)
+                ax.scatter(mixture[:, j],
+                           mixture[:, i],
+                           s=1.5,
+                           alpha=0.2,
+                           color='steelblue',
+                           linewidths=0)
+                ax.scatter(joint_params[:, j],
+                           joint_params[:, i],
+                           s=1.5,
+                           alpha=0.2,
+                           color='C1',
+                           linewidths=0)
                 ax.set_xlabel(names[j], fontsize=8)
                 ax.set_ylabel(names[i], fontsize=8)
                 if xlim is not None:
@@ -836,16 +927,16 @@ def main():
     parser.add_argument('--joint-dir', default=os.path.join(HERE, 'joint'))
     parser.add_argument('--burnin-frac',
                         type=float,
-                        default=0.25,
+                        default=0.05,
                         help='Fraction of samples to discard as burn-in')
     parser.add_argument('--skip-separate',
                         action='store_true',
                         help='Skip per-geometry analysis; load existing '
-                             'samples_physical.dat files instead')
+                        'samples_physical.dat files instead')
     parser.add_argument('--skip-joint',
                         action='store_true',
                         help='Skip joint analysis; load existing '
-                             'samples_physical.dat instead')
+                        'samples_physical.dat instead')
     parser.add_argument('--skip-comparison',
                         action='store_true',
                         help='Skip comparison figures')
@@ -865,8 +956,8 @@ def main():
     # ── Joint analysis ───────────────────────────────────────────────────────
     if not args.skip_joint:
         (joint_post, prior_physical, prior_mean, prior_cov, f_inf,
-         psi_prior_mean, psi_prior_std) = analyze_joint(args.joint_dir,
-                                                        args.burnin_frac)
+         psi_prior_mean,
+         psi_prior_std) = analyze_joint(args.joint_dir, args.burnin_frac)
     else:
         (joint_post, prior_physical, prior_mean, prior_cov, f_inf,
          psi_prior_mean, psi_prior_std) = load_joint_physical(args.joint_dir)
@@ -879,19 +970,27 @@ def main():
         print("Comparison figures")
         print(f"{'='*60}")
         theta_xlims = _standard_xlims()
-        _plot_marginals_comparison(separate_posts, joint_post, prior_physical,
-                                   psi_prior_mean, psi_prior_std,
-                                   fig_dir, theta_xlims=theta_xlims)
+        _plot_marginals_comparison(separate_posts,
+                                   joint_post,
+                                   prior_physical,
+                                   psi_prior_mean,
+                                   psi_prior_std,
+                                   fig_dir,
+                                   theta_xlims=theta_xlims)
         _plot_theta_latent_comparison(separate_posts, joint_post, f_inf,
                                       prior_mean, prior_cov, fig_dir)
         _rng = np.random.default_rng(0)
-        _psi_log_samples = _rng.multivariate_normal(
-            psi_prior_mean, np.diag(psi_prior_std**2), size=200_000)
+        _psi_log_samples = _rng.multivariate_normal(psi_prior_mean,
+                                                    np.diag(psi_prior_std**2),
+                                                    size=200_000)
         prior_psi_physical = np.exp(_psi_log_samples)
         _plot_psi_comparison_physical(separate_posts, joint_post,
                                       prior_psi_physical, fig_dir)
-        _plot_pairplot_comparison(separate_posts, joint_post, fig_dir,
-                                  theta_xlims=theta_xlims, outlier_pct=1.0)
+        _plot_pairplot_comparison(separate_posts,
+                                  joint_post,
+                                  fig_dir,
+                                  theta_xlims=theta_xlims,
+                                  outlier_pct=1.0)
         print(f"\nComparison figures written to {fig_dir}/")
 
     print("\nDone.")
