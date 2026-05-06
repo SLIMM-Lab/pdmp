@@ -38,7 +38,7 @@ NU = 0.18
 # Voxel geometry
 VOXEL_SIZE = 2.0  # µm
 Z_THRES = 110.0  # µm — load applied above this z-coordinate
-TOTAL_FORCE = 40.0  # mN (GPa·µm² consistent units) — total y-force on load face
+TOTAL_FORCE = 60.0  # mN (GPa·µm² consistent units) — total y-force on load face
 
 # Coarsening factor
 POOL = int(sys.argv[1]) if len(sys.argv) > 1 else 2
