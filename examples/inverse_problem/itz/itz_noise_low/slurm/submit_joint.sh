@@ -9,7 +9,7 @@
 #SBATCH --partition=compute
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem-per-cpu=3G
+#SBATCH --mem-per-cpu=3968M
 #SBATCH --time=6:00:00
 #SBATCH --output=joint_%j.out
 #SBATCH --error=joint_%j.err
