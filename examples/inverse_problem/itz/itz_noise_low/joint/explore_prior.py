@@ -81,9 +81,9 @@ THETA_PHYS = np.array([
 ])
 
 PSI_PHYS = np.array([
-    [0.10, 0.10],  # σ²_δ
-    [0.05, 0.02],  # σ²_ε
-    [150.0, 150.0],  # ρ_KO
+    [0.10, 0.20],  # σ²_δ
+    [0.01, 0.02],  # σ²_ε
+    [150.0, 200.0],  # ρ_KO
 ])
 
 N_SAMPLES = 100_000
@@ -202,23 +202,29 @@ def _fmt_list(vals: np.ndarray) -> str:
 
 def _fmt_diag_cov(stds: np.ndarray) -> str:
     n = len(stds)
-    rows = ['[' + ', '.join(f'{stds[j]**2:.6g}' if i == j else '0.0'
-                            for j in range(n)) + ']'
-            for i in range(n)]
+    rows = [
+        '[' + ', '.join(f'{stds[j]**2:.6g}' if i == j else '0.0'
+                        for j in range(n)) + ']' for i in range(n)
+    ]
     return '[' + ', '.join(rows) + ']'
 
 
-def _replace_in_block(text: str, section_marker: str,
-                      mean_vals: np.ndarray, std_vals: np.ndarray) -> str:
+def _replace_in_block(text: str, section_marker: str, mean_vals: np.ndarray,
+                      std_vals: np.ndarray) -> str:
     """Replace mean/cov lines in the first occurrence of section_marker."""
     parts = text.split(section_marker, 1)
     if len(parts) != 2:
-        raise ValueError(f"Section marker {section_marker!r} not found in config")
+        raise ValueError(
+            f"Section marker {section_marker!r} not found in config")
     before, after = parts
     after = re.sub(r'([ \t]+mean:[ \t]*)\[.*]',
-                   lambda m: m.group(1) + _fmt_list(mean_vals), after, count=1)
+                   lambda m: m.group(1) + _fmt_list(mean_vals),
+                   after,
+                   count=1)
     after = re.sub(r'([ \t]+cov:[ \t]*)\[.*]',
-                   lambda m: m.group(1) + _fmt_diag_cov(std_vals), after, count=1)
+                   lambda m: m.group(1) + _fmt_diag_cov(std_vals),
+                   after,
+                   count=1)
     return before + section_marker + after
 
 
@@ -232,13 +238,15 @@ def write_config(config_path: str, prior: np.ndarray, psi_prior: np.ndarray,
     """Write θ-space parameters and f_∞ transformation into the YAML config."""
     with open(config_path) as f:
         text = f.read()
-    text = _replace_in_block(text, 'coefficient_distribution:',
-                             prior[:, 0], prior[:, 1])
-    text = _replace_in_block(text, 'psi_prior:',
-                             psi_prior[:, 0], psi_prior[:, 1])
+    text = _replace_in_block(text, 'coefficient_distribution:', prior[:, 0],
+                             prior[:, 1])
+    text = _replace_in_block(text, 'psi_prior:', psi_prior[:, 0], psi_prior[:,
+                                                                            1])
     text = re.sub(r'([ \t]+transformations:[ \t]*)\[.*?]',
                   lambda m: m.group(1) + _fmt_transformations(f_inf_max),
-                  text, count=1, flags=re.DOTALL)
+                  text,
+                  count=1,
+                  flags=re.DOTALL)
     with open(config_path, 'w') as f:
         f.write(text)
     print(f"Updated {config_path}")
@@ -250,10 +258,13 @@ def write_config(config_path: str, prior: np.ndarray, psi_prior: np.ndarray,
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--write-config', metavar='PATH',
-                        default=os.path.join(HERE, 'rwm', 'config.yaml'),
-                        help='YAML config to update (default: rwm/config.yaml)')
-    parser.add_argument('--no-write', action='store_true',
+    parser.add_argument(
+        '--write-config',
+        metavar='PATH',
+        default=os.path.join(HERE, 'rwm', 'config.yaml'),
+        help='YAML config to update (default: rwm/config.yaml)')
+    parser.add_argument('--no-write',
+                        action='store_true',
                         help='Skip writing the config file')
     args = parser.parse_args()
 

@@ -17,7 +17,7 @@ Usage:
     N_SENSORS_PER_GEOM  sensors per geometry realization (default 5)
     POOL                coarsening factor per axis (default 2, must divide 50,50,110)
     --plot              save sensor position figures for each geometry
-    --noise-std=S       Gaussian noise std in microns (default 0.05)
+    --noise-std=S       Gaussian noise std in microns (default 0.01)
     --seed=N            base RNG seed; geometry i uses seed+i (default 42)
     --recompute         ignore cached FEM solutions and re-run all solves
 """
@@ -154,12 +154,9 @@ _CONFIG_TEMPLATE = {
                     'psi_prior': {
                         'name':
                         'MultivariateNormal',
-                        'mean': [-2.64916, -3.06994, 4.66406],
-                        'cov': [
-                            [0.693147, 0.0, 0.0],
-                            [0.0, 0.14842, 0.0],
-                            [0.0, 0.0, 0.693147],
-                        ],
+                        'mean': [-3.1073, -5.40989, 4.49981],
+                        'cov': [[1.60944, 0.0, 0.0], [0.0, 1.60944, 0.0],
+                                [0.0, 0.0, 1.02165]],
                     },
                 },
             },
