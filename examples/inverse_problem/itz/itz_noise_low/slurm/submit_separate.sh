@@ -12,7 +12,7 @@
 #SBATCH --partition=compute
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem-per-cpu=3G
+#SBATCH --mem-per-cpu=3968M
 #SBATCH --time=6:00:00
 #SBATCH --array=1-10
 #SBATCH --output=separate_%A_%a.out
