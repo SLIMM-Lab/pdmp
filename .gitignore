@@ -81,3 +81,5 @@ examples/inverse_problem/exponential_recovery_field/investigate_likelihood.py
 
 # cluster related
 sync_cluster.sh
+*.err
+*.out

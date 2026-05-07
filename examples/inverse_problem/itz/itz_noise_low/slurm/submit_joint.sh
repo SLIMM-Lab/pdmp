@@ -2,15 +2,15 @@
 # Single job: joint inference over all 10 geometries simultaneously.
 # Uses more memory than a separate case (larger observation vector).
 #
-# Submit from the pdmp project root:
-#   sbatch examples/inverse_problem/itz/itz_noise_low/slurm/submit_joint.sh
+# Requires ~/.pdmp_env to set PDMP_DIR, e.g.:
+#   export PDMP_DIR="/scratch/user/pdmp"
 
-#SBATCH --job-name=itz-joint
+#SBATCH --job-name=noise-low-joint
 #SBATCH --partition=compute
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=2
 #SBATCH --mem-per-cpu=3968M
-#SBATCH --time=6:00:00
+#SBATCH --time=3:59:00
 #SBATCH --output=joint_%j.out
 #SBATCH --error=joint_%j.err
 # SBATCH --account=research-CEG-3MD      # <-- fill in your account
@@ -18,12 +18,11 @@
 
 set -euo pipefail
 
-# SLURM_SUBMIT_DIR is the directory sbatch was called from.
-# Always submit from the pdmp project root (see header comment).
-PDMP_DIR="${SLURM_SUBMIT_DIR}"
+source "${HOME}/.pdmp_env"
 SIF="${PDMP_DIR}/apptainer/pdmp.sif"
 
-CONFIG="/pdmp/examples/inverse_problem/itz/itz_noise_low/joint/rwm/config.yaml"
+CASE_DIR="/pdmp/$(realpath --relative-to="${PDMP_DIR}" "${SLURM_SUBMIT_DIR}/..")"
+CONFIG="${CASE_DIR}/joint/rwm/config.yaml"
 
 echo "=== Joint inference ==="
 echo "Node:   $(hostname)"
@@ -34,7 +33,7 @@ date
 apptainer exec \
     --bind "${PDMP_DIR}:/pdmp" \
     --env "JAX_PLATFORM_NAME=cpu" \
-    --env "OMP_NUM_THREADS=8" \
+    --env "OMP_NUM_THREADS=2" \
     "${SIF}" \
     python /pdmp/run_inference.py --config "${CONFIG}"
 
