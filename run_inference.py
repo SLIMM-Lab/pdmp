@@ -84,7 +84,7 @@ def main():
 
         sampler.run()
         sampler.write_data(config['output']['dir'])
-        save_config(config, config['output']['dir'], 'config_used.yml')
+        save_config(config, config['output']['dir'], 'config_used.yaml')
 
     except Exception as e:
         logger.exception("An error occurred during the simulation: %s", str(e))

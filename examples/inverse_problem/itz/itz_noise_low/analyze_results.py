@@ -320,7 +320,7 @@ def analyze_one_separate(geom_name, rwm_dir, burnin_frac):
     _print_acceptance_rate(rwm_dir)
     xi_chain = _load_samples(rwm_dir)
 
-    config_used = get_config(os.path.join(rwm_dir, 'config_used.yml'))
+    config_used = get_config(os.path.join(rwm_dir, 'config_used.yaml'))
     M, b, f_inf, prior_mean, prior_cov, psi_prior_mean, psi_prior_std = \
         _extract_config_params(config_used)
 
@@ -438,7 +438,7 @@ def analyze_joint(joint_dir, burnin_frac):
     _print_acceptance_rate(rwm_dir)
     xi_chain = _load_samples(rwm_dir)
 
-    config_used = get_config(os.path.join(rwm_dir, 'config_used.yml'))
+    config_used = get_config(os.path.join(rwm_dir, 'config_used.yaml'))
     M, b, f_inf, prior_mean, prior_cov, psi_prior_mean, psi_prior_std = \
         _extract_config_params(config_used)
 
