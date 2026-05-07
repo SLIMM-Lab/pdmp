@@ -154,8 +154,8 @@ _CONFIG_TEMPLATE = {
                     'psi_prior': {
                         'name':
                         'MultivariateNormal',
-                        'mean': [-3.1073, -5.40989, 4.49981],
-                        'cov': [[1.60944, 0.0, 0.0], [0.0, 1.60944, 0.0],
+                        'mean': [-2.64916, -5.40989, 4.49981],
+                        'cov': [[0.693147, 0.0, 0.0], [0.0, 1.60944, 0.0],
                                 [0.0, 0.0, 1.02165]],
                     },
                 },
@@ -538,6 +538,7 @@ for geom_idx, geom_path in enumerate(geom_files):
 observations = onp.concatenate(all_observations)
 
 joint_obs_path = os.path.join(JOINT_DIR, 'observations.dat')
+os.makedirs(JOINT_DIR, exist_ok=True)
 onp.savetxt(joint_obs_path, observations.reshape(1, -1), encoding='utf-8')
 print(f"\nJoint observation vector: shape {observations.shape}  "
       f"({len(geom_files)} geoms × {N_SENSORS_PER_GEOM} sensors × 3 DOF), "
