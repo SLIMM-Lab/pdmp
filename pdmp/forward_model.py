@@ -1101,7 +1101,11 @@ class JaxFemModel(Model):
             os.makedirs(save_dir, exist_ok=True)
             vtk_path = os.path.join(save_dir, 'vtk/u.vtu')
             os.makedirs(os.path.dirname(vtk_path), exist_ok=True)
-            save_sol(self.problem.fe, sol_list[0], vtk_path)
+            E_cell = jnp.mean(param_field, axis=-1)  # (num_cells,)
+            save_sol(self.problem.fe,
+                     sol_list[0],
+                     vtk_path,
+                     cell_infos=[('E', E_cell)])
 
         return np.asarray(y)
 
