@@ -466,11 +466,21 @@ class JaxExponentialRecoveryField:
     Fixed parameter: F_inf (when infer_f_infinity=False)
 
     The field varies along the first spatial dimension and is constant along others.
+
+    Optional interface mode (use_interface=True):
+        The recovery origin is shifted to `x_interface` along the `idx` direction.
+        For coordinates with x_val >= x_interface:
+            F(x) = F_inf * (1 - (1 - rho) * exp(-(x_val - x_interface)/l))
+        For coordinates with x_val < x_interface:
+            F(x) = f_constant   (fixed, not inferred)
     """
     f_infinity: float
     idx: int  # index of spatial dimension for recovery (default 0)
     coefficient_dist: Distribution
     infer_f_infinity: bool = False
+    use_interface: bool = False
+    x_interface: float = 0.0
+    f_constant: float = 0.0
 
     @property
     def dim(self) -> int:
@@ -510,6 +520,13 @@ class JaxExponentialRecoveryField:
         # Note: if l is 0 or negative, this might blow up physically,
         # but mathematically it evaluates. Distribution should constrain l > 0.
 
+        if self.use_interface:
+            x_shifted = x_val - self.x_interface
+            recovery = f_inf * (1.0 -
+                                (1.0 - rho) * jnp.exp(-x_shifted / l_scale))
+            return jnp.where(x_val >= self.x_interface, recovery,
+                             self.f_constant)
+
         return f_inf * (1.0 - (1.0 - rho) * jnp.exp(-x_val / l_scale))
 
     @classmethod
@@ -526,6 +543,11 @@ class JaxExponentialRecoveryField:
             f_infinity: float
             idx: index of spatial dimension for recovery (default 0)
             coefficient_distribution: distribution config
+            use_interface: bool (default False) — shift recovery origin and use
+                a fixed material value on the opposite side of the interface
+            x_interface: float (default 0.0) — interface position along `idx`
+            f_constant: float (default 0.0) — fixed material value for
+                x_val < x_interface (not inferred)
         """
         if config.get('name') != 'JaxExponentialRecoveryField':
             raise ValueError(
@@ -534,6 +556,9 @@ class JaxExponentialRecoveryField:
         f_infinity = float(config.get('f_infinity', 1.0))
         idx = int(config.get('idx', 0))
         infer_f_infinity = bool(config.get('infer_f_infinity', False))
+        use_interface = bool(config.get('use_interface', False))
+        x_interface = float(config.get('x_interface', 0.0))
+        f_constant = float(config.get('f_constant', 0.0))
         n_dim = 3 if infer_f_infinity else 2
 
         dist_config = config.get('coefficient_distribution', {})
@@ -562,7 +587,10 @@ class JaxExponentialRecoveryField:
         return cls(f_infinity=f_infinity,
                    idx=idx,
                    coefficient_dist=dist,
-                   infer_f_infinity=infer_f_infinity)
+                   infer_f_infinity=infer_f_infinity,
+                   use_interface=use_interface,
+                   x_interface=x_interface,
+                   f_constant=f_constant)
 
 
 @dataclass
