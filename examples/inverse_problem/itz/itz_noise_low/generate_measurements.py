@@ -89,6 +89,8 @@ JOINT_DIR = os.path.join(SCRIPT_DIR, 'joint')
 SEPARATE_DIR = os.path.join(SCRIPT_DIR, 'separate')
 
 CACHE_DIR = os.path.join(SCRIPT_DIR, 'cache')
+NPZ_DIR = os.path.join(CACHE_DIR, 'npz')
+VTK_DIR = os.path.join(CACHE_DIR, 'vtk')
 
 geom_files = sorted(glob(os.path.join(GEOM_DIR, '*.npy')))
 if not geom_files:
@@ -98,7 +100,7 @@ print(f"Found {len(geom_files)} geometry files")
 
 # ── FEM solution cache ───────────────────────────────────────────────────────
 def _cache_path(geom_name):
-    return os.path.join(CACHE_DIR, f'{geom_name}_pool{POOL}.npz')
+    return os.path.join(NPZ_DIR, f'{geom_name}_pool{POOL}.npz')
 
 
 def _load_cached_u(geom_name):
@@ -112,11 +114,26 @@ def _load_cached_u(geom_name):
 
 
 def _save_cached_u(geom_name, u):
-    os.makedirs(CACHE_DIR, exist_ok=True)
+    os.makedirs(NPZ_DIR, exist_ok=True)
     onp.savez(_cache_path(geom_name), u=u)
 
 
-# ── Inference config template (shared by joint and separate) ─────────────────
+def _vtk_path(geom_name):
+    return os.path.join(VTK_DIR, f'{geom_name}_pool{POOL}.vtu')
+
+
+def _save_vtk(geom_name, problem, u_sol, E_per_element):
+    from jax_fem.utils import save_sol
+    import jax.numpy as jnp
+
+    path = _vtk_path(geom_name)
+    os.makedirs(VTK_DIR, exist_ok=True)
+    E_cell = jnp.array(E_per_element)
+    save_sol(problem.fe, onp.array(u_sol), path, cell_infos=[('E', E_cell)])
+    print(f"VTK saved to {path}")
+
+
+# ── Inference config templates ────────────────────────────────────────────────
 # Hyperparameter values are calibrated from prior_exploration.py.
 _CONFIG_TEMPLATE = {
     'problem': {
@@ -501,6 +518,12 @@ for geom_idx, geom_path in enumerate(geom_files):
         u_sol = onp.array(sol_list[0])
         _save_cached_u(geom_name, u_sol)
         print(f"FEM: solution cached to {_cache_path(geom_name)}")
+
+    # ── Save VTK (skip if already exists and not recomputing) ────────────────
+    if RECOMPUTE or not os.path.exists(_vtk_path(geom_name)):
+        _save_vtk(geom_name, problem, u_sol, E_per_element)
+    else:
+        print(f"VTK already exists, skipping ({_vtk_path(geom_name)})")
 
     # ── Extract sensor displacements and add noise ───────────────────────────
     sensor_readings = evaluate_sensor_displacements(u_sol, sensor_interpolants)
