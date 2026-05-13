@@ -135,6 +135,36 @@ def _save_vtk(geom_name, problem, u_sol, E_per_element):
 
 # ── Inference config templates ────────────────────────────────────────────────
 # Hyperparameter values are calibrated from prior_exploration.py.
+
+_MODEL_TEMPLATE = {
+    'd_x': 100.0,
+    'd_y': 100.0,
+    'd_z': 220.0,
+    'field': {
+        'coefficient_distribution': {
+            'mean': [0.448315, 4.89906, 0.559249],
+            'cov': [
+                [0.470359, 0.0, 0.0],
+                [0.0, 0.223144, 0.0],
+                [0.0, 0.0, 0.904241],
+            ],
+            'name': 'MultivariateNormal',
+        },
+        'infer_f_infinity': True,
+        'idx': 2,
+        'name': 'JaxExponentialRecoveryField',
+        'use_interface': True,
+        'x_interface': 20,
+        'f_constant': 70,
+    },
+    'h': 15.0,
+    'name': 'JaxFem',
+    'nu': 0.18,
+    'indenter_loc': 110.0,
+    'total_load': [0.0, 60.0, 0.0],
+    'sensors': [],
+}
+
 _CONFIG_TEMPLATE = {
     'problem': {
         'name': 'Transformed',
@@ -177,39 +207,57 @@ _CONFIG_TEMPLATE = {
                     },
                 },
             },
-            'model': {
-                'd_x': 100.0,
-                'd_y': 100.0,
-                'd_z': 220.0,
-                'field': {
-                    'coefficient_distribution': {
-                        'mean': [0.448315, 4.89906, 0.559249],
-                        'cov': [
-                            [0.470359, 0.0, 0.0],
-                            [0.0, 0.223144, 0.0],
-                            [0.0, 0.0, 0.904241],
-                        ],
-                        'name':
-                        'MultivariateNormal',
-                    },
-                    'infer_f_infinity': True,
-                    'idx': 2,
-                    'name': 'JaxExponentialRecoveryField',
-                },
-                'h': 15.0,
-                'name': 'JaxFem',
-                'nu': 0.18,
-                'indenter_loc': 110.0,
-                'total_force': 60.0,
-                'sensors': [],  # populated per geometry or for joint
-            },
+            'model': _MODEL_TEMPLATE,
         },
     },
     'sampler': {
         'name': 'RandomWalkMetropolis',
-        'n_samples': 10000,
+        'n_samples': 2000,
         'sigma': 0.94,
         'x_0': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    },
+    'output': {
+        'dir': '.',
+        'logging': {
+            'level': 'INFO',
+            'log_file': 'inference.log',
+        },
+    },
+    'seed': 0,
+}
+
+_CONFIG_TEMPLATE_STANDARD = {
+    'problem': {
+        'name': 'Transformed',
+        'transformation': 'Affine',
+        'distribution': {
+            'name': 'BayesianInverse',
+            'prior': {
+                'name': 'FromField'
+            },
+            'likelihood': {
+                'name': 'TransformedLikelihood',
+                'transformation': 'Composite',
+                'transformations': [
+                    {'a': 0.0, 'b': 1.0, 'type': 'Sigmoid'},
+                    'Exponential',
+                    {'a': 0.0, 'b': 130, 'type': 'Sigmoid'},
+                ],
+                'indices': [[0], [1], [2]],
+                'likelihood': {
+                    'name': 'GaussianLikelihood',
+                    'observation_file': 'observations.dat',
+                    'sigma': NOISE_STD,
+                },
+            },
+            'model': _MODEL_TEMPLATE,
+        },
+    },
+    'sampler': {
+        'name': 'RandomWalkMetropolis',
+        'n_samples': 2000,
+        'sigma': 0.94,
+        'x_0': [0.0, 0.0, 0.0],
     },
     'output': {
         'dir': '.',
@@ -225,6 +273,14 @@ _CONFIG_TEMPLATE = {
 def _build_config(sensor_specs):
     """Return a deep-copied config dict with the given sensor specs."""
     cfg = copy.deepcopy(_CONFIG_TEMPLATE)
+    cfg['problem']['distribution']['model']['sensors'] = numpy_to_yaml(
+        sensor_specs)
+    return cfg
+
+
+def _build_standard_config(sensor_specs):
+    """Return a deep-copied standard-likelihood config with the given sensor specs."""
+    cfg = copy.deepcopy(_CONFIG_TEMPLATE_STANDARD)
     cfg['problem']['distribution']['model']['sensors'] = numpy_to_yaml(
         sensor_specs)
     return cfg
@@ -576,7 +632,18 @@ onp.savetxt(joint_rwm_obs_path, observations.reshape(1, -1), encoding='utf-8')
 joint_cfg = _build_config(all_sensor_specs)
 joint_cfg_path = os.path.join(joint_rwm_dir, 'config.yaml')
 dump_yaml_custom_format(joint_cfg, joint_cfg_path)
-print(f"Joint config written: {joint_cfg_path}")
+print(f"Joint KO config written: {joint_cfg_path}")
+
+# ── Write joint standard-likelihood output ────────────────────────────────────
+joint_std_dir = os.path.join(JOINT_DIR, 'rwm_standard')
+os.makedirs(joint_std_dir, exist_ok=True)
+onp.savetxt(os.path.join(joint_std_dir, 'observations.dat'),
+            observations.reshape(1, -1),
+            encoding='utf-8')
+joint_std_cfg = _build_standard_config(all_sensor_specs)
+joint_std_cfg_path = os.path.join(joint_std_dir, 'config.yaml')
+dump_yaml_custom_format(joint_std_cfg, joint_std_cfg_path)
+print(f"Joint standard config written: {joint_std_cfg_path}")
 
 print(f"\nDone.")
 print(
