@@ -11,18 +11,20 @@ Produces two consistent datasets from a single loop over the geometry files:
               posterior is the primary scientific goal.
 
 Usage:
-    python generate_measurements.py [N_SENSORS_PER_GEOM] [POOL] [--plot]
-                                    [--noise-std=S] [--seed=N]
+    python generate_measurements.py [options]
 
-    N_SENSORS_PER_GEOM  sensors per geometry realization (default 5)
-    POOL                coarsening factor per axis (default 2, must divide 50,50,110)
-    --plot              save sensor position figures for each geometry
-    --noise-std=S       Gaussian noise std in microns (default 0.01)
-    --seed=N            base RNG seed; geometry i uses seed+i (default 42)
-    --recompute         ignore cached FEM solutions and re-run all solves
+Options:
+    --n-sensors N   sensors per geometry realization (default 5)
+    --pool N        coarsening factor per axis (default 2, must divide 50,50,110)
+    --seed N        base RNG seed; geometry i uses seed+i (default 42)
+    --plot          save sensor position figures for each geometry
+    --recompute     ignore cached FEM solutions and re-run all solves
+
+Edit NOISE_STD and KO_SIGNAL/KO_NOISE/KO_LENGTH at the top of this file to
+adjust observation noise and KO prior settings.
 """
+import argparse
 import copy
-import sys
 import os
 from glob import glob
 
@@ -55,32 +57,41 @@ VOXEL_SIZE = 2.0  # µm
 Z_THRES = 110.0  # µm — load applied above this z-coordinate
 TOTAL_FORCE = 60.0  # mN
 
-# ── CLI arguments ────────────────────────────────────────────────────────────
-# Supports both --flag=value and --flag value forms.
-PLOT = '--plot' in sys.argv
-RECOMPUTE = '--recompute' in sys.argv
-_argv = sys.argv[1:]
-_flags = {}
-_skip_idx = set()
-for _i, _a in enumerate(_argv):
-    if _a.startswith('--') and _a not in ('--plot', '--recompute'):
-        if '=' in _a:
-            _k, _v = _a.lstrip('-').split('=', 1)
-            _flags[_k] = _v
-        elif _i + 1 < len(_argv) and not _argv[_i + 1].startswith('--'):
-            _flags[_a.lstrip('-')] = _argv[_i + 1]
-            _skip_idx.add(_i + 1)
-        else:
-            _flags[_a.lstrip('-')] = None
+NOISE_STD = 0.01  # µm — noise added to observations and assumed in inference
 
-SEED = int(_flags['seed']) if 'seed' in _flags else 42
-NOISE_STD = float(_flags['noise-std']) if 'noise-std' in _flags else 0.01
-_pos = [
-    _a for _i, _a in enumerate(_argv)
-    if not _a.startswith('--') and _i not in _skip_idx
-]
-N_SENSORS_PER_GEOM = int(_pos[0]) if len(_pos) > 0 else 5
-POOL = int(_pos[1]) if len(_pos) > 1 else 2
+# KO prior: physical-space (mean, std) for each hyperparameter
+KO_SIGNAL = (0.1, 0.05)  # (mean, std) of σ_δ (discrepancy amplitude) in µm
+KO_NOISE = (NOISE_STD, 0.005)  # (mean, std) of σ_ε (noise amplitude) in µm
+KO_LENGTH = (150.0, 150.0)  # (mean, std) of ρ_KO (GP correlation length) in µm
+
+# ── CLI arguments ────────────────────────────────────────────────────────────
+_parser = argparse.ArgumentParser(
+    description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+_parser.add_argument('--n-sensors',
+                     type=int,
+                     default=10,
+                     help='sensors per geometry realization (default: 10)')
+_parser.add_argument('--pool',
+                     type=int,
+                     default=1,
+                     help='coarsening factor per axis (default: 1)')
+_parser.add_argument(
+    '--seed',
+    type=int,
+    default=42,
+    help='base RNG seed; geometry i uses seed+i (default: 42)')
+_parser.add_argument('--plot',
+                     action='store_true',
+                     help='save sensor position figures for each geometry')
+_parser.add_argument('--recompute',
+                     action='store_true',
+                     help='ignore cached FEM solutions and re-run all solves')
+_args = _parser.parse_args()
+N_SENSORS_PER_GEOM = _args.n_sensors
+POOL = _args.pool
+SEED = _args.seed
+PLOT = _args.plot
+RECOMPUTE = _args.recompute
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -133,8 +144,49 @@ def _save_vtk(geom_name, problem, u_sol, E_per_element):
     print(f"VTK saved to {path}")
 
 
+# ── Prior helpers ────────────────────────────────────────────────────────────
+
+
+def _lognormal_to_logspace(mean, std):
+    """Convert physical mean/std of a positive quantity to log-space mean/variance.
+
+    If X ~ LogNormal(mu, var), then E[X] = exp(mu + var/2) and
+    Std[X] = E[X] * sqrt(exp(var) - 1).  Inverting:
+        var = log(1 + (std/mean)^2)
+        mu  = log(mean) - var/2
+    """
+    var = onp.log(1.0 + (std / mean)**2)
+    mu = onp.log(mean) - var / 2.0
+    return float(mu), float(var)
+
+
+def _psi_prior_from_physical(signal_mean, signal_std, noise_mean, noise_std,
+                             length_mean, length_std):
+    """Build the KO psi_prior dict from physical-space parameters.
+
+    The KO hyperparameters are stored as:
+        psi = [log(sigma2_delta), log(sigma2_eps), log(rho)]
+
+    where rho is the inverse squared length-scale in the RBF kernel:
+        C_ij = exp(-rho * ||x_i - x_j||^2),   rho = 1 / (2 * l^2)
+    """
+    mu_sig, v_sig = _lognormal_to_logspace(signal_mean, signal_std)
+    mu_noi, v_noi = _lognormal_to_logspace(noise_mean, noise_std)
+    mu_len, v_len = _lognormal_to_logspace(length_mean, length_std)
+    return {
+        'name':
+        'MultivariateNormal',
+        'mean':
+        [2.0 * mu_sig, 2.0 * mu_noi,
+         float(-onp.log(2.0) - 2.0 * mu_len)],
+        'cov': [[4.0 * v_sig, 0.0, 0.0], [0.0, 4.0 * v_noi, 0.0],
+                [0.0, 0.0, 4.0 * v_len]],
+    }
+
+
+_PSI_PRIOR = _psi_prior_from_physical(*KO_SIGNAL, *KO_NOISE, *KO_LENGTH)
+
 # ── Inference config templates ────────────────────────────────────────────────
-# Hyperparameter values are calibrated from prior_exploration.py.
 
 _MODEL_TEMPLATE = {
     'd_x': 100.0,
@@ -148,7 +200,8 @@ _MODEL_TEMPLATE = {
                 [0.0, 0.223144, 0.0],
                 [0.0, 0.0, 0.904241],
             ],
-            'name': 'MultivariateNormal',
+            'name':
+            'MultivariateNormal',
         },
         'infer_f_infinity': True,
         'idx': 2,
@@ -198,13 +251,7 @@ _CONFIG_TEMPLATE = {
                     'name': 'KOGaussianLikelihood',
                     'observation_file': 'observations.dat',
                     'kernel': 'isotropic',
-                    'psi_prior': {
-                        'name':
-                        'MultivariateNormal',
-                        'mean': [-2.64916, -5.40989, 4.49981],
-                        'cov': [[0.693147, 0.0, 0.0], [0.0, 1.60944, 0.0],
-                                [0.0, 0.0, 1.02165]],
-                    },
+                    'psi_prior': _PSI_PRIOR,
                 },
             },
             'model': _MODEL_TEMPLATE,
@@ -236,12 +283,22 @@ _CONFIG_TEMPLATE_STANDARD = {
                 'name': 'FromField'
             },
             'likelihood': {
-                'name': 'TransformedLikelihood',
-                'transformation': 'Composite',
+                'name':
+                'TransformedLikelihood',
+                'transformation':
+                'Composite',
                 'transformations': [
-                    {'a': 0.0, 'b': 1.0, 'type': 'Sigmoid'},
+                    {
+                        'a': 0.0,
+                        'b': 1.0,
+                        'type': 'Sigmoid'
+                    },
                     'Exponential',
-                    {'a': 0.0, 'b': 130, 'type': 'Sigmoid'},
+                    {
+                        'a': 0.0,
+                        'b': 130,
+                        'type': 'Sigmoid'
+                    },
                 ],
                 'indices': [[0], [1], [2]],
                 'likelihood': {
@@ -584,15 +641,16 @@ for geom_idx, geom_path in enumerate(geom_files):
     # ── Extract sensor displacements and add noise ───────────────────────────
     sensor_readings = evaluate_sensor_displacements(u_sol, sensor_interpolants)
 
-    obs_parts = []
+    u_parts = []
     for reading in sensor_readings:
         u = onp.array(reading['u'])
-        obs_parts.append(u.ravel())
+        u_parts.append(u)
         print(f"  {reading['name']}: {u.shape[0]} pts, "
               f"|u| ∈ [{onp.linalg.norm(u, axis=1).min():.4e}, "
               f"{onp.linalg.norm(u, axis=1).max():.4e}] µm")
 
-    obs_i = onp.concatenate(obs_parts)
+    u_all = onp.vstack(u_parts)  # (n_pts_total, 3)
+    obs_i = u_all.T.ravel()  # [all_ux, all_uy, all_uz] — matches _eval_obs
     noise_rng = onp.random.default_rng(SEED + geom_idx + 1000)
     obs_i = obs_i + noise_rng.normal(0.0, NOISE_STD, obs_i.shape)
 
@@ -611,10 +669,12 @@ for geom_idx, geom_path in enumerate(geom_files):
           f"({obs_i.shape[0]} DOFs, {len(sep_sensor_specs)} sensor groups)")
 
     all_sensor_specs.extend(sensor_specs)
-    all_observations.append(obs_i)
+    # all_observations.append(obs_i)
+    all_observations.append(u_all)
 
 # ── Write joint output ───────────────────────────────────────────────────────
-observations = onp.concatenate(all_observations)
+observations = np.array(all_observations).T.ravel()
+# observations = onp.concatenate(all_observations_flat)
 
 joint_obs_path = os.path.join(JOINT_DIR, 'observations.dat')
 os.makedirs(JOINT_DIR, exist_ok=True)
