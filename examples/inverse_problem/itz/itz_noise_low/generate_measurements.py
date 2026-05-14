@@ -669,12 +669,13 @@ for geom_idx, geom_path in enumerate(geom_files):
           f"({obs_i.shape[0]} DOFs, {len(sep_sensor_specs)} sensor groups)")
 
     all_sensor_specs.extend(sensor_specs)
-    # all_observations.append(obs_i)
     all_observations.append(u_all)
 
 # ── Write joint output ───────────────────────────────────────────────────────
-observations = np.array(all_observations).T.ravel()
-# observations = onp.concatenate(all_observations_flat)
+# vstack → (G*P, 3), then .T.ravel() → [all ux, all uy, all uz] with geometries
+# concatenated geom-major within each DOF block.  Matches _eval_obs ordering
+# in pdmp/forward_model.py (JaxFemModel.get_obs_locs is also geom-major).
+observations = np.vstack(all_observations).T.ravel()
 
 joint_obs_path = os.path.join(JOINT_DIR, 'observations.dat')
 os.makedirs(JOINT_DIR, exist_ok=True)
