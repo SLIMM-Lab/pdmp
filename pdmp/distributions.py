@@ -2672,6 +2672,7 @@ def get_likelihood(
         else:
             n_components = model.get_dim_out() // np.atleast_2d(
                 x_locs).shape[0]
+        n_groups = config.get('n_groups', 1)
         kernel = config.get('kernel', 'ard')
         fixed_psi = config.get('fixed_psi', None)
         return KOGaussianLikelihood(model=model,
@@ -2680,6 +2681,7 @@ def get_likelihood(
                                     psi_prior=psi_prior,
                                     rng=rng,
                                     n_components=n_components,
+                                    n_groups=n_groups,
                                     kernel=kernel,
                                     fixed_psi=fixed_psi)
     elif config['name'] == 'FlatLikelihood':

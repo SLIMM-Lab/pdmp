@@ -76,15 +76,18 @@ class KOGaussianLikelihood(Likelihood):
                  rng: np.random.Generator = None,
                  seed: int = None,
                  n_components: int = 1,
+                 n_groups: int = 1,
                  kernel: str = "ard",
                  fixed_psi: dict = None):
         """
         Args:
             model: Forward model providing eval/eval_grad.
             u_obs: (n_settings, m) observation matrix.
-            x_locs: (m, d_x) or (m,) sensor locations. When n_components > 1,
-                    x_locs contains only the *base* locations (m_base, d_x)
-                    where m_base = m // n_components.
+            x_locs: (n_groups * P, d_x) sensor locations.  When n_groups == 1
+                    this is just (P, d_x) — the *base* locations shared by
+                    all n_components blocks.  When n_groups > 1 the rows are
+                    expected geom-major: rows ``[g*P : (g+1)*P]`` give the
+                    P sensor coordinates for group g.
             psi_prior: Distribution over the *free* psi parameters (i.e. those
                        not listed in ``fixed_psi``).  May be ``None`` when all
                        psi parameters are fixed.  Stored as attribute for prior
@@ -96,6 +99,15 @@ class KOGaussianLikelihood(Likelihood):
                           block_diag(C_z, ..., C_z) with n_components blocks,
                           so different components at the same sensor are exactly
                           independent while spatial correlation is preserved.
+            n_groups: Number of independent measurement groups (e.g. distinct
+                      microstructure realizations) sharing the same KO
+                      hyperparameters but with independent discrepancy GP
+                      realizations.  When > 1 each ``n_components`` block is
+                      itself split into ``n_groups`` sub-blocks of size
+                      ``P = m / (n_components * n_groups)``.  ``x_locs`` is
+                      expected with shape ``(n_groups * P, d_x)`` in geom-major
+                      order; per-group kernels are evaluated on each
+                      ``(P, d_x)`` slice.
             kernel: ``"ard"`` (default) — one length-scale per spatial dimension;
                     ``"isotropic"`` — a single shared length-scale.
             fixed_psi: Optional dict of ``{name: log_value}`` pairs that fix psi
@@ -112,6 +124,7 @@ class KOGaussianLikelihood(Likelihood):
         self.n_obs = self._u_obs.shape[0]
         self._m = self._u_obs.shape[1]  # measurement dimension per setting
         self._n_components = n_components
+        self._n_groups = n_groups
 
         if kernel not in ("ard", "isotropic"):
             raise ValueError(f"kernel must be 'ard' or 'isotropic', got '{kernel}'.")
@@ -124,20 +137,18 @@ class KOGaussianLikelihood(Likelihood):
             self._x_locs = self._x_locs.T
         self._d_x = self._x_locs.shape[1]
 
-        if n_components > 1:
-            m_base = self._x_locs.shape[0]
-            if self._m % n_components != 0:
-                raise ValueError(
-                    f"m={self._m} must be divisible by n_components={n_components}.")
-            if m_base != self._m // n_components:
-                raise ValueError(
-                    f"With n_components={n_components}, x_locs must have "
-                    f"{self._m // n_components} rows (got {m_base}).")
-        else:
-            if self._x_locs.shape[0] != self._m:
-                raise ValueError(
-                    f"Number of sensor locations ({self._x_locs.shape[0]}) must "
-                    f"match measurement dimension ({self._m}).")
+        # Total measurement count factors as m = n_components * n_groups * P
+        denom = n_components * n_groups
+        if self._m % denom != 0:
+            raise ValueError(
+                f"m={self._m} must be divisible by n_components*n_groups={denom}.")
+        self._P = self._m // denom  # measurements per (component, group) block
+        expected_x_rows = n_groups * self._P
+        if self._x_locs.shape[0] != expected_x_rows:
+            raise ValueError(
+                f"With n_components={n_components}, n_groups={n_groups}, "
+                f"x_locs must have {expected_x_rows} rows "
+                f"(got {self._x_locs.shape[0]}).")
 
         self._n_rho = 1 if self._isotropic else self._d_x
         self._n_psi = 2 + self._n_rho  # total psi count (fixed + free)
@@ -165,9 +176,15 @@ class KOGaussianLikelihood(Likelihood):
 
         self._constant = -0.5 * self._m * np.log(2.0 * np.pi)
 
-        # Pre-compute per-dimension squared differences on the base locations.
-        # Shape (d_x, m_base, m_base) where m_base = m // n_components (or m).
-        self._sq_diff = _squared_diff_per_dim(self._x_locs)
+        # Reshape sensor locations into per-group views and cache per-group
+        # per-dim squared differences. Shapes:
+        #   self._x_locs_g    : (n_groups, P, d_x)
+        #   self._sq_diff_g   : (n_groups, d_x, P, P)
+        self._x_locs_g = self._x_locs.reshape(n_groups, self._P, self._d_x)
+        self._sq_diff_g = np.stack(
+            [_squared_diff_per_dim(self._x_locs_g[g]) for g in range(n_groups)],
+            axis=0,
+        )
 
         # Store psi prior for use by get_target()
         self.psi_prior = psi_prior
@@ -206,37 +223,71 @@ class KOGaussianLikelihood(Likelihood):
             return np.repeat(rho, self._d_x)
         return rho
 
-    def _build_cholesky(self, sigma2_delta, sigma2_eps, rho):
-        """Build Sigma and return (L, Sigma_inv, C_delta, C_z).
+    def _build_per_group(self, sigma2_delta, sigma2_eps, rho):
+        """Build per-group kernel/Cholesky/inverse arrays.
 
-        rho: (n_rho,) — (1,) for isotropic, (d_x,) for ARD.
-        C_z is the base (m_base × m_base) kernel matrix.  When n_components=1
-        C_delta == C_z; otherwise C_delta = block_diag(C_z, ..., C_z).
+        Returns three arrays each of shape (n_groups, P, P):
+            L_g    : lower Cholesky factor of Σ_g = σ²_δ C_g(ρ) + σ²_ε I_P
+            Sinv_g : Σ_g^{-1}
+            C_g    : kernel matrix at group g's sensor locations
+
+        Every (component d, group g) block of the full covariance shares
+        these factors (only the realization of δ differs across blocks,
+        not the hyperparameters).
         """
-        C_z = rbf_kernel_matrix(self._x_locs, self._expand_rho(rho))
-        if self._n_components > 1:
-            C_delta = sla.block_diag(*[C_z] * self._n_components)
-        else:
-            C_delta = C_z
-        Sigma = sigma2_delta * C_delta + sigma2_eps * np.eye(self._m)
-        L, _ = _safe_cholesky(Sigma, name="KO_Sigma")
-        Sigma_inv = sla.cho_solve((L, True), np.eye(self._m))
-        return L, Sigma_inv, C_delta, C_z
+        rho_full = self._expand_rho(rho)
+        n_groups = self._n_groups
+        P = self._P
+        eye_P = np.eye(P)
+        C_g = np.empty((n_groups, P, P))
+        L_g = np.empty((n_groups, P, P))
+        Sinv_g = np.empty((n_groups, P, P))
+        for g in range(n_groups):
+            C_g[g] = rbf_kernel_matrix(self._x_locs_g[g], rho_full)
+            Sigma_g = sigma2_delta * C_g[g] + sigma2_eps * eye_P
+            L, _ = _safe_cholesky(Sigma_g, name="KO_Sigma_g")
+            L_g[g] = L
+            Sinv_g[g] = sla.cho_solve((L, True), eye_P)
+        return L_g, Sinv_g, C_g
+
+    def _per_group_dC_drho(self, C_g: np.ndarray) -> np.ndarray:
+        """Per-group, per-ρ derivatives of the kernel.
+
+        Returns shape (n_groups, n_rho, P, P) where entry [g, k] is
+        dC_g/dρ_k (ARD) or sum over spatial dims of dC_g/dρ_full_k (isotropic).
+        """
+        n_groups = self._n_groups
+        out = np.empty((n_groups, self._n_rho, self._P, self._P))
+        for g in range(n_groups):
+            per_dim = -self._sq_diff_g[g] * C_g[g]  # (d_x, P, P)
+            if self._isotropic:
+                out[g, 0] = per_dim.sum(axis=0)
+            else:
+                out[g] = per_dim
+        return out
 
     # ----- log_density -----
 
     def log_density(self, params: np.ndarray,
                     idx: int = None) -> Union[float, np.ndarray]:
         theta, sigma2_delta, sigma2_eps, rho = self._split_params(params)
-        L, _, _, _ = self._build_cholesky(sigma2_delta, sigma2_eps, rho)
-        log_det = 2.0 * np.sum(np.log(np.diag(L)))
+        L_g, _, _ = self._build_per_group(sigma2_delta, sigma2_eps, rho)
+
+        # log|Σ| = n_components · Σ_g 2·log diag(L_g).sum()
+        log_det = self._n_components * 2.0 * np.sum(
+            np.log(np.array([np.diag(L_g[g]) for g in range(self._n_groups)])))
 
         settings = range(self.n_obs) if idx is None else [idx]
         ll = 0.0
         for i in settings:
             r = self._u_obs[i] - self._model.eval(theta, idx=i)
-            alpha = sla.cho_solve((L, True), r)
-            ll += self._constant - 0.5 * log_det - 0.5 * r @ alpha
+            r_dgp = r.reshape(self._n_components, self._n_groups, self._P)
+            quad = 0.0
+            for g in range(self._n_groups):
+                R = r_dgp[:, g, :].T  # (P, n_components)
+                alpha = sla.cho_solve((L_g[g], True), R)  # (P, n_components)
+                quad += float(np.sum(R * alpha))
+            ll += self._constant - 0.5 * log_det - 0.5 * quad
         return ll
 
     # ----- grad_log_density -----
@@ -255,8 +306,24 @@ class KOGaussianLikelihood(Likelihood):
     def grad_log_density(self, params: np.ndarray,
                          idx: int = None) -> np.ndarray:
         theta, sigma2_delta, sigma2_eps, rho = self._split_params(params)
-        L, Sigma_inv, C_delta, C_z = self._build_cholesky(sigma2_delta,
-                                                           sigma2_eps, rho)
+        L_g, Sinv_g, C_g = self._build_per_group(sigma2_delta, sigma2_eps, rho)
+        dC_g = self._per_group_dC_drho(C_g)  # (n_groups, n_rho, P, P)
+
+        n_components = self._n_components
+        n_groups = self._n_groups
+        P = self._P
+
+        # Traces shared across components and settings.  For the full Σ
+        # (block-diagonal in n_components × n_groups blocks of size P) we have
+        #   tr(Σ^{-1} dΣ/dψ) = n_components · Σ_g tr(Σ_g^{-1} dΣ_g/dψ)
+        tr_SinvC_g  = np.array([np.sum(Sinv_g[g] * C_g[g])
+                                 for g in range(n_groups)])
+        tr_Sinv_g   = np.array([np.trace(Sinv_g[g]) for g in range(n_groups)])
+        tr_Sinv_dC_g = np.einsum('gpq,gkqp->gk', Sinv_g, dC_g)   # (n_groups, n_rho)
+
+        sum_tr_SinvC   = n_components * float(tr_SinvC_g.sum())
+        sum_tr_Sinv    = n_components * float(tr_Sinv_g.sum())
+        sum_tr_Sinv_dC = n_components * tr_Sinv_dC_g.sum(axis=0)  # (n_rho,)
 
         settings = range(self.n_obs) if idx is None else [idx]
 
@@ -265,49 +332,35 @@ class KOGaussianLikelihood(Likelihood):
         grad_log_s2e = 0.0
         grad_log_rho = np.zeros(self._n_rho)
 
-        # Pre-compute traces (shared across settings)
-        # tr(Sigma_inv @ C_delta) via Frobenius inner product
-        tr_SinvC = np.sum(Sigma_inv * C_delta)
-        tr_Sinv = np.trace(Sigma_inv)
-
-        # Per-dimension kernel derivatives and their traces.
-        # For the block-diagonal case dC/d(rho_k) is also block-diagonal with
-        # blocks equal to the base-kernel derivative.
-        # For isotropic kernels, aggregate all d_x per-dimension matrices into
-        # one (dC/d(rho) = sum_k dC/d(rho_k)) so the gradient loop is unified.
-        dC_per_dim = []
-        for k in range(self._d_x):
-            if self._n_components > 1:
-                dCk_z = -self._sq_diff[k] * C_z  # (m_base, m_base)
-                dCk = sla.block_diag(*[dCk_z] * self._n_components)
-            else:
-                dCk = -self._sq_diff[k] * C_delta  # dC/d(rho_k)
-            dC_per_dim.append(dCk)
-
-        if self._isotropic:
-            dC_drho = [sum(dC_per_dim)]          # single (m, m) aggregate
-        else:
-            dC_drho = dC_per_dim                 # d_x (m, m) matrices
-
-        tr_Sinv_dC = np.array([np.sum(Sigma_inv * dCk) for dCk in dC_drho])
-        rho_raw = rho  # (n_rho,)
-
         for i in settings:
             r = self._u_obs[i] - self._model.eval(theta, idx=i)
-            alpha = Sigma_inv @ r
+            r_dgp = r.reshape(n_components, n_groups, P)
 
-            # theta gradient
-            grad_theta += self._theta_grad_single(theta, alpha, i)
+            alpha_full = np.empty(self._m)
+            alpha_dgp = alpha_full.reshape(n_components, n_groups, P)
 
-            # psi gradients (in log-space, chain rule: d/d(log x) = x * d/dx)
-            aCa = alpha @ C_delta @ alpha
-            grad_log_s2d += sigma2_delta * 0.5 * (-tr_SinvC + aCa)
-            grad_log_s2e += sigma2_eps * 0.5 * (-tr_Sinv + alpha @ alpha)
+            aCa_sum = 0.0
+            aa_sum = 0.0
+            a_dC_a_sum = np.zeros(self._n_rho)
 
-            for ki, dCk in enumerate(dC_drho):
-                adCa = alpha @ dCk @ alpha
-                grad_log_rho[ki] += (rho_raw[ki] * sigma2_delta * 0.5 *
-                                     (-tr_Sinv_dC[ki] + adCa))
+            for g in range(n_groups):
+                R = r_dgp[:, g, :].T            # (P, n_components)
+                Ag = Sinv_g[g] @ R              # (P, n_components)
+                alpha_dgp[:, g, :] = Ag.T
+
+                # α^T C_g α and α^T α, summed across n_components
+                aCa_sum += float(np.sum(Ag * (C_g[g] @ Ag)))
+                aa_sum  += float(np.sum(Ag * Ag))
+                # α^T dC_g/dρ_k α per ρ-index, summed across n_components
+                a_dC_a_sum += np.einsum('pc,kpq,qc->k', Ag, dC_g[g], Ag)
+
+            grad_theta += self._theta_grad_single(theta, alpha_full, i)
+
+            grad_log_s2d += sigma2_delta * 0.5 * (-sum_tr_SinvC + aCa_sum)
+            grad_log_s2e += sigma2_eps  * 0.5 * (-sum_tr_Sinv  + aa_sum)
+            for k in range(self._n_rho):
+                grad_log_rho[k] += (rho[k] * sigma2_delta * 0.5 *
+                                     (-sum_tr_Sinv_dC[k] + a_dC_a_sum[k]))
 
         grad_psi_full = np.concatenate([[grad_log_s2d, grad_log_s2e], grad_log_rho])
         return np.concatenate([grad_theta, grad_psi_full[self._free_psi_mask]])
