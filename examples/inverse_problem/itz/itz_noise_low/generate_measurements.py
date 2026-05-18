@@ -26,6 +26,7 @@ adjust observation noise and KO prior settings.
 import argparse
 import copy
 import os
+import re
 from glob import glob
 
 import numpy as onp
@@ -86,12 +87,49 @@ _parser.add_argument('--plot',
 _parser.add_argument('--recompute',
                      action='store_true',
                      help='ignore cached FEM solutions and re-run all solves')
+_parser.add_argument('--cpus-per-task',
+                     type=int,
+                     default=4,
+                     help='SLURM --cpus-per-task and OMP_NUM_THREADS (default: 4)')
+_parser.add_argument('--mem-per-cpu',
+                     type=str,
+                     default='3968M',
+                     help='SLURM --mem-per-cpu (default: 3968M)')
+_parser.add_argument('--time',
+                     type=str,
+                     default='3:59:00',
+                     help='SLURM --time wall-clock limit (default: 3:59:00)')
 _args = _parser.parse_args()
 N_SENSORS_PER_GEOM = _args.n_sensors
 POOL = _args.pool
 SEED = _args.seed
 PLOT = _args.plot
 RECOMPUTE = _args.recompute
+SLURM_CPUS = _args.cpus_per_task
+SLURM_MEM = _args.mem_per_cpu
+SLURM_TIME = _args.time
+
+# ── Slurm script updater ─────────────────────────────────────────────────────
+
+def _update_slurm_scripts(cpus, mem, time):
+    """Rewrite SLURM resource lines and OMP_NUM_THREADS in all submit_*.sh files."""
+    slurm_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'slurm')
+    scripts = sorted(glob(os.path.join(slurm_dir, 'submit_*.sh')))
+    if not scripts:
+        print("No submit_*.sh scripts found — skipping SLURM update.")
+        return
+    for path in scripts:
+        with open(path) as fh:
+            text = fh.read()
+        text = re.sub(r'(#SBATCH --cpus-per-task=)\S+', rf'\g<1>{cpus}', text)
+        text = re.sub(r'(#SBATCH --mem-per-cpu=)\S+', rf'\g<1>{mem}', text)
+        text = re.sub(r'(#SBATCH --time=)\S+', rf'\g<1>{time}', text)
+        text = re.sub(r'(--env "OMP_NUM_THREADS=)\d+(")', rf'\g<1>{cpus}\2', text)
+        with open(path, 'w') as fh:
+            fh.write(text)
+        print(f"  SLURM: updated {os.path.basename(path)} "
+              f"(cpus={cpus}, mem={mem}, time={time})")
+
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -252,6 +290,8 @@ _CONFIG_TEMPLATE = {
                     'observation_file': 'observations.dat',
                     'kernel': 'isotropic',
                     'psi_prior': _PSI_PRIOR,
+                    # n_groups is filled in below for the joint config only;
+                    # separate runs keep the default (1).
                 },
             },
             'model': _MODEL_TEMPLATE,
@@ -691,6 +731,10 @@ joint_rwm_obs_path = os.path.join(joint_rwm_dir, 'observations.dat')
 onp.savetxt(joint_rwm_obs_path, observations.reshape(1, -1), encoding='utf-8')
 
 joint_cfg = _build_config(all_sensor_specs)
+# Each geometry contributes an independent discrepancy GP realization sharing
+# the KO hyperparameters; the likelihood block-diagonalizes over (DOF × geom).
+joint_cfg['problem']['distribution']['likelihood']['likelihood']['n_groups'] = \
+    len(geom_files)
 joint_cfg_path = os.path.join(joint_rwm_dir, 'config.yaml')
 dump_yaml_custom_format(joint_cfg, joint_cfg_path)
 print(f"Joint KO config written: {joint_cfg_path}")
@@ -711,3 +755,5 @@ print(
     f"  joint:    {len(geom_files)} geometries, {len(observations)} total DOFs"
 )
 print(f"  separate: {len(geom_files)} folders under separate/")
+
+_update_slurm_scripts(SLURM_CPUS, SLURM_MEM, SLURM_TIME)
