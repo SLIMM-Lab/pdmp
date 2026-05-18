@@ -16,14 +16,24 @@ $$p(\mathbf{y} \mid \theta, \psi) = \mathcal{N}\!\left(\eta(\theta),\; \Sigma(\p
 
 The hyperparameter vector $\psi = (\sigma^2_\delta, \sigma^2_\varepsilon, \rho_\delta)$ is sampled jointly with $\theta$.
 
+### Multi-geometry (per-group) extension
+
+When observations come from $G$ distinct measurement campaigns (e.g. different microstructure realizations), the discrepancy at the same spatial point in geometry $g$ and geometry $g'$ is physically unrelated — both are independent draws from the same prior GP, not a single shared realization. Using a single pooled covariance matrix in that setting causes the length-scale $\rho$ to collapse toward a nugget (see `JOINT_KO_DISCUSSION.md`).
+
+The correct model assigns **independent GP realizations** $\delta_g$ per group while **sharing the hyperparameters** $\psi$. After marginalising all $\delta_g$, the likelihood covariance is block-diagonal over (output component $d$, geometry $g$):
+
+$$\Sigma = \operatorname{block-diag}_{d=1,\ldots,D;\; g=1,\ldots,G}\!\bigl(\sigma^2_\delta\, C_g(\rho) + \sigma^2_\varepsilon\, I_P\bigr)$$
+
+where $C_g(\rho)$ is the RBF kernel evaluated at the $P$ sensor coordinates of group $g$ (which may differ across groups). The parameter space remains $\psi = (\sigma^2_\delta, \sigma^2_\varepsilon, \rho)$ — three scalar hyperparameters shared across all $D \cdot G$ blocks. Enable this with `n_groups=G` in the constructor.
+
 ## Comparison with standard calibration
 
-| Aspect | Standard | K&O |
-|---|---|---|
-| Likelihood covariance | $\sigma^2_\varepsilon I$ | $\sigma^2_\delta C_\delta(\rho) + \sigma^2_\varepsilon I$ |
-| Sampled parameters | $\theta$ | $(\theta,\, \psi)$ |
-| Log-likelihood cost | $O(m)$ | $O(m^3)$ via Cholesky ($m$ = sensor count) |
-| Config name | `GaussianLikelihood` | `KOGaussianLikelihood` |
+| Aspect | Standard | K&O (single group) | K&O (G groups) |
+|---|---|---|---|
+| Likelihood covariance | $\sigma^2_\varepsilon I$ | $\sigma^2_\delta C(\rho) + \sigma^2_\varepsilon I$ | block-diag, one $P \times P$ block per $(d,g)$ |
+| Sampled parameters | $\theta$ | $(\theta,\, \psi)$ | $(\theta,\, \psi)$ — same three hyperparameters |
+| Cholesky cost | $O(m)$ | $O(m^3)$ | $O(D \cdot G \cdot P^3)$ — much cheaper when $P \ll m$ |
+| Config name | `GaussianLikelihood` | `KOGaussianLikelihood` | `KOGaussianLikelihood` with `n_groups: G` |
 
 ## Kernel
 
@@ -90,6 +100,32 @@ output:
 seed: 42
 ```
 
+### Multi-geometry YAML example
+
+For joint inference over G=10 microstructure realizations with 3 displacement components and P=10 sensors per geometry:
+
+```yaml
+  likelihood:
+    name: KOGaussianLikelihood
+    observation_file: observations.dat   # shape (1, 3*10*10) = (1, 300)
+    n_components: 3                      # ux, uy, uz treated independently
+    n_groups: 10                         # one independent δ_g per geometry
+    # x_locs shape: (n_groups * P, 3) = (100, 3), geom-major order
+    # x_locs: loaded separately and passed via Python API (see below)
+    psi_prior:
+      name: MultivariateNormal
+      # same three hyperparameters — shared across all 30 blocks
+      mean: [-4.0, -9.2, 1.5]
+      cov: [[4.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 4.0]]
+    # Optionally fix a hyperparameter that the data cannot identify:
+    # fixed_psi:
+    #   log_s2e: -9.2   # = 2 * log(0.01), fixes noise to sigma_eps = 0.01
+```
+
+When `fixed_psi` is used the fixed entries are removed from the sampler's parameter vector; `x_0` and the `psi_prior` must cover only the **free** parameters.
+
 ### `x_locs` resolution
 
 | Situation | How `x_locs` is obtained |
@@ -99,6 +135,8 @@ seed: 42
 | Neither | `ValueError` at construction |
 
 For `JaxFemModel` with 3D sensors, pass `x_locs` explicitly as an `(m, 3)` array of sensor coordinates. Each sensor point is treated as one location; the kernel is built over physical coordinates, not DOFs.
+
+For `n_groups > 1` the array must have shape `(n_groups * P, d_x)` in **geom-major order**: rows `[g*P : (g+1)*P]` are the P sensor coordinates for group g. The total observation length must satisfy `m = n_components * n_groups * P`.
 
 ### `psi_prior` mean: practical guidance
 
@@ -142,7 +180,9 @@ Assemble $\Sigma = \sigma^2_\delta C_\delta + \sigma^2_\varepsilon I$.
 Sigma = build_noise_covariance(x, rho, sigma2_delta=0.01, sigma2_eps=0.001)
 ```
 
-**`KOGaussianLikelihood(model, u_obs, x_locs, psi_prior)`**
+**`KOGaussianLikelihood(model, u_obs, x_locs, psi_prior, n_components, n_groups, kernel, fixed_psi)`**
+
+Single-geometry (baseline) usage:
 
 ```python
 from pdmp.distributions import MultivariateNormal, JointDistribution, Posterior
@@ -162,6 +202,45 @@ ko_lik = KOGaussianLikelihood(model=model, u_obs=u_obs,
 params = np.array([2.0, 3.0, -4.6, -6.9, 1.6])
 ll      = ko_lik.log_density(params)
 grad_ll = ko_lik.grad_log_density(params)   # shape (5,)
+```
+
+Multi-geometry usage (G=10 groups, D=3 components, P=10 sensors per geometry):
+
+```python
+G, D, P = 10, 3, 10
+
+# u_obs shape: (1, D*G*P) = (1, 300), layout [all ux, all uy, all uz], geom-major within each DOF
+u_obs = np.loadtxt("observations.dat").reshape(1, -1)
+
+# x_locs shape: (G*P, 3) in geom-major order: rows [g*P:(g+1)*P] are group g's sensors
+x_locs = np.vstack([sensor_coords_per_geom[g] for g in range(G)])  # (100, 3)
+
+psi_prior = MultivariateNormal(mean=np.array([-4., -9.2, 1.5]),
+                               cov=np.diag([4.0, 1.0, 4.0]))
+ko_lik = KOGaussianLikelihood(
+    model=model,
+    u_obs=u_obs,
+    x_locs=x_locs,
+    psi_prior=psi_prior,
+    n_components=D,
+    n_groups=G,
+)
+
+# params = [theta ..., log_s2d, log_s2e, log_rho]
+ll      = ko_lik.log_density(params)
+grad_ll = ko_lik.grad_log_density(params)
+```
+
+To fix a hyperparameter (e.g. noise level is known):
+
+```python
+ko_lik = KOGaussianLikelihood(
+    ...,
+    fixed_psi={"log_s2e": 2 * np.log(0.01)},  # fixes sigma_eps = 0.01
+    psi_prior=MultivariateNormal(mean=np.array([-4., 1.5]),
+                                 cov=4.0 * np.eye(2)),  # only log_s2d and log_rho
+)
+# params = [theta ..., log_s2d, log_rho]  — log_s2e absent from vector
 ```
 
 ### Assembling the posterior manually
@@ -221,13 +300,17 @@ The example uses a 1D bar (`PiecewiseConstantModel`) with `n_params=2` and 10 se
 
 ## Implementation notes
 
-- **Numerical stability**: the kernel covariance $\Sigma$ is factored via `_safe_cholesky` (with automatic jitter escalation and eigenvalue fallback), the same utility used by `MultivariateNormal`.
-- **Gradient computation**: gradients w.r.t. $\theta$ use the model's VJP path (`linearize` → `eval_vjp` → `eval_grad` in priority order, matching `GaussianLikelihood`). Gradients w.r.t. $\tilde\psi$ are computed analytically using the trace identity $\operatorname{tr}(A B) = \sum_{ij} A_{ij} B_{ji}$.
+- **Numerical stability**: each per-group block $\Sigma_g$ is factored via `_safe_cholesky` (with automatic jitter escalation and eigenvalue fallback), the same utility used by `MultivariateNormal`.
+- **Gradient computation**: gradients w.r.t. $\theta$ use the model's VJP path (`linearize` → `eval_vjp` → `eval_grad` in priority order, matching `GaussianLikelihood`). Gradients w.r.t. $\tilde\psi$ are computed analytically using the trace identity $\operatorname{tr}(A B) = \sum_{ij} A_{ij} B_{ji}$ applied per-group and summed.
 - **Hessian**: finite differences of `grad_log_density`, consistent with `GaussianLikelihood`.
-- **Backwards compatibility**: no existing classes are modified. `GaussianLikelihood` and all existing configs work unchanged.
+- **Fixed-psi parameters**: removed from the sampler's parameter vector. The `psi_prior` and `x_0` must be dimensioned for only the **free** entries. Valid names for `fixed_psi`: `"log_s2d"`, `"log_s2e"`, `"log_rho"` (1-D or isotropic), or `"log_rho_0"`, `"log_rho_1"`, … (ARD).
+- **Backwards compatibility**: `n_groups=1` (default) recovers the original single-geometry behavior exactly. `GaussianLikelihood` and all existing configs work unchanged.
+- **σ²_ε identifiability with many groups**: when the inferred length-scale is comparable to the domain size, the per-group GP can absorb i.i.d. noise as a smooth component, causing σ²_ε to under-estimate the true noise. Mitigations: tighten the prior on `log_s2e`, use `fixed_psi` to pin it to the known noise level, increase `--n-sensors`, or use a shorter-scale prior on `log_rho`. See `JOINT_KO_DISCUSSION.md` for a detailed diagnosis.
 
 ## See also
 
 - `pdmp/discrepancy.py` — kernel functions and `KOGaussianLikelihood` implementation
 - `tests/test_discrepancy.py` — unit tests including gradient checks against finite differences
+- `tests/test_grouped_ko_recovery.py` — MAP recovery test for the multi-geometry likelihood
+- `examples/inverse_problem/itz/itz_noise_low/JOINT_KO_DISCUSSION.md` — motivation, pathology analysis, and post-implementation observations for the per-group extension
 - `ko_calibration_impl.md` — design notes and statistical derivation

@@ -313,3 +313,122 @@ class TestKOMultipleSettings:
         grad_fd = _fd_gradient(lik.log_density, params)
         np.testing.assert_allclose(grad_analytic, grad_fd, rtol=1e-4,
                                    atol=1e-7)
+
+
+# ---------------------------------------------------------------------------
+# Per-group block-diagonal KO likelihood (n_groups > 1)
+# ---------------------------------------------------------------------------
+
+class TestKOGroupedDiscrepancy:
+
+    def test_n_groups_one_matches_default(self, simple_setup):
+        """Explicit n_groups=1 must match default (1) behavior numerically."""
+        model, u_obs, x_obs, psi_prior, rng = simple_setup
+        lik_default = KOGaussianLikelihood(
+            model=model, u_obs=u_obs, x_locs=x_obs,
+            psi_prior=psi_prior, rng=rng,
+        )
+        lik_explicit = KOGaussianLikelihood(
+            model=model, u_obs=u_obs, x_locs=x_obs,
+            psi_prior=psi_prior, rng=rng, n_groups=1,
+        )
+
+        params = np.array([2.0, 3.0, -4.0, -6.0, 1.5])
+        np.testing.assert_allclose(
+            lik_default.log_density(params),
+            lik_explicit.log_density(params),
+            rtol=1e-12, atol=0,
+        )
+        np.testing.assert_allclose(
+            lik_default.grad_log_density(params),
+            lik_explicit.grad_log_density(params),
+            rtol=1e-12, atol=0,
+        )
+
+    def test_log_density_matches_block_diag_reference(self):
+        """Hand-built block_diag Σ over (DOF × group) gives same log L."""
+        import scipy.linalg as sla
+        from scipy.stats import multivariate_normal
+
+        rng = np.random.default_rng(123)
+        n_components = 3
+        n_groups = 2
+        P = 4
+        m = n_components * n_groups * P  # 24
+
+        F = np.array([1.0])
+        x_obs_full = np.linspace(0.05, 1.0, m)
+        model = PiecewiseConstantModel(F=F, n_params=2, x_obs=x_obs_full)
+
+        # Independent random per-group sensor coordinates in 1D
+        x_locs_g = [rng.uniform(0.0, 1.0, (P, 1)) for _ in range(n_groups)]
+        x_locs_flat = np.vstack(x_locs_g)                 # (n_groups*P, 1)
+
+        theta_true = np.array([2.0, 3.0])
+        eta = model.eval(theta_true, idx=0)
+        u_obs = (eta + rng.normal(0, 0.05, m)).reshape(1, -1)
+
+        psi_prior = MultivariateNormal(
+            mean=np.array([-4.0, -6.0, 1.5]),
+            cov=4.0 * np.eye(3),
+            rng=rng,
+        )
+        lik = KOGaussianLikelihood(
+            model=model, u_obs=u_obs, x_locs=x_locs_flat,
+            psi_prior=psi_prior, rng=rng,
+            n_components=n_components, n_groups=n_groups,
+        )
+
+        log_s2d, log_s2e, log_rho = -4.0, -6.0, 1.5
+        sigma2_delta, sigma2_eps, rho = np.exp([log_s2d, log_s2e, log_rho])
+        params = np.array([theta_true[0], theta_true[1],
+                           log_s2d, log_s2e, log_rho])
+
+        # Reference: hand-build the full Σ as block_diag over (d, g).
+        blocks = []
+        for _ in range(n_components):
+            for g in range(n_groups):
+                C_g = rbf_kernel_matrix(x_locs_g[g], np.array([rho]))
+                blocks.append(sigma2_delta * C_g + sigma2_eps * np.eye(P))
+        Sigma_full = sla.block_diag(*blocks)
+        mean_full = model.eval(theta_true, idx=0)
+        ll_ref = multivariate_normal.logpdf(u_obs[0], mean=mean_full,
+                                            cov=Sigma_full)
+
+        ll = lik.log_density(params)
+        np.testing.assert_allclose(ll, ll_ref, rtol=1e-10, atol=0)
+
+    def test_grad_with_n_groups(self):
+        """Analytic gradient matches FD for n_components=3, n_groups=3."""
+        rng = np.random.default_rng(2024)
+        n_components = 3
+        n_groups = 3
+        P = 4
+        m = n_components * n_groups * P  # 36
+
+        F = np.array([1.0])
+        x_obs_full = np.linspace(0.02, 1.0, m)
+        model = PiecewiseConstantModel(F=F, n_params=2, x_obs=x_obs_full)
+
+        x_locs_flat = rng.uniform(0.0, 1.0, (n_groups * P, 1))
+
+        theta_true = np.array([2.0, 3.0])
+        eta = model.eval(theta_true, idx=0)
+        u_obs = (eta + rng.normal(0, 0.05, m)).reshape(1, -1)
+
+        psi_prior = MultivariateNormal(
+            mean=np.array([-4.0, -6.0, 1.5]),
+            cov=4.0 * np.eye(3),
+            rng=rng,
+        )
+        lik = KOGaussianLikelihood(
+            model=model, u_obs=u_obs, x_locs=x_locs_flat,
+            psi_prior=psi_prior, rng=rng,
+            n_components=n_components, n_groups=n_groups,
+        )
+
+        params = np.array([2.0, 3.0, -4.0, -6.0, 1.5])
+        grad_analytic = lik.grad_log_density(params)
+        grad_fd = _fd_gradient(lik.log_density, params)
+        np.testing.assert_allclose(grad_analytic, grad_fd,
+                                   rtol=1e-4, atol=1e-7)
