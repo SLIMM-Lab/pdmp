@@ -19,16 +19,17 @@ BPS_DIR = os.path.join(HERE, "bps")
 RWM_NO_KO_DIR = os.path.join(HERE, "rwm_no_ko")
 GT_PATH = os.path.join(HERE, "ground_truth.dat")
 
-PARAM_NAMES = [r"$E_1$", r"$E_2$",
-               r"$\log\sigma^2_\delta$", r"$\log\sigma^2_\varepsilon$",
-               r"$\log\rho$"]
+PARAM_NAMES = [
+    r"$E_1$", r"$E_2$", r"$\log\sigma^2_\delta$",
+    r"$\log\sigma^2_\varepsilon$", r"$\log\rho$"
+]
 THETA_NAMES = PARAM_NAMES[:2]
 PSI_NAMES = PARAM_NAMES[2:]
-
 
 # ---------------------------------------------------------------------------
 # Loading helpers
 # ---------------------------------------------------------------------------
+
 
 def _load_rwm_samples():
     """Load RWM samples (already in latent space)."""
@@ -50,7 +51,9 @@ def _load_bps_samples():
         return None
 
     positions = np.loadtxt(pos_path)
-    print(f"BPS: loaded {positions.shape[0]} positions, dim={positions.shape[1]}")
+    print(
+        f"BPS: loaded {positions.shape[0]} positions, dim={positions.shape[1]}"
+    )
 
     # Back-transform ξ → [theta, psi] via the affine map stored in the config.
     # Change into bps/ so that relative paths in config.yaml (e.g. ../observations.dat)
@@ -79,13 +82,16 @@ def _load_rwm_no_ko_samples():
         print(f"RWM (no K&O) samples not found: {path}")
         return None
     samples = np.loadtxt(path)
-    print(f"RWM (no K&O): loaded {samples.shape[0]} samples, dim={samples.shape[1]}")
+    print(
+        f"RWM (no K&O): loaded {samples.shape[0]} samples, dim={samples.shape[1]}"
+    )
     return samples
 
 
 # ---------------------------------------------------------------------------
 # Summaries
 # ---------------------------------------------------------------------------
+
 
 def _print_summary(name, samples, param_names, burn_in_frac=0.25):
     if samples is None:
@@ -96,7 +102,9 @@ def _print_summary(name, samples, param_names, burn_in_frac=0.25):
     print(f"\n{name} posterior (burn-in={n_burn}):")
     for i in range(n_params):
         lo, med, hi = np.percentile(post[:, i], [5, 50, 95])
-        print(f"  {param_names[i]:35s}: median={med:.3f}  90%-CI=[{lo:.3f}, {hi:.3f}]")
+        print(
+            f"  {param_names[i]:35s}: median={med:.3f}  90%-CI=[{lo:.3f}, {hi:.3f}]"
+        )
     return post
 
 
@@ -104,23 +112,36 @@ def _print_summary(name, samples, param_names, burn_in_frac=0.25):
 # Plotting
 # ---------------------------------------------------------------------------
 
+
 def _plot_traces(rwm_post, bps_post, rwm_no_ko_post, gt):
     # Use the highest-dimensional available sample set to determine n_params
     reference = next(s for s in [rwm_post, bps_post] if s is not None)
     n_params = reference.shape[1]
-    fig, axes = plt.subplots(n_params, 1, figsize=(10, 2.2 * n_params), sharex=False)
+    fig, axes = plt.subplots(n_params,
+                             1,
+                             figsize=(10, 2.2 * n_params),
+                             sharex=False)
     if n_params == 1:
         axes = [axes]
 
     for i, ax in enumerate(axes):
         if rwm_post is not None:
-            ax.plot(rwm_post[:, i], lw=0.3, alpha=0.6, color="steelblue",
+            ax.plot(rwm_post[:, i],
+                    lw=0.3,
+                    alpha=0.6,
+                    color="steelblue",
                     label="RWM (K&O)")
         if bps_post is not None:
-            ax.plot(bps_post[:, i], lw=0.3, alpha=0.6, color="darkorange",
+            ax.plot(bps_post[:, i],
+                    lw=0.3,
+                    alpha=0.6,
+                    color="darkorange",
                     label="BPS (K&O)")
         if rwm_no_ko_post is not None and i < rwm_no_ko_post.shape[1]:
-            ax.plot(rwm_no_ko_post[:, i], lw=0.3, alpha=0.6, color="forestgreen",
+            ax.plot(rwm_no_ko_post[:, i],
+                    lw=0.3,
+                    alpha=0.6,
+                    color="forestgreen",
                     label="RWM (no K&O)")
         ax.set_ylabel(PARAM_NAMES[i])
         if gt is not None:
@@ -134,25 +155,41 @@ def _plot_traces(rwm_post, bps_post, rwm_no_ko_post, gt):
     return fig
 
 
-def _plot_marginals(rwm_post, bps_post, rwm_no_ko_post, gt, param_indices, title):
+def _plot_marginals(rwm_post, bps_post, rwm_no_ko_post, gt, param_indices,
+                    title):
     n = len(param_indices)
     fig, axes = plt.subplots(1, n, figsize=(4 * n, 4))
     if n == 1:
         axes = [axes]
     for ax, i in zip(axes, param_indices):
         if rwm_post is not None:
-            ax.hist(rwm_post[:, i], bins=60, density=True, alpha=0.55,
-                    color="steelblue", label="RWM (K&O)")
+            ax.hist(rwm_post[:, i],
+                    bins=60,
+                    density=True,
+                    alpha=0.55,
+                    color="steelblue",
+                    label="RWM (K&O)")
         if bps_post is not None:
-            ax.hist(bps_post[:, i], bins=60, density=True, alpha=0.55,
-                    color="darkorange", label="BPS (K&O)")
+            ax.hist(bps_post[:, i],
+                    bins=60,
+                    density=True,
+                    alpha=0.55,
+                    color="darkorange",
+                    label="BPS (K&O)")
         if rwm_no_ko_post is not None and i < rwm_no_ko_post.shape[1]:
-            ax.hist(rwm_no_ko_post[:, i], bins=60, density=True, alpha=0.55,
-                    color="forestgreen", label="RWM (no K&O)")
+            ax.hist(rwm_no_ko_post[:, i],
+                    bins=60,
+                    density=True,
+                    alpha=0.55,
+                    color="forestgreen",
+                    label="RWM (no K&O)")
         ax.set_xlabel(PARAM_NAMES[i])
         ax.set_ylabel("density")
         if gt is not None:
-            ax.axvline(gt[i], color="k", lw=1.5, ls="--",
+            ax.axvline(gt[i],
+                       color="k",
+                       lw=1.5,
+                       ls="--",
                        label=f"truth={gt[i]:.2f}")
         ax.legend(fontsize=8)
     fig.suptitle(title)
@@ -164,12 +201,16 @@ def _plot_marginals(rwm_post, bps_post, rwm_no_ko_post, gt, param_indices, title
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--no-bps", action="store_true",
+    parser.add_argument("--no-bps",
+                        action="store_true",
                         help="Skip loading and plotting BPS results")
-    parser.add_argument("--no-ko", action="store_true",
-                        help="Skip loading and plotting the no-K&O RWM results")
+    parser.add_argument(
+        "--no-ko",
+        action="store_true",
+        help="Skip loading and plotting the no-K&O RWM results")
     args = parser.parse_args()
 
     gt = np.loadtxt(GT_PATH) if os.path.exists(GT_PATH) else None
@@ -183,8 +224,10 @@ def main():
     rwm_no_ko_samples = None if args.no_ko else _load_rwm_no_ko_samples()
 
     burn_in_frac = 0.25
-    rwm_post = _print_summary("RWM (K&O)", rwm_samples, PARAM_NAMES, burn_in_frac)
-    bps_post = _print_summary("BPS (K&O)", bps_samples, PARAM_NAMES, burn_in_frac)
+    rwm_post = _print_summary("RWM (K&O)", rwm_samples, PARAM_NAMES,
+                              burn_in_frac)
+    bps_post = _print_summary("BPS (K&O)", bps_samples, PARAM_NAMES,
+                              burn_in_frac)
     rwm_no_ko_post = _print_summary("RWM (no K&O)", rwm_no_ko_samples,
                                     THETA_NAMES, burn_in_frac)
 

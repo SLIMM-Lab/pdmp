@@ -86,9 +86,13 @@ def _build_setup(seed=2026, psi_prior_mean=None, psi_prior_cov=None):
     )
 
     lik = KOGaussianLikelihood(
-        model=model, u_obs=u_obs, x_locs=x_locs_flat,
-        psi_prior=psi_prior, rng=rng,
-        n_components=n_components, n_groups=G,
+        model=model,
+        u_obs=u_obs,
+        x_locs=x_locs_flat,
+        psi_prior=psi_prior,
+        rng=rng,
+        n_components=n_components,
+        n_groups=G,
         kernel='isotropic',
     )
     joint_prior = JointDistribution([theta_prior, psi_prior], rng=rng)
@@ -152,9 +156,13 @@ def _build_separate_for_geom(joint_posterior, g, psi_prior_mean, psi_prior_cov,
         rng=rng,
     )
     lik_g = KOGaussianLikelihood(
-        model=model_g, u_obs=u_obs_g, x_locs=x_locs_g,
-        psi_prior=psi_prior, rng=rng,
-        n_components=n_c, n_groups=1,
+        model=model_g,
+        u_obs=u_obs_g,
+        x_locs=x_locs_g,
+        psi_prior=psi_prior,
+        rng=rng,
+        n_components=n_c,
+        n_groups=1,
         kernel='isotropic',
     )
     prior_g = JointDistribution([theta_prior, psi_prior], rng=rng)
@@ -167,8 +175,8 @@ def _hessian_via_fd(posterior, x_map, h=1e-4):
     for j in range(n):
         e = np.zeros(n)
         e[j] = h
-        H[:, j] = (posterior.grad_log_density(x_map + e)
-                   - posterior.grad_log_density(x_map - e)) / (2.0 * h)
+        H[:, j] = (posterior.grad_log_density(x_map + e) -
+                   posterior.grad_log_density(x_map - e)) / (2.0 * h)
     return 0.5 * (H + H.T)
 
 
@@ -185,22 +193,31 @@ def main():
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    ap.add_argument('--prior-shift', type=float, default=2.0,
+    ap.add_argument('--prior-shift',
+                    type=float,
+                    default=2.0,
                     help='offset added to each truth ψ to form the prior mean '
-                         '(default: 2.0)')
-    ap.add_argument('--prior-std', type=float, default=2.0,
+                    '(default: 2.0)')
+    ap.add_argument('--prior-std',
+                    type=float,
+                    default=2.0,
                     help='1-σ width of the ψ prior on each coordinate '
-                         '(default: 2.0)')
-    ap.add_argument('--seed', type=int, default=2026,
+                    '(default: 2.0)')
+    ap.add_argument('--seed',
+                    type=int,
+                    default=2026,
                     help='RNG seed for the synthetic draw (default: 2026)')
-    ap.add_argument('--out', type=str, default=None,
-                    help='output PNG path; if omitted, opens an interactive window')
+    ap.add_argument(
+        '--out',
+        type=str,
+        default=None,
+        help='output PNG path; if omitted, opens an interactive window')
     args = ap.parse_args()
 
     # Truth values (re-stated for the prior shift).
     psi_true = np.array([-5.0, -9.2, 1.5])
     psi_prior_mean = psi_true + args.prior_shift
-    psi_prior_cov = (args.prior_std ** 2) * np.eye(3)
+    psi_prior_cov = (args.prior_std**2) * np.eye(3)
 
     # JOINT fit.
     rng = np.random.default_rng(args.seed)
@@ -220,7 +237,11 @@ def main():
     sep_maps, sep_stds = [], []
     for g in range(n_g):
         post_g = _build_separate_for_geom(
-            posterior, g, psi_prior_mean, psi_prior_cov, rng,
+            posterior,
+            g,
+            psi_prior_mean,
+            psi_prior_cov,
+            rng,
         )
         res_g = _run_map(post_g, theta_true, psi_true)
         sep_maps.append(res_g.x)
@@ -235,20 +256,36 @@ def main():
     for j, name in enumerate(PARAM_NAMES):
         ax = axes[j]
         # Truth and prior reference lines.
-        ax.axvline(truth[j], color='k', linewidth=1.5, linestyle='--',
+        ax.axvline(truth[j],
+                   color='k',
+                   linewidth=1.5,
+                   linestyle='--',
                    label='truth')
         if j >= 2:
-            ax.axvline(psi_prior_mean[j - 2], color='C2', linewidth=1.0,
-                       linestyle=':', label='prior mean')
+            ax.axvline(psi_prior_mean[j - 2],
+                       color='C2',
+                       linewidth=1.0,
+                       linestyle=':',
+                       label='prior mean')
         # Joint MAP at y=0 (top).
-        ax.errorbar([joint_map[j]], [0], xerr=[joint_std[j]],
-                    fmt='o', color='C0', markersize=9, capsize=4,
-                    elinewidth=1.5, label='joint MAP ± 1σ')
+        ax.errorbar([joint_map[j]], [0],
+                    xerr=[joint_std[j]],
+                    fmt='o',
+                    color='C0',
+                    markersize=9,
+                    capsize=4,
+                    elinewidth=1.5,
+                    label='joint MAP ± 1σ')
         # Separate MAPs at y = -1 .. -n_g.
         ys = -(1 + np.arange(n_g))
-        ax.errorbar(sep_maps[:, j], ys, xerr=sep_stds[:, j],
-                    fmt='.', color='C1', markersize=7,
-                    elinewidth=0.8, capsize=2,
+        ax.errorbar(sep_maps[:, j],
+                    ys,
+                    xerr=sep_stds[:, j],
+                    fmt='.',
+                    color='C1',
+                    markersize=7,
+                    elinewidth=0.8,
+                    capsize=2,
                     label='separate MAPs ± 1σ')
 
         ax.set_yticks([0] + list(ys))

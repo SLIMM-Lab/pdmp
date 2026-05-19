@@ -42,10 +42,10 @@ from pdmp.discrepancy import rbf_kernel_matrix
 from pdmp.loader import numpy_to_yaml, dump_yaml_custom_format
 
 # ── ground truth ─────────────────────────────────────────────────────────────
-THETA_TRUE = np.array([0.7, 1.2])       # [rho, l] in physical space
-SIGMA2_DELTA = 0.01                     # KO discrepancy variance
-SIGMA2_EPS = 0.001                      # measurement noise variance
-RHO_KO_TRUE = 2.0                       # KO discrepancy lengthscale (inverse sq.)
+THETA_TRUE = np.array([0.7, 1.2])  # [rho, l] in physical space
+SIGMA2_DELTA = 0.01  # KO discrepancy variance
+SIGMA2_EPS = 0.001  # measurement noise variance
+RHO_KO_TRUE = 2.0  # KO discrepancy lengthscale (inverse sq.)
 
 SEED = 4
 N_SAMPLES = 2000
@@ -61,7 +61,7 @@ SENSORS = [
 ]
 N_SENSOR_PTS = len(SENSOR_Z)
 N_DOF_PER_PT = 3
-N_OBS = N_SENSOR_PTS * N_DOF_PER_PT    # 15
+N_OBS = N_SENSOR_PTS * N_DOF_PER_PT  # 15
 
 # ── model configuration ───────────────────────────────────────────────────────
 MODEL_CFG = {
@@ -111,17 +111,19 @@ def main():
     model = get_model(MODEL_CFG, field=field)
 
     n_dofs = model.get_dim_out()
-    print(f"  {N_SENSOR_PTS} sensor points × {N_DOF_PER_PT} DOF = {n_dofs} observations")
+    print(
+        f"  {N_SENSOR_PTS} sensor points × {N_DOF_PER_PT} DOF = {n_dofs} observations"
+    )
     assert n_dofs == N_OBS, f"Expected {N_OBS} DOFs, got {n_dofs}"
 
     # ── generate observations ─────────────────────────────────────────────────
     print(f"\nGround truth: rho={THETA_TRUE[0]}, l={THETA_TRUE[1]}")
     eta = np.asarray(model.eval(THETA_TRUE, idx=0)).ravel()
 
-    x_locs = _build_z_locs()               # (N_SENSOR_PTS, 1)
+    x_locs = _build_z_locs()  # (N_SENSOR_PTS, 1)
     rho_ko_vec = np.array([RHO_KO_TRUE])
-    C_z = rbf_kernel_matrix(x_locs, rho_ko_vec)                      # (5, 5)
-    C_delta = block_diag(*[C_z] * N_DOF_PER_PT)                      # (15, 15)
+    C_z = rbf_kernel_matrix(x_locs, rho_ko_vec)  # (5, 5)
+    C_delta = block_diag(*[C_z] * N_DOF_PER_PT)  # (15, 15)
     L_delta = np.linalg.cholesky(SIGMA2_DELTA * C_delta)
     delta = L_delta @ rng.standard_normal(N_OBS)
     eps = rng.normal(0.0, np.sqrt(SIGMA2_EPS), N_OBS)
@@ -132,11 +134,14 @@ def main():
     obs_path = os.path.join(HERE, "observations.dat")
     gt_path = os.path.join(HERE, "ground_truth.dat")
     np.savetxt(obs_path, u_obs)
-    np.savetxt(gt_path,
-               np.concatenate([THETA_TRUE,
-                                [np.log(SIGMA2_DELTA),
-                                 np.log(SIGMA2_EPS),
-                                 np.log(RHO_KO_TRUE)]]))
+    np.savetxt(
+        gt_path,
+        np.concatenate([
+            THETA_TRUE,
+            [np.log(SIGMA2_DELTA),
+             np.log(SIGMA2_EPS),
+             np.log(RHO_KO_TRUE)]
+        ]))
 
     print(f"eta range   : [{eta.min():.6f}, {eta.max():.6f}]")
     print(f"delta std   : {delta.std():.6f}")
@@ -157,7 +162,7 @@ def main():
     print("\nWriting RWM config with K&O discrepancy...")
     os.makedirs(RWM_DIR, exist_ok=True)
 
-    psi_mean = np.array([-4.0, -7.0, 1.5])   # [log_s2d, log_s2e, log_rho_ko]
+    psi_mean = np.array([-4.0, -7.0, 1.5])  # [log_s2d, log_s2e, log_rho_ko]
     psi_cov = np.diag([4.0, 2.0, 2.0])
     # Prior in latent theta space: loose Gaussian centred at logit(0.5)=0, log(0.9)≈-0.105
     latent_theta_mean = np.array([0.0, np.log(0.9)])
@@ -172,11 +177,17 @@ def main():
                 "cov": block_diag(latent_theta_cov, psi_cov),
             },
             "likelihood": {
-                "name": "TransformedLikelihood",
-                "transformation": "Composite",
+                "name":
+                "TransformedLikelihood",
+                "transformation":
+                "Composite",
                 "indices": [[0], [1], [2, 3, 4]],
                 "transformations": [
-                    {"type": "Sigmoid", "a": 0.0, "b": 1.0},
+                    {
+                        "type": "Sigmoid",
+                        "a": 0.0,
+                        "b": 1.0
+                    },
                     "Exponential",
                     "Identity",
                 ],
@@ -202,7 +213,10 @@ def main():
         },
         "output": {
             "dir": ".",
-            "logging": {"level": "INFO", "log_file": "inference.log"},
+            "logging": {
+                "level": "INFO",
+                "log_file": "inference.log"
+            },
         },
         "seed": 42,
     }
@@ -232,11 +246,17 @@ def main():
                 "cov": latent_theta_cov,
             },
             "likelihood": {
-                "name": "TransformedLikelihood",
-                "transformation": "Composite",
+                "name":
+                "TransformedLikelihood",
+                "transformation":
+                "Composite",
                 "indices": [[0], [1]],
                 "transformations": [
-                    {"type": "Sigmoid", "a": 0.0, "b": 1.0},
+                    {
+                        "type": "Sigmoid",
+                        "a": 0.0,
+                        "b": 1.0
+                    },
                     "Exponential",
                 ],
                 "likelihood": {
@@ -255,7 +275,10 @@ def main():
         },
         "output": {
             "dir": ".",
-            "logging": {"level": "INFO", "log_file": "inference.log"},
+            "logging": {
+                "level": "INFO",
+                "log_file": "inference.log"
+            },
         },
         "seed": 42,
     }
@@ -266,7 +289,9 @@ def main():
 
     print("\nDone. Run inference with:")
     print(f"  cd {RWM_DIR} && python ../../../run_inference.py config.yaml")
-    print(f"  cd {RWM_NO_KO_DIR} && python ../../../run_inference.py config.yaml")
+    print(
+        f"  cd {RWM_NO_KO_DIR} && python ../../../run_inference.py config.yaml"
+    )
 
 
 if __name__ == "__main__":

@@ -16,10 +16,10 @@ Conversion (1-D, unit amplitude): ``rho = 1 / (2 l^2)``.
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Vectorised kernel matrix (rho parameterization)
 # ---------------------------------------------------------------------------
+
 
 def rbf_kernel_matrix(x_locs: np.ndarray, rho: np.ndarray) -> np.ndarray:
     """ARD squared-exponential (RBF) kernel matrix.
@@ -38,7 +38,8 @@ def rbf_kernel_matrix(x_locs: np.ndarray, rho: np.ndarray) -> np.ndarray:
     # Weighted squared distances: sum_k rho_k (x_ik - x_jk)^2
     # Compute per-dimension squared differences scaled by rho
     diff = x_locs[:, np.newaxis, :] - x_locs[np.newaxis, :, :]  # (m, m, d_x)
-    sq_dist = np.sum(rho[np.newaxis, np.newaxis, :] * diff**2, axis=2)  # (m, m)
+    sq_dist = np.sum(rho[np.newaxis, np.newaxis, :] * diff**2,
+                     axis=2)  # (m, m)
     return np.exp(-sq_dist)
 
 
@@ -80,6 +81,7 @@ def rbf_kernel_matrix_drho(x_locs: np.ndarray, rho: np.ndarray,
 # ---------------------------------------------------------------------------
 # Scalar kernel (sigma / l parameterization)
 # ---------------------------------------------------------------------------
+
 
 def squared_exponential_kernel(x: np.ndarray,
                                y: np.ndarray,

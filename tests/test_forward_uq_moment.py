@@ -7,10 +7,10 @@ import pytest
 
 from forward_uq_moment import unscented_sigma_points, fd_jacobian, build_latent_to_physical
 
-
 # ---------------------------------------------------------------------------
 # Unit: unscented_sigma_points
 # ---------------------------------------------------------------------------
+
 
 def test_sigma_points_count():
     """unscented_sigma_points returns 2d+1 points for d-dimensional input."""
@@ -18,8 +18,8 @@ def test_sigma_points_count():
     cov = np.eye(3)
     points, wm, wc = unscented_sigma_points(mu, cov)
     assert points.shape == (7, 3)
-    assert wm.shape == (7,)
-    assert wc.shape == (7,)
+    assert wm.shape == (7, )
+    assert wc.shape == (7, )
 
 
 def test_sigma_points_central_is_mean():
@@ -67,7 +67,8 @@ def test_ut_linear_exact_cov():
     ys = np.array([A @ p + b for p in points])
     mu_ut = (wm[:, None] * ys).sum(axis=0)
     diffs = ys - mu_ut
-    cov_ut = (wc[:, None, None] * diffs[:, :, None] * diffs[:, None, :]).sum(axis=0)
+    cov_ut = (wc[:, None, None] * diffs[:, :, None] *
+              diffs[:, None, :]).sum(axis=0)
 
     assert np.allclose(cov_ut, A @ cov @ A.T, atol=1e-12)
 
@@ -78,20 +79,21 @@ def test_ut_quadratic_mean_correction():
     cov = np.array([[0.5]])
 
     points, wm, _ = unscented_sigma_points(mu, cov)
-    ys = np.array([(p ** 2) for p in points])
+    ys = np.array([(p**2) for p in points])
     mu_ut = (wm[:, None] * ys).sum(axis=0)
 
-    expected = mu ** 2 + np.diag(cov)
+    expected = mu**2 + np.diag(cov)
     assert np.allclose(mu_ut, expected, atol=1e-12)
 
     # Linearization is biased: f(mu) = mu², missing the sigma² correction
-    mu_lin = mu ** 2
+    mu_lin = mu**2
     assert not np.allclose(mu_lin, expected, atol=1e-3)
 
 
 # ---------------------------------------------------------------------------
 # Unit: fd_jacobian
 # ---------------------------------------------------------------------------
+
 
 def test_fd_jacobian_linear():
     """fd_jacobian matches the analytical Jacobian for a linear function."""
@@ -120,12 +122,15 @@ def test_fd_jacobian_f0():
 # Unit: build_latent_to_physical
 # ---------------------------------------------------------------------------
 
+
 def test_build_latent_to_physical_no_transform():
     """Returns None when likelihood is not a TransformedLikelihood."""
     cfg = {
         'problem': {
             'name': 'BayesianInverse',
-            'likelihood': {'name': 'GaussianLikelihood'},
+            'likelihood': {
+                'name': 'GaussianLikelihood'
+            },
         }
     }
     assert build_latent_to_physical(cfg) is None
@@ -137,10 +142,16 @@ def test_build_latent_to_physical_with_composite():
         'problem': {
             'name': 'BayesianInverse',
             'likelihood': {
-                'name': 'TransformedLikelihood',
-                'transformation': 'Composite',
+                'name':
+                'TransformedLikelihood',
+                'transformation':
+                'Composite',
                 'transformations': [
-                    {'type': 'Sigmoid', 'a': 0.0, 'b': 1.0},
+                    {
+                        'type': 'Sigmoid',
+                        'a': 0.0,
+                        'b': 1.0
+                    },
                     'Exponential',
                 ],
                 'indices': [[0], [1]],
@@ -161,7 +172,9 @@ def test_build_strips_outer_transformed():
             'transformation': 'Identity',
             'distribution': {
                 'name': 'BayesianInverse',
-                'likelihood': {'name': 'GaussianLikelihood'},
+                'likelihood': {
+                    'name': 'GaussianLikelihood'
+                },
             },
         }
     }
@@ -243,10 +256,15 @@ def linear_run(tmp_path, monkeypatch):
 def test_main_writes_output_files(linear_run):
     """main() writes all expected output files."""
     expected = [
-        'mean_ut.dat', 'cov_ut.dat',
-        'mean_lin.dat', 'cov_lin.dat',
-        'samples_ut.dat', 'samples_lin.dat',
-        'jacobian.dat', 'sigma_points.dat', 'sigma_outputs.dat',
+        'mean_ut.dat',
+        'cov_ut.dat',
+        'mean_lin.dat',
+        'cov_lin.dat',
+        'samples_ut.dat',
+        'samples_lin.dat',
+        'jacobian.dat',
+        'sigma_points.dat',
+        'sigma_outputs.dat',
     ]
     for fname in expected:
         assert (linear_run / fname).exists(), f"Missing: {fname}"

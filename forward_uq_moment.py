@@ -146,7 +146,8 @@ def fd_jacobian(f, x, h=1e-3):
 def main():
     parser = argparse.ArgumentParser(
         description='Forward UQ via moment matching (UT + linearization).')
-    parser.add_argument('config', type=str,
+    parser.add_argument('config',
+                        type=str,
                         help='Path to the moment-matching config YAML.')
     args = parser.parse_args()
 
@@ -197,8 +198,10 @@ def main():
     kappa = float(ut_cfg.get('kappa', 0.0))
 
     print('--- Unscented transform ---', flush=True)
-    points, wm, wc = unscented_sigma_points(mean_full, cov_full,
-                                            alpha=alpha, beta=beta,
+    points, wm, wc = unscented_sigma_points(mean_full,
+                                            cov_full,
+                                            alpha=alpha,
+                                            beta=beta,
                                             kappa=kappa)
     sigma_outputs = []
     for i, p in enumerate(points):
@@ -208,8 +211,8 @@ def main():
 
     mu_ut = (wm[:, None] * sigma_outputs).sum(axis=0)
     diffs = sigma_outputs - mu_ut
-    cov_ut = (wc[:, None, None] * diffs[:, :, None]
-              * diffs[:, None, :]).sum(axis=0)
+    cov_ut = (wc[:, None, None] * diffs[:, :, None] *
+              diffs[:, None, :]).sum(axis=0)
 
     # ---- Linearization (central finite differences) ---------------------
     print('--- Linearization (central finite differences) ---', flush=True)
