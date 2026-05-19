@@ -2690,16 +2690,21 @@ def get_likelihood(
         raise ValueError(f"Likelihood {config['name']} not recognized.")
 
 
-def find_mean(target: Distribution, x_0: np.ndarray = None) -> np.ndarray:
+def find_mean(target: Distribution,
+              x_0: np.ndarray = None,
+              trace_file: str = "find_mean_trace.csv") -> np.ndarray:
     """Find the mean of a distribution using the BFGS method
 
     Args:
         target: The target distribution
         x_0: The initial guess for the mean (optional). Default is None.
+        trace_file: Path to CSV file where per-iteration diagnostics are written.
+            Pass None to disable. Default is "find_mean_trace.csv".
 
     Returns:
         np.ndarray: The mean of the distribution
     """
+    import csv
 
     n_log_post = lambda x: -target.log_density(x)
     n_grad_log_post = lambda x: -target.grad_log_density(x)
@@ -2745,13 +2750,62 @@ def find_mean(target: Distribution, x_0: np.ndarray = None) -> np.ndarray:
         if not success:
             x_0 = np.zeros(target.dim)
 
-    return minimize(n_log_post,
-                    x_0,
-                    jac=n_grad_log_post,
-                    method='BFGS',
-                    options={
-                        'disp': True
-                    }).x
+    if trace_file is not None:
+        dim = len(x_0)
+        with open(trace_file, 'w', newline='') as f:
+            csv.writer(f).writerow(['iteration', 'neg_log_post', 'grad_norm'] +
+                                   [f'x_{i}' for i in range(dim)])
+        logger.info(f"find_mean: writing trace to {trace_file}")
+
+    # Cache the last evaluation so the callback avoids re-evaluating the
+    # (potentially expensive) likelihood — BFGS computes both internally but
+    # does not pass them to the callback.
+    cache = {'val': None, 'grad': None}
+
+    def n_log_post(x):
+        v = -target.log_density(x)
+        cache['val'] = v
+        return v
+
+    def n_grad_log_post(x):
+        g = -target.grad_log_density(x)
+        cache['grad'] = g
+        return g
+
+    iteration = [0]
+
+    def callback(x):
+        iteration[0] += 1
+        val = cache['val']
+        grad_norm = np.linalg.norm(cache['grad'])
+        logger.info(
+            f"find_mean iter {iteration[0]:4d}  -log_post = {val:.6g}  ||grad|| = {grad_norm:.6g}"
+        )
+        if trace_file is not None:
+            with open(trace_file, 'a', newline='') as f:
+                csv.writer(f).writerow([iteration[0], val, grad_norm] +
+                                       list(x))
+
+    result = minimize(n_log_post,
+                      x_0,
+                      jac=n_grad_log_post,
+                      method='BFGS',
+                      callback=callback,
+                      options={'disp': False})
+
+    if not result.success:
+        logger.warning(
+            f"find_mean did not converge after {result.nit} iterations: {result.message}"
+        )
+        logger.warning(
+            f"  Final -log_post = {result.fun:.6g}  ||grad|| = {np.linalg.norm(result.jac):.6g}"
+        )
+    else:
+        logger.info(
+            f"find_mean converged in {result.nit} iterations  -log_post = {result.fun:.6g}"
+        )
+
+    return result.x
 
 
 def find_curvature(
