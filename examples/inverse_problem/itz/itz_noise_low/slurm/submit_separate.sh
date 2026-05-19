@@ -8,14 +8,14 @@
 #SBATCH --job-name=noise-low-sep
 #SBATCH --partition=compute
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=2
+#SBATCH --cpus-per-task=4
 #SBATCH --mem-per-cpu=3968M
 #SBATCH --time=3:59:00
 #SBATCH --array=1-10
 #SBATCH --output=separate_%A_%a.out
 #SBATCH --error=separate_%A_%a.err
-# SBATCH --account=research-CEG-3MD      # <-- fill in your account
-#SBATCH --account=innovation      # <-- fill in your account
+#SBATCH --account=research-CEG-3MD      # <-- fill in your account
+# SBATCH --account=innovation      # <-- fill in your account
 
 set -euo pipefail
 
@@ -35,7 +35,7 @@ date
 apptainer exec \
     --bind "${PDMP_DIR}:/pdmp" \
     --env "JAX_PLATFORM_NAME=cpu" \
-    --env "OMP_NUM_THREADS=2" \
+    --env "OMP_NUM_THREADS=4" \
     "${SIF}" \
     python /pdmp/run_inference.py --config "${CONFIG}"
 
