@@ -24,9 +24,7 @@ from pdmp import logger
 from pdmp.distributions import Likelihood, _safe_cholesky
 from pdmp.forward_model import Model
 from pdmp.kernels import (  # noqa: F401 — re-exported for backward compat
-    rbf_kernel_matrix,
-    rbf_kernel_matrix_drho,
-    _squared_diff_per_dim,
+    rbf_kernel_matrix, rbf_kernel_matrix_drho, _squared_diff_per_dim,
 )
 
 
@@ -54,6 +52,7 @@ def build_noise_covariance(x_locs: np.ndarray, rho: np.ndarray,
 # ---------------------------------------------------------------------------
 # K&O Gaussian likelihood
 # ---------------------------------------------------------------------------
+
 
 class KOGaussianLikelihood(Likelihood):
     """Gaussian likelihood with Kennedy–O'Hagan model discrepancy.
@@ -127,7 +126,8 @@ class KOGaussianLikelihood(Likelihood):
         self._n_groups = n_groups
 
         if kernel not in ("ard", "isotropic"):
-            raise ValueError(f"kernel must be 'ard' or 'isotropic', got '{kernel}'.")
+            raise ValueError(
+                f"kernel must be 'ard' or 'isotropic', got '{kernel}'.")
         self._isotropic = kernel == "isotropic"
 
         # Sensor locations — ensure 2D
@@ -141,7 +141,8 @@ class KOGaussianLikelihood(Likelihood):
         denom = n_components * n_groups
         if self._m % denom != 0:
             raise ValueError(
-                f"m={self._m} must be divisible by n_components*n_groups={denom}.")
+                f"m={self._m} must be divisible by n_components*n_groups={denom}."
+            )
         self._P = self._m // denom  # measurements per (component, group) block
         expected_x_rows = n_groups * self._P
         if self._x_locs.shape[0] != expected_x_rows:
@@ -164,9 +165,8 @@ class KOGaussianLikelihood(Likelihood):
         fixed_psi_dict = fixed_psi or {}
         unknown = set(fixed_psi_dict) - set(self._psi_names)
         if unknown:
-            raise ValueError(
-                f"Unknown psi parameters: {unknown}. "
-                f"Valid names: {self._psi_names}")
+            raise ValueError(f"Unknown psi parameters: {unknown}. "
+                             f"Valid names: {self._psi_names}")
         self._fixed_log_psi = np.array([
             fixed_psi_dict[n] if n in fixed_psi_dict else np.nan
             for n in self._psi_names
@@ -182,7 +182,10 @@ class KOGaussianLikelihood(Likelihood):
         #   self._sq_diff_g   : (n_groups, d_x, P, P)
         self._x_locs_g = self._x_locs.reshape(n_groups, self._P, self._d_x)
         self._sq_diff_g = np.stack(
-            [_squared_diff_per_dim(self._x_locs_g[g]) for g in range(n_groups)],
+            [
+                _squared_diff_per_dim(self._x_locs_g[g])
+                for g in range(n_groups)
+            ],
             axis=0,
         )
 
@@ -268,7 +271,8 @@ class KOGaussianLikelihood(Likelihood):
 
     # ----- log_density -----
 
-    def log_density(self, params: np.ndarray,
+    def log_density(self,
+                    params: np.ndarray,
                     idx: int = None) -> Union[float, np.ndarray]:
         theta, sigma2_delta, sigma2_eps, rho = self._split_params(params)
         L_g, _, _ = self._build_per_group(sigma2_delta, sigma2_eps, rho)
@@ -303,7 +307,8 @@ class KOGaussianLikelihood(Likelihood):
         J = self._model.eval_grad(theta, idx=i)  # (m, n_theta)
         return J.T @ alpha_i
 
-    def grad_log_density(self, params: np.ndarray,
+    def grad_log_density(self,
+                         params: np.ndarray,
                          idx: int = None) -> np.ndarray:
         theta, sigma2_delta, sigma2_eps, rho = self._split_params(params)
         L_g, Sinv_g, C_g = self._build_per_group(sigma2_delta, sigma2_eps, rho)
@@ -316,13 +321,14 @@ class KOGaussianLikelihood(Likelihood):
         # Traces shared across components and settings.  For the full Σ
         # (block-diagonal in n_components × n_groups blocks of size P) we have
         #   tr(Σ^{-1} dΣ/dψ) = n_components · Σ_g tr(Σ_g^{-1} dΣ_g/dψ)
-        tr_SinvC_g  = np.array([np.sum(Sinv_g[g] * C_g[g])
-                                 for g in range(n_groups)])
-        tr_Sinv_g   = np.array([np.trace(Sinv_g[g]) for g in range(n_groups)])
-        tr_Sinv_dC_g = np.einsum('gpq,gkqp->gk', Sinv_g, dC_g)   # (n_groups, n_rho)
+        tr_SinvC_g = np.array(
+            [np.sum(Sinv_g[g] * C_g[g]) for g in range(n_groups)])
+        tr_Sinv_g = np.array([np.trace(Sinv_g[g]) for g in range(n_groups)])
+        tr_Sinv_dC_g = np.einsum('gpq,gkqp->gk', Sinv_g,
+                                 dC_g)  # (n_groups, n_rho)
 
-        sum_tr_SinvC   = n_components * float(tr_SinvC_g.sum())
-        sum_tr_Sinv    = n_components * float(tr_Sinv_g.sum())
+        sum_tr_SinvC = n_components * float(tr_SinvC_g.sum())
+        sum_tr_Sinv = n_components * float(tr_Sinv_g.sum())
         sum_tr_Sinv_dC = n_components * tr_Sinv_dC_g.sum(axis=0)  # (n_rho,)
 
         settings = range(self.n_obs) if idx is None else [idx]
@@ -344,30 +350,32 @@ class KOGaussianLikelihood(Likelihood):
             a_dC_a_sum = np.zeros(self._n_rho)
 
             for g in range(n_groups):
-                R = r_dgp[:, g, :].T            # (P, n_components)
-                Ag = Sinv_g[g] @ R              # (P, n_components)
+                R = r_dgp[:, g, :].T  # (P, n_components)
+                Ag = Sinv_g[g] @ R  # (P, n_components)
                 alpha_dgp[:, g, :] = Ag.T
 
                 # α^T C_g α and α^T α, summed across n_components
                 aCa_sum += float(np.sum(Ag * (C_g[g] @ Ag)))
-                aa_sum  += float(np.sum(Ag * Ag))
+                aa_sum += float(np.sum(Ag * Ag))
                 # α^T dC_g/dρ_k α per ρ-index, summed across n_components
                 a_dC_a_sum += np.einsum('pc,kpq,qc->k', Ag, dC_g[g], Ag)
 
             grad_theta += self._theta_grad_single(theta, alpha_full, i)
 
             grad_log_s2d += sigma2_delta * 0.5 * (-sum_tr_SinvC + aCa_sum)
-            grad_log_s2e += sigma2_eps  * 0.5 * (-sum_tr_Sinv  + aa_sum)
+            grad_log_s2e += sigma2_eps * 0.5 * (-sum_tr_Sinv + aa_sum)
             for k in range(self._n_rho):
                 grad_log_rho[k] += (rho[k] * sigma2_delta * 0.5 *
-                                     (-sum_tr_Sinv_dC[k] + a_dC_a_sum[k]))
+                                    (-sum_tr_Sinv_dC[k] + a_dC_a_sum[k]))
 
-        grad_psi_full = np.concatenate([[grad_log_s2d, grad_log_s2e], grad_log_rho])
+        grad_psi_full = np.concatenate([[grad_log_s2d, grad_log_s2e],
+                                        grad_log_rho])
         return np.concatenate([grad_theta, grad_psi_full[self._free_psi_mask]])
 
     # ----- hessian_log_density -----
 
-    def hessian_log_density(self, params: np.ndarray,
+    def hessian_log_density(self,
+                            params: np.ndarray,
                             idx: int = None,
                             h: float = 1e-5) -> np.ndarray:
         """Hessian via central finite differences of grad_log_density."""

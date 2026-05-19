@@ -17,10 +17,10 @@ from pdmp.distributions import (
 )
 from pdmp.forward_model import PiecewiseConstantModel
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def simple_setup():
@@ -65,6 +65,7 @@ def _fd_gradient(f, x, h=1e-6):
 # ---------------------------------------------------------------------------
 # Kernel function tests
 # ---------------------------------------------------------------------------
+
 
 class TestKernelFunctions:
 
@@ -130,7 +131,9 @@ class TestBuildNoiseCovariance:
         """With sigma2_delta=0, covariance reduces to sigma2_eps * I."""
         x = np.array([[0.0], [0.5], [1.0]])
         rho = np.array([1.0])
-        Sigma = build_noise_covariance(x, rho, sigma2_delta=0.0,
+        Sigma = build_noise_covariance(x,
+                                       rho,
+                                       sigma2_delta=0.0,
                                        sigma2_eps=0.5)
         np.testing.assert_allclose(Sigma, 0.5 * np.eye(3))
 
@@ -139,7 +142,9 @@ class TestBuildNoiseCovariance:
         x = np.array([[0.0], [1.0]])
         rho = np.array([1.0])
         C = rbf_kernel_matrix(x, rho)
-        Sigma = build_noise_covariance(x, rho, sigma2_delta=2.0,
+        Sigma = build_noise_covariance(x,
+                                       rho,
+                                       sigma2_delta=2.0,
                                        sigma2_eps=0.0)
         np.testing.assert_allclose(Sigma, 2.0 * C)
 
@@ -148,31 +153,42 @@ class TestBuildNoiseCovariance:
 # KOGaussianLikelihood tests
 # ---------------------------------------------------------------------------
 
+
 class TestKOGaussianLikelihood:
 
     def test_grad_log_density_fd(self, simple_setup):
         """Analytic gradient matches finite differences for full [theta, psi]."""
         model, u_obs, x_obs, psi_prior, rng = simple_setup
-        lik = KOGaussianLikelihood(model=model, u_obs=u_obs, x_locs=x_obs,
-                                   psi_prior=psi_prior, rng=rng)
+        lik = KOGaussianLikelihood(model=model,
+                                   u_obs=u_obs,
+                                   x_locs=x_obs,
+                                   psi_prior=psi_prior,
+                                   rng=rng)
 
         # Test point: [theta_1, theta_2, log_s2d, log_s2e, log_rho]
         params = np.array([2.0, 3.0, -4.0, -6.0, 1.5])
         grad_analytic = lik.grad_log_density(params)
         grad_fd = _fd_gradient(lik.log_density, params)
-        np.testing.assert_allclose(grad_analytic, grad_fd, rtol=1e-4,
+        np.testing.assert_allclose(grad_analytic,
+                                   grad_fd,
+                                   rtol=1e-4,
                                    atol=1e-7)
 
     def test_grad_at_different_point(self, simple_setup):
         """Gradient check at a different parameter value."""
         model, u_obs, x_obs, psi_prior, rng = simple_setup
-        lik = KOGaussianLikelihood(model=model, u_obs=u_obs, x_locs=x_obs,
-                                   psi_prior=psi_prior, rng=rng)
+        lik = KOGaussianLikelihood(model=model,
+                                   u_obs=u_obs,
+                                   x_locs=x_obs,
+                                   psi_prior=psi_prior,
+                                   rng=rng)
 
         params = np.array([1.5, 4.0, -3.0, -5.0, 2.0])
         grad_analytic = lik.grad_log_density(params)
         grad_fd = _fd_gradient(lik.log_density, params)
-        np.testing.assert_allclose(grad_analytic, grad_fd, rtol=1e-4,
+        np.testing.assert_allclose(grad_analytic,
+                                   grad_fd,
+                                   rtol=1e-4,
                                    atol=1e-7)
 
     def test_reduces_to_standard_likelihood(self):
@@ -190,14 +206,19 @@ class TestKOGaussianLikelihood:
         u_obs = (eta + rng.normal(0, sigma, len(x_obs))).reshape(1, -1)
 
         # Standard likelihood
-        std_lik = GaussianLikelihood(model=model, u_obs=u_obs, sigma=sigma,
+        std_lik = GaussianLikelihood(model=model,
+                                     u_obs=u_obs,
+                                     sigma=sigma,
                                      rng=rng)
         ll_std = std_lik.log_density(theta)
 
         # K&O with negligible discrepancy
         psi_prior = MultivariateNormal(np.zeros(3), np.eye(3), rng=rng)
-        ko_lik = KOGaussianLikelihood(model=model, u_obs=u_obs, x_locs=x_obs,
-                                      psi_prior=psi_prior, rng=rng)
+        ko_lik = KOGaussianLikelihood(model=model,
+                                      u_obs=u_obs,
+                                      x_locs=x_obs,
+                                      psi_prior=psi_prior,
+                                      rng=rng)
         log_s2d = np.log(1e-15)
         log_s2e = np.log(sigma2_eps)
         log_rho = np.log(1.0)
@@ -209,8 +230,11 @@ class TestKOGaussianLikelihood:
     def test_hessian_consistency(self, simple_setup):
         """Hessian (FD of grad) is consistent with FD of FD."""
         model, u_obs, x_obs, psi_prior, rng = simple_setup
-        lik = KOGaussianLikelihood(model=model, u_obs=u_obs, x_locs=x_obs,
-                                   psi_prior=psi_prior, rng=rng)
+        lik = KOGaussianLikelihood(model=model,
+                                   u_obs=u_obs,
+                                   x_locs=x_obs,
+                                   psi_prior=psi_prior,
+                                   rng=rng)
         params = np.array([2.0, 3.0, -4.0, -6.0, 1.5])
         H = lik.hessian_log_density(params)
         # Should be symmetric
@@ -237,14 +261,20 @@ class TestKOGaussianLikelihood:
             cov=4.0 * np.eye(3),
             rng=rng,
         )
-        lik = KOGaussianLikelihood(model=model, u_obs=u_obs, x_locs=x_base,
-                                   psi_prior=psi_prior, rng=rng,
+        lik = KOGaussianLikelihood(model=model,
+                                   u_obs=u_obs,
+                                   x_locs=x_base,
+                                   psi_prior=psi_prior,
+                                   rng=rng,
                                    n_components=n_components)
 
         params = np.array([2.0, 3.0, -4.0, -6.0, 1.5])
         grad_analytic = lik.grad_log_density(params)
         grad_fd = _fd_gradient(lik.log_density, params)
-        np.testing.assert_allclose(grad_analytic, grad_fd, rtol=1e-4, atol=1e-7)
+        np.testing.assert_allclose(grad_analytic,
+                                   grad_fd,
+                                   rtol=1e-4,
+                                   atol=1e-7)
 
 
 class TestKOPosterior:
@@ -252,8 +282,11 @@ class TestKOPosterior:
     def test_posterior_grad_fd(self, simple_setup):
         """Full posterior gradient matches finite differences."""
         model, u_obs, x_obs, psi_prior, rng = simple_setup
-        ko_lik = KOGaussianLikelihood(model=model, u_obs=u_obs, x_locs=x_obs,
-                                      psi_prior=psi_prior, rng=rng)
+        ko_lik = KOGaussianLikelihood(model=model,
+                                      u_obs=u_obs,
+                                      x_locs=x_obs,
+                                      psi_prior=psi_prior,
+                                      rng=rng)
 
         prior_theta = MultivariateNormal(
             mean=np.array([1.5, 2.5]),
@@ -268,14 +301,19 @@ class TestKOPosterior:
         params = np.array([2.0, 3.0, -4.0, -6.0, 1.5])
         grad_analytic = posterior.grad_log_density(params)
         grad_fd = _fd_gradient(posterior.log_density, params)
-        np.testing.assert_allclose(grad_analytic, grad_fd, rtol=1e-4,
+        np.testing.assert_allclose(grad_analytic,
+                                   grad_fd,
+                                   rtol=1e-4,
                                    atol=1e-7)
 
     def test_posterior_sample_dim(self, simple_setup):
         """Prior sample has correct dimension."""
         model, u_obs, x_obs, psi_prior, rng = simple_setup
-        ko_lik = KOGaussianLikelihood(model=model, u_obs=u_obs, x_locs=x_obs,
-                                      psi_prior=psi_prior, rng=rng)
+        ko_lik = KOGaussianLikelihood(model=model,
+                                      u_obs=u_obs,
+                                      x_locs=x_obs,
+                                      psi_prior=psi_prior,
+                                      rng=rng)
 
         prior_theta = MultivariateNormal(
             mean=np.array([1.5, 2.5]),
@@ -286,7 +324,7 @@ class TestKOPosterior:
         posterior = Posterior(prior=joint_prior, likelihood=ko_lik, rng=rng)
 
         sample = posterior.get_prior_sample()
-        assert sample.shape == (5,)
+        assert sample.shape == (5, )
 
 
 class TestKOMultipleSettings:
@@ -305,13 +343,18 @@ class TestKOMultipleSettings:
         ])
 
         psi_prior = MultivariateNormal(np.zeros(3), np.eye(3), rng=rng)
-        lik = KOGaussianLikelihood(model=model, u_obs=u_obs, x_locs=x_obs,
-                                   psi_prior=psi_prior, rng=rng)
+        lik = KOGaussianLikelihood(model=model,
+                                   u_obs=u_obs,
+                                   x_locs=x_obs,
+                                   psi_prior=psi_prior,
+                                   rng=rng)
 
         params = np.array([2.0, 3.0, -4.0, -6.0, 1.5])
         grad_analytic = lik.grad_log_density(params)
         grad_fd = _fd_gradient(lik.log_density, params)
-        np.testing.assert_allclose(grad_analytic, grad_fd, rtol=1e-4,
+        np.testing.assert_allclose(grad_analytic,
+                                   grad_fd,
+                                   rtol=1e-4,
                                    atol=1e-7)
 
 
@@ -319,30 +362,40 @@ class TestKOMultipleSettings:
 # Per-group block-diagonal KO likelihood (n_groups > 1)
 # ---------------------------------------------------------------------------
 
+
 class TestKOGroupedDiscrepancy:
 
     def test_n_groups_one_matches_default(self, simple_setup):
         """Explicit n_groups=1 must match default (1) behavior numerically."""
         model, u_obs, x_obs, psi_prior, rng = simple_setup
         lik_default = KOGaussianLikelihood(
-            model=model, u_obs=u_obs, x_locs=x_obs,
-            psi_prior=psi_prior, rng=rng,
+            model=model,
+            u_obs=u_obs,
+            x_locs=x_obs,
+            psi_prior=psi_prior,
+            rng=rng,
         )
         lik_explicit = KOGaussianLikelihood(
-            model=model, u_obs=u_obs, x_locs=x_obs,
-            psi_prior=psi_prior, rng=rng, n_groups=1,
+            model=model,
+            u_obs=u_obs,
+            x_locs=x_obs,
+            psi_prior=psi_prior,
+            rng=rng,
+            n_groups=1,
         )
 
         params = np.array([2.0, 3.0, -4.0, -6.0, 1.5])
         np.testing.assert_allclose(
             lik_default.log_density(params),
             lik_explicit.log_density(params),
-            rtol=1e-12, atol=0,
+            rtol=1e-12,
+            atol=0,
         )
         np.testing.assert_allclose(
             lik_default.grad_log_density(params),
             lik_explicit.grad_log_density(params),
-            rtol=1e-12, atol=0,
+            rtol=1e-12,
+            atol=0,
         )
 
     def test_log_density_matches_block_diag_reference(self):
@@ -362,7 +415,7 @@ class TestKOGroupedDiscrepancy:
 
         # Independent random per-group sensor coordinates in 1D
         x_locs_g = [rng.uniform(0.0, 1.0, (P, 1)) for _ in range(n_groups)]
-        x_locs_flat = np.vstack(x_locs_g)                 # (n_groups*P, 1)
+        x_locs_flat = np.vstack(x_locs_g)  # (n_groups*P, 1)
 
         theta_true = np.array([2.0, 3.0])
         eta = model.eval(theta_true, idx=0)
@@ -374,15 +427,19 @@ class TestKOGroupedDiscrepancy:
             rng=rng,
         )
         lik = KOGaussianLikelihood(
-            model=model, u_obs=u_obs, x_locs=x_locs_flat,
-            psi_prior=psi_prior, rng=rng,
-            n_components=n_components, n_groups=n_groups,
+            model=model,
+            u_obs=u_obs,
+            x_locs=x_locs_flat,
+            psi_prior=psi_prior,
+            rng=rng,
+            n_components=n_components,
+            n_groups=n_groups,
         )
 
         log_s2d, log_s2e, log_rho = -4.0, -6.0, 1.5
         sigma2_delta, sigma2_eps, rho = np.exp([log_s2d, log_s2e, log_rho])
-        params = np.array([theta_true[0], theta_true[1],
-                           log_s2d, log_s2e, log_rho])
+        params = np.array(
+            [theta_true[0], theta_true[1], log_s2d, log_s2e, log_rho])
 
         # Reference: hand-build the full Σ as block_diag over (d, g).
         blocks = []
@@ -392,7 +449,8 @@ class TestKOGroupedDiscrepancy:
                 blocks.append(sigma2_delta * C_g + sigma2_eps * np.eye(P))
         Sigma_full = sla.block_diag(*blocks)
         mean_full = model.eval(theta_true, idx=0)
-        ll_ref = multivariate_normal.logpdf(u_obs[0], mean=mean_full,
+        ll_ref = multivariate_normal.logpdf(u_obs[0],
+                                            mean=mean_full,
                                             cov=Sigma_full)
 
         ll = lik.log_density(params)
@@ -422,13 +480,19 @@ class TestKOGroupedDiscrepancy:
             rng=rng,
         )
         lik = KOGaussianLikelihood(
-            model=model, u_obs=u_obs, x_locs=x_locs_flat,
-            psi_prior=psi_prior, rng=rng,
-            n_components=n_components, n_groups=n_groups,
+            model=model,
+            u_obs=u_obs,
+            x_locs=x_locs_flat,
+            psi_prior=psi_prior,
+            rng=rng,
+            n_components=n_components,
+            n_groups=n_groups,
         )
 
         params = np.array([2.0, 3.0, -4.0, -6.0, 1.5])
         grad_analytic = lik.grad_log_density(params)
         grad_fd = _fd_gradient(lik.log_density, params)
-        np.testing.assert_allclose(grad_analytic, grad_fd,
-                                   rtol=1e-4, atol=1e-7)
+        np.testing.assert_allclose(grad_analytic,
+                                   grad_fd,
+                                   rtol=1e-4,
+                                   atol=1e-7)

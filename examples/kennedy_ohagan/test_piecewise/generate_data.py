@@ -87,11 +87,14 @@ def main():
     gt_path = os.path.join(HERE, "ground_truth.dat")
 
     np.savetxt(obs_path, u_obs)
-    np.savetxt(gt_path,
-               np.concatenate([THETA_TRUE,
-                                [np.log(SIGMA2_DELTA),
-                                 np.log(SIGMA2_EPS),
-                                 np.log(RHO_TRUE)]]))
+    np.savetxt(
+        gt_path,
+        np.concatenate([
+            THETA_TRUE,
+            [np.log(SIGMA2_DELTA),
+             np.log(SIGMA2_EPS),
+             np.log(RHO_TRUE)]
+        ]))
 
     print(f"theta_true  = {THETA_TRUE}")
     print(f"sigma2_delta= {SIGMA2_DELTA}  (log = {np.log(SIGMA2_DELTA):.3f})")

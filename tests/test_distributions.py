@@ -1,5 +1,6 @@
 import numpy as np
 import jax
+
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 from scipy.stats import multivariate_normal, wishart, lognorm
@@ -68,6 +69,7 @@ class NonlinearSinModel(NonlinearSinModelDirect):
             return np.asarray(vjp_fn(jnp.array(v, dtype=jnp.float64))[0])
 
         return np.asarray(out), vjp_fun
+
 
 SMALL = 1e-6
 LARGE = 1e6
@@ -345,13 +347,16 @@ def test_nonlinear_likelihood_hessian_vjp():
     A = rng.standard_normal((d_obs, n_params))
     b = rng.standard_normal(d_obs)
 
-    model_vjp = NonlinearSinModel(A, b)          # uses VJP path
-    model_direct = NonlinearSinModelDirect(A, b)  # uses fallback path (eval_grad/eval_hessian)
+    model_vjp = NonlinearSinModel(A, b)  # uses VJP path
+    model_direct = NonlinearSinModelDirect(
+        A, b)  # uses fallback path (eval_grad/eval_hessian)
 
     params = rng.standard_normal(n_params)
     sig_obs = 0.5
-    y_obs = np.array([model_vjp.eval(params) + rng.normal(0, sig_obs, d_obs)
-                      for _ in range(n_obs)])
+    y_obs = np.array([
+        model_vjp.eval(params) + rng.normal(0, sig_obs, d_obs)
+        for _ in range(n_obs)
+    ])
 
     llh_vjp = GaussianLikelihood(model_vjp, y_obs, sig_obs, rng=rng)
     llh_direct = GaussianLikelihood(model_direct, y_obs, sig_obs, rng=rng)
@@ -366,5 +371,5 @@ def test_nonlinear_likelihood_hessian_vjp():
     for i in range(n_obs):
         hess_vjp_i = llh_vjp.hessian_log_density(params, idx=i)
         hess_ref_i = llh_direct.hessian_log_density(params, idx=i)
-        assert np.allclose(hess_vjp_i, hess_ref_i, atol=1e-4), (
-            f"Per-obs Hessian mismatch at i={i}")
+        assert np.allclose(hess_vjp_i, hess_ref_i,
+                           atol=1e-4), (f"Per-obs Hessian mismatch at i={i}")

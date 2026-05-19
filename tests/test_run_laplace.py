@@ -7,10 +7,10 @@ import pytest
 
 from pdmp.distributions import MultivariateNormal, find_mean, find_curvature
 
-
 # ---------------------------------------------------------------------------
 # Unit: find_mean / find_curvature on a Gaussian (Laplace is exact)
 # ---------------------------------------------------------------------------
+
 
 def test_laplace_of_gaussian_exact_mean():
     """find_mean recovers the mean of a MultivariateNormal exactly."""
@@ -78,7 +78,8 @@ def gaussian_run(tmp_path, monkeypatch):
     out_dir = tmp_path / "results"
     config_path.write_text(_GAUSSIAN_CONFIG.format(out_dir=out_dir))
     monkeypatch.setattr(sys, 'argv',
-                        ['run_laplace.py', '--config', str(config_path)])
+                        ['run_laplace.py', '--config',
+                         str(config_path)])
     from run_laplace import main
     main()
     return out_dir
@@ -115,13 +116,15 @@ def test_main_samples_shape(gaussian_run):
 # Integration: outer Transformed wrapper is stripped
 # ---------------------------------------------------------------------------
 
+
 def test_main_strips_transformed_wrapper(tmp_path, monkeypatch):
     """main() strips an outer Transformed wrapper and still produces mean.dat."""
     config_path = tmp_path / "config.yaml"
     out_dir = tmp_path / "results"
     config_path.write_text(_TRANSFORMED_CONFIG.format(out_dir=out_dir))
     monkeypatch.setattr(sys, 'argv',
-                        ['run_laplace.py', '--config', str(config_path)])
+                        ['run_laplace.py', '--config',
+                         str(config_path)])
     from run_laplace import main
     main()
     assert (out_dir / 'mean.dat').exists()

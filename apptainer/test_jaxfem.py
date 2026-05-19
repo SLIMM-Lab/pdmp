@@ -30,12 +30,15 @@ def _section(msg):
 _section("1. Library imports")
 
 import jax
+
 _ok(f"jax {jax.__version__}")
 
 import jax_fem
+
 _ok(f"jax_fem {getattr(jax_fem, '__version__', 'installed')}")
 
 import pdmp
+
 _ok(f"pdmp {pdmp.__version__}")
 
 # ── 2. JaxFemModel construction ───────────────────────────────────────────────
@@ -64,7 +67,7 @@ v = np.ones(n_out)
 y_lin, vjp_fn = model.linearize(theta_true)
 g = vjp_fn(v)
 _ok(f"VJP gradient -> {g}")
-assert g.shape == (n_in,)
+assert g.shape == (n_in, )
 assert np.all(np.isfinite(g)), "gradient contains non-finite values"
 
 # ── 4. Posterior log-density (single FEM solve) ───────────────────────────────
@@ -92,7 +95,8 @@ _section("5. RandomWalkMetropolis on analytic Gaussian (50 samples)")
 
 from pdmp.loader import get_sampler
 
-analytic_target = MultivariateNormal(mean=np.array([0.0]), cov=np.array([[1.0]]))
+analytic_target = MultivariateNormal(mean=np.array([0.0]),
+                                     cov=np.array([[1.0]]))
 sampler_cfg = {
     'name': 'RandomWalkMetropolis',
     'sigma': 0.3,

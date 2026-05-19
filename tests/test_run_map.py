@@ -28,6 +28,7 @@ class _QuadraticTarget:
 # get_physical_transformation
 # ---------------------------------------------------------------------------
 
+
 def test_get_physical_transformation_returns_none_without_likelihood():
     """Non-Posterior targets have no _likelihood attribute."""
     target = _QuadraticTarget([0.0])
@@ -56,10 +57,14 @@ def test_get_physical_transformation_extracts_transformation():
 # run_optimization
 # ---------------------------------------------------------------------------
 
+
 def test_run_optimization_finds_quadratic_minimum():
     mu = np.array([3.0, -2.0])
     target = _QuadraticTarget(mu)
-    result = run_optimization(target, np.zeros(2), method='L-BFGS-B', options={})
+    result = run_optimization(target,
+                              np.zeros(2),
+                              method='L-BFGS-B',
+                              options={})
     assert result.success
     assert np.allclose(result.x, mu, atol=1e-5)
 
@@ -90,7 +95,9 @@ def test_main_writes_map_dat(tmp_path, monkeypatch):
     config_path = tmp_path / "config.yaml"
     out_dir = tmp_path / "results"
     config_path.write_text(_GAUSSIAN_CONFIG.format(out_dir=out_dir))
-    monkeypatch.setattr(sys, 'argv', ['run_map.py', '--config', str(config_path)])
+    monkeypatch.setattr(
+        sys, 'argv',
+        ['run_map.py', '--config', str(config_path)])
 
     from run_map import main
     main()
@@ -103,7 +110,9 @@ def test_main_map_converges_to_mean(tmp_path, monkeypatch):
     config_path = tmp_path / "config.yaml"
     out_dir = tmp_path / "results"
     config_path.write_text(_GAUSSIAN_CONFIG.format(out_dir=out_dir))
-    monkeypatch.setattr(sys, 'argv', ['run_map.py', '--config', str(config_path)])
+    monkeypatch.setattr(
+        sys, 'argv',
+        ['run_map.py', '--config', str(config_path)])
 
     from run_map import main
     main()
@@ -116,7 +125,9 @@ def test_main_writes_config_and_restart_objectives(tmp_path, monkeypatch):
     config_path = tmp_path / "config.yaml"
     out_dir = tmp_path / "results"
     config_path.write_text(_GAUSSIAN_CONFIG.format(out_dir=out_dir))
-    monkeypatch.setattr(sys, 'argv', ['run_map.py', '--config', str(config_path)])
+    monkeypatch.setattr(
+        sys, 'argv',
+        ['run_map.py', '--config', str(config_path)])
 
     from run_map import main
     main()

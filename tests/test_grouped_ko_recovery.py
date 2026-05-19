@@ -45,13 +45,13 @@ def _build_setup(seed=2026, psi_prior_mean=None, psi_prior_cov=None):
 
     # Per-group sensor coordinates in 1D, geom-major flat layout.
     x_locs_g = [rng.uniform(0.0, 1.0, (P, 1)) for _ in range(G)]
-    x_locs_flat = np.vstack(x_locs_g)            # (G*P, 1)
+    x_locs_flat = np.vstack(x_locs_g)  # (G*P, 1)
 
     # Truth.
     theta_true = np.array([2.0, 3.0])
-    log_s2d_true = -5.0   # σ²_δ ≈ 6.7e-3
-    log_s2e_true = -9.2   # σ²_ε ≈ 1e-4  → σ_ε ≈ 0.01 (mirrors itz NOISE_STD)
-    log_rho_true = 1.5    # ρ ≈ 4.48  → correlation length ~0.33 in [0,1]
+    log_s2d_true = -5.0  # σ²_δ ≈ 6.7e-3
+    log_s2e_true = -9.2  # σ²_ε ≈ 1e-4  → σ_ε ≈ 0.01 (mirrors itz NOISE_STD)
+    log_rho_true = 1.5  # ρ ≈ 4.48  → correlation length ~0.33 in [0,1]
     psi_true = np.array([log_s2d_true, log_s2e_true, log_rho_true])
 
     sigma2_delta = np.exp(log_s2d_true)
@@ -64,11 +64,11 @@ def _build_setup(seed=2026, psi_prior_mean=None, psi_prior_cov=None):
         for g in range(G):
             C_g = rbf_kernel_matrix(x_locs_g[g], rho)
             blocks.append(sigma2_delta * C_g + sigma2_eps * np.eye(P))
-    Sigma = sla.block_diag(*blocks)              # (m, m)
+    Sigma = sla.block_diag(*blocks)  # (m, m)
     L = np.linalg.cholesky(Sigma)
 
     # Draw one observation.
-    eta = model.eval(theta_true, idx=0)          # (m,)
+    eta = model.eval(theta_true, idx=0)  # (m,)
     z = rng.standard_normal(m)
     u_obs = (eta + L @ z).reshape(1, -1)
 
@@ -88,9 +88,13 @@ def _build_setup(seed=2026, psi_prior_mean=None, psi_prior_cov=None):
     )
 
     lik = KOGaussianLikelihood(
-        model=model, u_obs=u_obs, x_locs=x_locs_flat,
-        psi_prior=psi_prior, rng=rng,
-        n_components=n_components, n_groups=G,
+        model=model,
+        u_obs=u_obs,
+        x_locs=x_locs_flat,
+        psi_prior=psi_prior,
+        rng=rng,
+        n_components=n_components,
+        n_groups=G,
         kernel='isotropic',
     )
     joint_prior = JointDistribution([theta_prior, psi_prior], rng=rng)
@@ -110,7 +114,10 @@ def _run_map(posterior, theta_true, psi_true):
     def neg_grad(x):
         return -posterior.grad_log_density(x)
 
-    res = minimize(neg_log_post, x0, jac=neg_grad, method='L-BFGS-B',
+    res = minimize(neg_log_post,
+                   x0,
+                   jac=neg_grad,
+                   method='L-BFGS-B',
                    options=dict(maxiter=500, ftol=1e-10, gtol=1e-7))
     return res
 

@@ -29,6 +29,7 @@ class _QuadraticTarget:
 # get_likelihood_target
 # ---------------------------------------------------------------------------
 
+
 def test_get_likelihood_target_strips_prior():
     mock_likelihood = MagicMock()
     mock_prior = MagicMock()
@@ -45,10 +46,14 @@ def test_get_likelihood_target_returns_non_posterior_unchanged():
 # run_optimization
 # ---------------------------------------------------------------------------
 
+
 def test_run_optimization_finds_quadratic_minimum():
     mu = np.array([3.0, -2.0])
     target = _QuadraticTarget(mu)
-    result = run_optimization(target, np.zeros(2), method='L-BFGS-B', options={})
+    result = run_optimization(target,
+                              np.zeros(2),
+                              method='L-BFGS-B',
+                              options={})
     assert result.success
     assert np.allclose(result.x, mu, atol=1e-5)
 
@@ -56,8 +61,14 @@ def test_run_optimization_finds_quadratic_minimum():
 def test_run_optimization_returns_lower_value_from_closer_start():
     mu = np.array([1.0, 1.0])
     target = _QuadraticTarget(mu)
-    res_near = run_optimization(target, np.array([0.9, 0.9]), method='L-BFGS-B', options={})
-    res_far = run_optimization(target, np.array([10.0, 10.0]), method='L-BFGS-B', options={})
+    res_near = run_optimization(target,
+                                np.array([0.9, 0.9]),
+                                method='L-BFGS-B',
+                                options={})
+    res_far = run_optimization(target,
+                               np.array([10.0, 10.0]),
+                               method='L-BFGS-B',
+                               options={})
     assert np.allclose(res_near.x, mu, atol=1e-5)
     assert np.allclose(res_far.x, mu, atol=1e-5)
 
@@ -88,7 +99,9 @@ def test_main_writes_mle_dat(tmp_path, monkeypatch):
     config_path = tmp_path / "config.yaml"
     out_dir = tmp_path / "results"
     config_path.write_text(_GAUSSIAN_CONFIG.format(out_dir=out_dir))
-    monkeypatch.setattr(sys, 'argv', ['run_mle.py', '--config', str(config_path)])
+    monkeypatch.setattr(
+        sys, 'argv',
+        ['run_mle.py', '--config', str(config_path)])
 
     from run_mle import main
     main()
@@ -100,7 +113,9 @@ def test_main_mle_converges_to_mean(tmp_path, monkeypatch):
     config_path = tmp_path / "config.yaml"
     out_dir = tmp_path / "results"
     config_path.write_text(_GAUSSIAN_CONFIG.format(out_dir=out_dir))
-    monkeypatch.setattr(sys, 'argv', ['run_mle.py', '--config', str(config_path)])
+    monkeypatch.setattr(
+        sys, 'argv',
+        ['run_mle.py', '--config', str(config_path)])
 
     from run_mle import main
     main()
@@ -113,7 +128,9 @@ def test_main_writes_config_and_restart_objectives(tmp_path, monkeypatch):
     config_path = tmp_path / "config.yaml"
     out_dir = tmp_path / "results"
     config_path.write_text(_GAUSSIAN_CONFIG.format(out_dir=out_dir))
-    monkeypatch.setattr(sys, 'argv', ['run_mle.py', '--config', str(config_path)])
+    monkeypatch.setattr(
+        sys, 'argv',
+        ['run_mle.py', '--config', str(config_path)])
 
     from run_mle import main
     main()

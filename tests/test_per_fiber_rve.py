@@ -6,6 +6,7 @@ import tempfile
 import numpy as np
 import pytest
 import jax
+
 jax.config.update("jax_enable_x64", True)
 
 from pdmp.distributions import PerFiberEmpiricalMixture
@@ -43,7 +44,8 @@ def test_per_fiber_distance_assignment_basic():
 
 def test_per_fiber_distance_clamps_inside_fiber():
     """Quad points strictly inside a fiber should have zero distance to it."""
-    quad_points = np.array([[[0.5, 0.0]]])  # inside the unit-radius fiber at origin
+    quad_points = np.array([[[0.5,
+                              0.0]]])  # inside the unit-radius fiber at origin
     fibers = [(0.0, 0.0, 1.0)]
     per_fiber, _, nearest = compute_per_fiber_distance_assignment(
         quad_points, fibers)
@@ -84,9 +86,8 @@ def test_per_fiber_empirical_mixture_shape_and_indices(tmp_path):
             block = row[f * 3:(f + 1) * 3]
             g = round(block[0] / 100.0)
             assert 0 <= g <= 2
-            assert block == pytest.approx([g * 100 + 0,
-                                           g * 100 + 2,
-                                           g * 100 + 3])
+            assert block == pytest.approx(
+                [g * 100 + 0, g * 100 + 2, g * 100 + 3])
 
 
 def test_per_fiber_empirical_mixture_fixed_assignment(tmp_path):
@@ -190,8 +191,7 @@ def test_per_fiber_rve_voronoi_owns_quad_points():
     )
     # Fiber 0: rho=1 (no recovery deficit) and Einf=1.
     # Fiber 1: rho=0 (full deficit at the surface) and Einf=2.
-    params = np.array([1.0, 0.05, 1.0,
-                       0.0, 0.05, 2.0])
+    params = np.array([1.0, 0.05, 1.0, 0.0, 0.05, 2.0])
     E = np.asarray(pf._matrix_E_from_params(params))
     nearest = np.asarray(pf._nearest_fiber_idx_jnp)
 

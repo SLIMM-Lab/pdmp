@@ -16,10 +16,11 @@ import pandas as pd
 def main():
     parser = argparse.ArgumentParser(
         description="Plot find_mean optimization trace from CSV")
-    parser.add_argument("trace_file",
-                        nargs="?",
-                        default="find_mean_trace.csv",
-                        help="Path to trace CSV (default: find_mean_trace.csv)")
+    parser.add_argument(
+        "trace_file",
+        nargs="?",
+        default="find_mean_trace.csv",
+        help="Path to trace CSV (default: find_mean_trace.csv)")
     parser.add_argument("--output",
                         "-o",
                         default=None,
@@ -55,7 +56,11 @@ def main():
     alpha = 0.25 if many else 0.7
     for i, col in enumerate(param_cols):
         label = col if not many else None
-        ax_params.plot(iters, df[col], alpha=alpha, color=f"C{i % 10}", label=label)
+        ax_params.plot(iters,
+                       df[col],
+                       alpha=alpha,
+                       color=f"C{i % 10}",
+                       label=label)
     ax_params.set_ylabel("Parameter value")
     ax_params.set_title(f"Parameter traces  ({n_params} parameters)")
     ax_params.grid(True, alpha=0.3)

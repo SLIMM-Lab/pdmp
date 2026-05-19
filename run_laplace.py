@@ -73,8 +73,8 @@ def main():
     try:
         # Strip outer Transformed wrappers — see module docstring.
         problem_cfg = config['problem']
-        while isinstance(problem_cfg, dict) and problem_cfg.get(
-                'name') == 'Transformed':
+        while isinstance(problem_cfg,
+                         dict) and problem_cfg.get('name') == 'Transformed':
             problem_cfg = problem_cfg['distribution']
 
         target = get_target(problem_cfg, rng=rng)
@@ -108,7 +108,8 @@ def main():
 
         save_config(config, out_dir, 'config_used.yaml')
 
-        logger.warning(f' ---- Laplace approximation written to {out_dir} ---- ')
+        logger.warning(
+            f' ---- Laplace approximation written to {out_dir} ---- ')
 
     except Exception as e:
         logger.exception("An error occurred during Laplace approximation: %s",
