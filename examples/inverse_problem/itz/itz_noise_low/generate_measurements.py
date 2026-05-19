@@ -65,6 +65,8 @@ KO_SIGNAL = (0.1, 0.05)  # (mean, std) of σ_δ (discrepancy amplitude) in µm
 KO_NOISE = (NOISE_STD, 0.005)  # (mean, std) of σ_ε (noise amplitude) in µm
 KO_LENGTH = (150.0, 150.0)  # (mean, std) of ρ_KO (GP correlation length) in µm
 
+N_SAMPLES = 10000
+
 # ── CLI arguments ────────────────────────────────────────────────────────────
 _parser = argparse.ArgumentParser(
     description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -87,10 +89,11 @@ _parser.add_argument('--plot',
 _parser.add_argument('--recompute',
                      action='store_true',
                      help='ignore cached FEM solutions and re-run all solves')
-_parser.add_argument('--cpus-per-task',
-                     type=int,
-                     default=4,
-                     help='SLURM --cpus-per-task and OMP_NUM_THREADS (default: 4)')
+_parser.add_argument(
+    '--cpus-per-task',
+    type=int,
+    default=4,
+    help='SLURM --cpus-per-task and OMP_NUM_THREADS (default: 4)')
 _parser.add_argument('--mem-per-cpu',
                      type=str,
                      default='3968M',
@@ -111,9 +114,11 @@ SLURM_TIME = _args.time
 
 # ── Slurm script updater ─────────────────────────────────────────────────────
 
+
 def _update_slurm_scripts(cpus, mem, time):
     """Rewrite SLURM resource lines and OMP_NUM_THREADS in all submit_*.sh files."""
-    slurm_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'slurm')
+    slurm_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             'slurm')
     scripts = sorted(glob(os.path.join(slurm_dir, 'submit_*.sh')))
     if not scripts:
         print("No submit_*.sh scripts found — skipping SLURM update.")
@@ -124,7 +129,8 @@ def _update_slurm_scripts(cpus, mem, time):
         text = re.sub(r'(#SBATCH --cpus-per-task=)\S+', rf'\g<1>{cpus}', text)
         text = re.sub(r'(#SBATCH --mem-per-cpu=)\S+', rf'\g<1>{mem}', text)
         text = re.sub(r'(#SBATCH --time=)\S+', rf'\g<1>{time}', text)
-        text = re.sub(r'(--env "OMP_NUM_THREADS=)\d+(")', rf'\g<1>{cpus}\2', text)
+        text = re.sub(r'(--env "OMP_NUM_THREADS=)\d+(")', rf'\g<1>{cpus}\2',
+                      text)
         with open(path, 'w') as fh:
             fh.write(text)
         print(f"  SLURM: updated {os.path.basename(path)} "
@@ -133,11 +139,13 @@ def _update_slurm_scripts(cpus, mem, time):
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-GEOM_DIR = os.path.join(SCRIPT_DIR, 'geometries')
+SHARED_DIR = os.path.dirname(
+    SCRIPT_DIR)  # itz/ — shared geometries & FEM cache
+GEOM_DIR = os.path.join(SHARED_DIR, 'geometries')
 JOINT_DIR = os.path.join(SCRIPT_DIR, 'joint')
 SEPARATE_DIR = os.path.join(SCRIPT_DIR, 'separate')
 
-CACHE_DIR = os.path.join(SCRIPT_DIR, 'cache')
+CACHE_DIR = os.path.join(SHARED_DIR, 'cache')
 NPZ_DIR = os.path.join(CACHE_DIR, 'npz')
 VTK_DIR = os.path.join(CACHE_DIR, 'vtk')
 
@@ -299,7 +307,7 @@ _CONFIG_TEMPLATE = {
     },
     'sampler': {
         'name': 'RandomWalkMetropolis',
-        'n_samples': 2000,
+        'n_samples': N_SAMPLES,
         'sigma': 0.94,
         'x_0': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     },
@@ -352,7 +360,7 @@ _CONFIG_TEMPLATE_STANDARD = {
     },
     'sampler': {
         'name': 'RandomWalkMetropolis',
-        'n_samples': 2000,
+        'n_samples': N_SAMPLES,
         'sigma': 0.94,
         'x_0': [0.0, 0.0, 0.0],
     },

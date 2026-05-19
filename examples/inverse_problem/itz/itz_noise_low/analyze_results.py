@@ -9,6 +9,7 @@ Usage:
     python analyze_results.py [--separate-dir ./separate] [--joint-dir ./joint]
                               [--burnin-frac 0.25]
                               [--skip-separate] [--skip-joint] [--skip-comparison]
+                              [--skip-separate-standard]
 
 Output:
     separate/NN/rwm/figures/   — traces, marginals, pairplot per geometry
@@ -444,6 +445,114 @@ def load_separate_physical(separate_dir):
     return results
 
 
+# ── Per-geometry separate analysis (standard likelihood) ─────────────────────
+
+
+def analyze_one_separate_standard(geom_name, rwm_dir, burnin_frac):
+    """Analyse a single separate geometry run (standard likelihood); return post-burnin physical samples."""
+    print(f"\n{'='*60}")
+    print(f"Separate geometry (standard): {geom_name}")
+    print(f"{'='*60}")
+
+    _print_acceptance_rate(rwm_dir)
+    xi_chain = _load_samples(rwm_dir)
+
+    config_used = get_config(os.path.join(rwm_dir, 'config_used.yaml'))
+    M, b, f_inf, prior_mean, prior_cov = _extract_config_params_standard(
+        config_used)
+
+    print("Transforming to physical space...")
+    theta_chain, chain_physical = _to_physical(xi_chain, M, b, f_inf)
+
+    burnin = int(burnin_frac * len(chain_physical))
+    post = chain_physical[burnin:]
+    post_theta = theta_chain[burnin:]
+    _print_summary(post, label=f'geom {geom_name} standard')
+
+    fig_dir = os.path.join(rwm_dir, 'figures')
+    os.makedirs(fig_dir, exist_ok=True)
+
+    prior_std = np.sqrt(np.diag(prior_cov))
+    prior_physical = _sample_physical_prior(prior_mean, prior_cov, f_inf=f_inf)
+    theta_xlims = _standard_xlims()
+    theta_latent_xlims = _theta_xlims(prior_mean[:3], prior_std[:3])
+
+    _plot_traces(chain_physical,
+                 burnin,
+                 fig_dir,
+                 title_suffix=f'geom {geom_name} standard')
+    _plot_marginals(post, [0, 1, 2],
+                    THETA_NAMES,
+                    r'$\theta$ posterior marginals  ($\rho$, $l$, $f_\infty$)'
+                    f' — geom {geom_name} standard',
+                    'theta_marginals.pdf',
+                    fig_dir,
+                    xlims=theta_xlims,
+                    outlier_pct=(0.0, 0.0),
+                    prior_samples=prior_physical)
+    _plot_marginals(post_theta, [0, 1, 2],
+                    THETA_LATENT_NAMES,
+                    r'$\theta$ posterior marginals (latent space)'
+                    f' — geom {geom_name} standard',
+                    'theta_latent_marginals.pdf',
+                    fig_dir,
+                    xlims=theta_latent_xlims,
+                    outlier_pct=0.0,
+                    prior_mean=prior_mean[:3],
+                    prior_std=prior_std[:3])
+    _plot_pairplot(post, fig_dir, theta_xlims=theta_xlims, outlier_pct=1.0)
+
+    out = os.path.join(rwm_dir, 'samples_physical.dat')
+    np.savetxt(out, post, header='rho l f_inf', fmt='%.6e')
+    print(f"Saved physical samples: {out}")
+
+    return post
+
+
+def analyze_all_separate_standard(separate_dir, burnin_frac):
+    """Run per-geometry standard analysis for all completed separate standard runs.
+
+    Returns a dict mapping geom_name → post-burnin physical samples array (3 columns).
+    """
+    candidates = sorted(
+        glob(os.path.join(separate_dir, '*', 'rwm_standard', 'samples.dat')))
+    if not candidates:
+        print(f"No separate standard samples.dat found under {separate_dir}")
+        return {}
+
+    results = {}
+    for samples_path in candidates:
+        rwm_dir = os.path.dirname(samples_path)
+        geom_name = os.path.basename(os.path.dirname(rwm_dir))
+        try:
+            post = analyze_one_separate_standard(geom_name, rwm_dir,
+                                                 burnin_frac)
+            results[geom_name] = post
+        except Exception as exc:
+            print(f"  WARNING: skipping geom {geom_name} standard: {exc}")
+
+    return results
+
+
+def load_separate_standard_physical(separate_dir):
+    """Load pre-computed samples_physical.dat files from all separate standard runs."""
+    candidates = sorted(
+        glob(
+            os.path.join(separate_dir, '*', 'rwm_standard',
+                         'samples_physical.dat')))
+    if not candidates:
+        raise FileNotFoundError(
+            f"No standard samples_physical.dat found under {separate_dir}. "
+            "Run without --skip-separate-standard first.")
+    results = {}
+    for path in candidates:
+        geom_name = os.path.basename(os.path.dirname(os.path.dirname(path)))
+        results[geom_name] = np.loadtxt(path, comments='#')
+        print(f"Loaded separate standard physical samples: geom {geom_name} "
+              f"({results[geom_name].shape[0]} samples)")
+    return results
+
+
 # ── Joint analysis (mirrors joint/analyze_results.py) ────────────────────────
 
 
@@ -540,7 +649,8 @@ def _load_joint_prior_params(joint_dir):
             config_used = get_config(config_path)
             _, _, f_inf, prior_mean, prior_cov, psi_prior_mean, psi_prior_std = \
                 _extract_config_params(config_used)
-            prior_physical = _sample_physical_prior(prior_mean, prior_cov,
+            prior_physical = _sample_physical_prior(prior_mean,
+                                                    prior_cov,
                                                     f_inf=f_inf)
             return prior_physical, prior_mean, prior_cov, f_inf, psi_prior_mean, psi_prior_std
     raise FileNotFoundError(
@@ -645,7 +755,8 @@ def _plot_marginals_comparison(separate_posts,
                                psi_prior_std,
                                fig_dir,
                                theta_xlims=None,
-                               joint_standard_post=None):
+                               joint_standard_post=None,
+                               separate_standard_posts=None):
     """Two-panel figure: θ marginals and ψ marginals side by side, comparing
     each separate posterior, their mixture, the joint posterior, and the prior.
     """
@@ -753,6 +864,35 @@ def _plot_marginals_comparison(separate_posts,
                            ls=':',
                            alpha=0.7)
 
+            # Mixture of separate standard posteriors (θ panel only)
+            if separate_standard_posts and param_indices[0] == 0:
+                std_sep_list = list(separate_standard_posts.values())
+                n_std = len(std_sep_list)
+                std_mix = np.concatenate(std_sep_list, axis=0)
+                for idx, post in enumerate(std_sep_list):
+                    vals = _clip(post[:, i])
+                    if len(vals) < 2:
+                        continue
+                    ax.plot(xs,
+                            _kde_on_grid(vals, xs),
+                            color='C4',
+                            lw=0.7,
+                            alpha=0.35,
+                            label='separate std' if idx == 0 else None)
+                std_mix_vals = _clip(std_mix[:, i])
+                if len(std_mix_vals) >= 2:
+                    ax.plot(xs,
+                            _kde_on_grid(std_mix_vals, xs),
+                            color='C4',
+                            lw=2.0,
+                            ls='--',
+                            label=f'mixture std (n={n_std})')
+                    ax.axvline(np.median(std_mix_vals),
+                               color='C4',
+                               lw=1.0,
+                               ls=':',
+                               alpha=0.7)
+
             # Prior
             if 'prior_samples' in prior_kws:
                 p_vals = prior_kws['prior_samples'][:, i]
@@ -811,7 +951,8 @@ def _plot_theta_latent_comparison(separate_posts,
                                   prior_mean,
                                   prior_cov,
                                   fig_dir,
-                                  joint_standard_post=None):
+                                  joint_standard_post=None,
+                                  separate_standard_posts=None):
     """Overlaid KDE comparison for logit(ρ), log l, logit(f_∞/f_inf)."""
     if f_inf is None:
         print("WARNING: f_inf unavailable — skipping latent theta comparison.")
@@ -909,6 +1050,40 @@ def _plot_theta_latent_comparison(separate_posts,
                        lw=1.0,
                        ls=':',
                        alpha=0.7)
+
+        if separate_standard_posts:
+            std_sep_thetas = [
+                _physical_to_theta(p, f_inf)
+                for p in separate_standard_posts.values()
+            ]
+            n_std = len(std_sep_thetas)
+            std_mix_theta = np.concatenate(std_sep_thetas, axis=0)
+            for idx, t in enumerate(std_sep_thetas):
+                vals = t[:, k]
+                vals = vals[(vals >= xs[0]) & (vals <= xs[-1])]
+                if len(vals) < 2:
+                    continue
+                ax.plot(xs,
+                        _kde_on_grid(vals, xs),
+                        color='C4',
+                        lw=0.7,
+                        alpha=0.35,
+                        label='separate std' if idx == 0 else None)
+            std_mix_vals = std_mix_theta[:, k]
+            std_mix_vals = std_mix_vals[(std_mix_vals >= xs[0])
+                                        & (std_mix_vals <= xs[-1])]
+            if len(std_mix_vals) >= 2:
+                ax.plot(xs,
+                        _kde_on_grid(std_mix_vals, xs),
+                        color='C4',
+                        lw=2.0,
+                        ls='--',
+                        label=f'mixture std (n={n_std})')
+                ax.axvline(np.median(std_mix_vals),
+                           color='C4',
+                           lw=1.0,
+                           ls=':',
+                           alpha=0.7)
 
         if prior_mean is not None and prior_std is not None:
             from scipy.stats import norm
@@ -1048,12 +1223,14 @@ def _plot_pairplot_comparison(separate_posts,
                               theta_xlims=None,
                               outlier_pct=1.0,
                               max_scatter=1000,
-                              joint_standard_post=None):
+                              joint_standard_post=None,
+                              separate_standard_posts=None):
     """3×3 pairwise scatter for ρ, l, f_∞: mixture of separate (blue) vs joint (orange)."""
     separate_list = list(separate_posts.values())
     has_separate = len(separate_list) > 0
     has_joint = joint_post is not None
-    mixture = np.concatenate(separate_list, axis=0)[:, :3] if has_separate else None
+    mixture = np.concatenate(separate_list,
+                             axis=0)[:, :3] if has_separate else None
     joint_params = joint_post[:, :3] if has_joint else None
 
     # Optional outlier removal
@@ -1079,6 +1256,18 @@ def _plot_pairplot_comparison(separate_posts,
                 mask_std &= _filter_outliers(std_params[:, k], outlier_pct)
             std_params = std_params[mask_std]
 
+    std_sep_mixture = None
+    scatter_std_sep = None
+    if separate_standard_posts:
+        std_sep_mixture = np.concatenate(list(
+            separate_standard_posts.values()),
+                                         axis=0)[:, :3]
+        if outlier_pct is not None:
+            mask_ss = np.ones(len(std_sep_mixture), dtype=bool)
+            for k in range(3):
+                mask_ss &= _filter_outliers(std_sep_mixture[:, k], outlier_pct)
+            std_sep_mixture = std_sep_mixture[mask_ss]
+
     rng = np.random.default_rng(0)
     scatter_mix = None
     scatter_jnt = None
@@ -1097,6 +1286,11 @@ def _plot_pairplot_comparison(separate_posts,
                              size=min(max_scatter, len(std_params)),
                              replace=False)
         scatter_std = std_params[idx_std]
+    if std_sep_mixture is not None:
+        idx_ss = rng.choice(len(std_sep_mixture),
+                            size=min(max_scatter, len(std_sep_mixture)),
+                            replace=False)
+        scatter_std_sep = std_sep_mixture[idx_ss]
 
     names = THETA_NAMES
     d = 3
@@ -1131,6 +1325,14 @@ def _plot_pairplot_comparison(separate_posts,
                             alpha=0.4,
                             edgecolor='none',
                             label='joint standard')
+                if std_sep_mixture is not None:
+                    ax.hist(std_sep_mixture[:, i],
+                            bins=40,
+                            density=True,
+                            color='C4',
+                            alpha=0.4,
+                            edgecolor='none',
+                            label='mixture std')
                 ax.set_xlabel(names[i], fontsize=8)
                 if xlim is not None:
                     ax.set_xlim(*xlim)
@@ -1157,6 +1359,13 @@ def _plot_pairplot_comparison(separate_posts,
                                s=2.5,
                                alpha=0.4,
                                color='C3',
+                               linewidths=0)
+                if scatter_std_sep is not None:
+                    ax.scatter(scatter_std_sep[:, j],
+                               scatter_std_sep[:, i],
+                               s=2.5,
+                               alpha=0.4,
+                               color='C4',
                                linewidths=0)
                 ax.set_xlabel(names[j], fontsize=8)
                 ax.set_ylabel(names[i], fontsize=8)
@@ -1206,6 +1415,10 @@ def main():
                         action='store_true',
                         help='Skip joint standard analysis entirely (no '
                         'processing, no plotting)')
+    parser.add_argument('--skip-separate-standard',
+                        action='store_true',
+                        help='Skip separate standard analysis entirely (no '
+                        'processing, no plotting)')
     args = parser.parse_args()
 
     # ── Separate analysis ────────────────────────────────────────────────────
@@ -1229,6 +1442,12 @@ def main():
         except (FileNotFoundError, KeyError) as exc:
             print(f"WARNING: could not load joint prior params: {exc}")
 
+    # ── Separate standard analysis ───────────────────────────────────────────
+    separate_standard_posts = {}
+    if not args.skip_separate_standard:
+        separate_standard_posts = analyze_all_separate_standard(
+            args.separate_dir, args.burnin_frac)
+
     # ── Joint standard analysis ──────────────────────────────────────────────
     joint_standard_post = None
     if not args.skip_joint_standard:
@@ -1236,12 +1455,14 @@ def main():
             joint_standard_post, *_ = analyze_joint_standard(
                 args.joint_dir, args.burnin_frac)
         except FileNotFoundError as exc:
-            print(f"WARNING: joint standard run not available — skipping: {exc}")
+            print(
+                f"WARNING: joint standard run not available — skipping: {exc}")
 
     # ── Comparison figures ───────────────────────────────────────────────────
     if not args.skip_comparison:
         has_data = (separate_posts or joint_post is not None
-                    or joint_standard_post is not None)
+                    or joint_standard_post is not None
+                    or separate_standard_posts)
         if not has_data:
             print("Nothing to compare — all data sources skipped.")
         else:
@@ -1251,14 +1472,16 @@ def main():
             print("Comparison figures")
             print(f"{'='*60}")
             theta_xlims = _standard_xlims()
-            _plot_marginals_comparison(separate_posts,
-                                       joint_post,
-                                       prior_physical,
-                                       psi_prior_mean,
-                                       psi_prior_std,
-                                       fig_dir,
-                                       theta_xlims=theta_xlims,
-                                       joint_standard_post=joint_standard_post)
+            _plot_marginals_comparison(
+                separate_posts,
+                joint_post,
+                prior_physical,
+                psi_prior_mean,
+                psi_prior_std,
+                fig_dir,
+                theta_xlims=theta_xlims,
+                joint_standard_post=joint_standard_post,
+                separate_standard_posts=separate_standard_posts)
             _plot_theta_latent_comparison(
                 separate_posts,
                 joint_post,
@@ -1266,23 +1489,24 @@ def main():
                 prior_mean,
                 prior_cov,
                 fig_dir,
-                joint_standard_post=joint_standard_post)
+                joint_standard_post=joint_standard_post,
+                separate_standard_posts=separate_standard_posts)
             prior_psi_physical = None
             if psi_prior_mean is not None and psi_prior_std is not None:
                 _rng = np.random.default_rng(0)
                 _psi_log_samples = _rng.multivariate_normal(
-                    psi_prior_mean,
-                    np.diag(psi_prior_std**2),
-                    size=200_000)
+                    psi_prior_mean, np.diag(psi_prior_std**2), size=200_000)
                 prior_psi_physical = np.exp(_psi_log_samples)
             _plot_psi_comparison_physical(separate_posts, joint_post,
                                           prior_psi_physical, fig_dir)
-            _plot_pairplot_comparison(separate_posts,
-                                      joint_post,
-                                      fig_dir,
-                                      theta_xlims=theta_xlims,
-                                      outlier_pct=0.0,
-                                      joint_standard_post=joint_standard_post)
+            _plot_pairplot_comparison(
+                separate_posts,
+                joint_post,
+                fig_dir,
+                theta_xlims=theta_xlims,
+                outlier_pct=0.0,
+                joint_standard_post=joint_standard_post,
+                separate_standard_posts=separate_standard_posts)
             print(f"\nComparison figures written to {fig_dir}/")
 
     print("\nDone.")
