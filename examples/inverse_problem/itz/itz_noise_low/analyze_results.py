@@ -532,6 +532,21 @@ def load_joint_physical(joint_dir):
     return post, prior_physical, prior_mean, prior_cov, f_inf, psi_prior_mean, psi_prior_std
 
 
+def _load_joint_prior_params(joint_dir):
+    """Load prior parameters from the joint config without requiring samples."""
+    for ext in ('yaml', 'yml'):
+        config_path = os.path.join(joint_dir, 'rwm', f'config_used.{ext}')
+        if os.path.exists(config_path):
+            config_used = get_config(config_path)
+            _, _, f_inf, prior_mean, prior_cov, psi_prior_mean, psi_prior_std = \
+                _extract_config_params(config_used)
+            prior_physical = _sample_physical_prior(prior_mean, prior_cov,
+                                                    f_inf=f_inf)
+            return prior_physical, prior_mean, prior_cov, f_inf, psi_prior_mean, psi_prior_std
+    raise FileNotFoundError(
+        f"No config_used.yaml/yml found in {joint_dir}/rwm/")
+
+
 # ── Joint standard analysis ──────────────────────────────────────────────────
 
 
@@ -635,7 +650,9 @@ def _plot_marginals_comparison(separate_posts,
     each separate posterior, their mixture, the joint posterior, and the prior.
     """
     separate_list = list(separate_posts.values())
-    mixture = np.concatenate(separate_list, axis=0)
+    has_separate = len(separate_list) > 0
+    has_joint = joint_post is not None
+    mixture = np.concatenate(separate_list, axis=0) if has_separate else None
     n_geoms = len(separate_list)
 
     for param_indices, names, filename, title, xlims, prior_kws in [
@@ -660,8 +677,14 @@ def _plot_marginals_comparison(separate_posts,
                 k] if xlims is not None else None  # [lo, hi] pair or None
 
             # Collect all values to set a common x-range
-            all_vals = np.concatenate([post[:, i] for post in separate_list] +
-                                      [joint_post[:, i]])
+            parts = []
+            if has_separate:
+                parts.extend([post[:, i] for post in separate_list])
+            if has_joint:
+                parts.append(joint_post[:, i])
+            if not parts:
+                continue
+            all_vals = np.concatenate(parts)
             if xlim is not None:
                 xs = np.linspace(xlim[0], xlim[1], 400)
             else:
@@ -674,45 +697,47 @@ def _plot_marginals_comparison(separate_posts,
                 return vals[(vals >= xlim[0]) & (vals <= xlim[1])]
 
             # Individual separate posteriors
-            for idx, post in enumerate(separate_list):
-                vals = _clip(post[:, i])
-                if len(vals) < 2:
-                    continue
-                kde_y = _kde_on_grid(vals, xs)
-                label = 'separate' if idx == 0 else None
-                ax.plot(xs,
-                        kde_y,
-                        color='steelblue',
-                        lw=0.7,
-                        alpha=0.35,
-                        label=label)
+            if has_separate:
+                for idx, post in enumerate(separate_list):
+                    vals = _clip(post[:, i])
+                    if len(vals) < 2:
+                        continue
+                    kde_y = _kde_on_grid(vals, xs)
+                    label = 'separate' if idx == 0 else None
+                    ax.plot(xs,
+                            kde_y,
+                            color='steelblue',
+                            lw=0.7,
+                            alpha=0.35,
+                            label=label)
 
-            # Mixture of separate posteriors
-            mix_vals = _clip(mixture[:, i])
-            ax.plot(xs,
-                    _kde_on_grid(mix_vals, xs),
-                    color='steelblue',
-                    lw=2.0,
-                    ls='--',
-                    label=f'mixture (n={n_geoms})')
-            ax.axvline(np.median(mix_vals),
-                       color='steelblue',
-                       lw=1.0,
-                       ls=':',
-                       alpha=0.7)
+                # Mixture of separate posteriors
+                mix_vals = _clip(mixture[:, i])
+                ax.plot(xs,
+                        _kde_on_grid(mix_vals, xs),
+                        color='steelblue',
+                        lw=2.0,
+                        ls='--',
+                        label=f'mixture (n={n_geoms})')
+                ax.axvline(np.median(mix_vals),
+                           color='steelblue',
+                           lw=1.0,
+                           ls=':',
+                           alpha=0.7)
 
             # Joint posterior
-            j_vals = _clip(joint_post[:, i])
-            ax.plot(xs,
-                    _kde_on_grid(j_vals, xs),
-                    color='C1',
-                    lw=2.0,
-                    label='joint')
-            ax.axvline(np.median(j_vals),
-                       color='C1',
-                       lw=1.0,
-                       ls=':',
-                       alpha=0.7)
+            if has_joint:
+                j_vals = _clip(joint_post[:, i])
+                ax.plot(xs,
+                        _kde_on_grid(j_vals, xs),
+                        color='C1',
+                        lw=2.0,
+                        label='joint')
+                ax.axvline(np.median(j_vals),
+                           color='C1',
+                           lw=1.0,
+                           ls=':',
+                           alpha=0.7)
 
             # Joint standard posterior (θ panel only)
             if joint_standard_post is not None and param_indices[0] == 0:
@@ -788,59 +813,87 @@ def _plot_theta_latent_comparison(separate_posts,
                                   fig_dir,
                                   joint_standard_post=None):
     """Overlaid KDE comparison for logit(ρ), log l, logit(f_∞/f_inf)."""
-    prior_std = np.sqrt(np.diag(prior_cov))
-    theta_xlims = _theta_xlims(prior_mean[:3], prior_std[:3])
+    if f_inf is None:
+        print("WARNING: f_inf unavailable — skipping latent theta comparison.")
+        return
+
+    has_separate = bool(separate_posts)
+    has_joint = joint_post is not None
 
     separate_thetas = [
         _physical_to_theta(p, f_inf) for p in separate_posts.values()
-    ]
-    mixture_theta = np.concatenate(separate_thetas, axis=0)
-    joint_theta = _physical_to_theta(joint_post, f_inf)
+    ] if has_separate else []
+    mixture_theta = np.concatenate(separate_thetas,
+                                   axis=0) if has_separate else None
+    joint_theta = _physical_to_theta(joint_post, f_inf) if has_joint else None
     n_geoms = len(separate_thetas)
+
+    if prior_mean is not None and prior_cov is not None:
+        prior_std = np.sqrt(np.diag(prior_cov))
+        theta_xlims = _theta_xlims(prior_mean[:3], prior_std[:3])
+    else:
+        prior_std = None
+        theta_xlims = None
 
     fig, axes = plt.subplots(1, 3, figsize=(12, 4))
     for k, ax in enumerate(axes):
-        lo, hi = theta_xlims[k]
+        parts = []
+        if has_separate:
+            parts.extend([t[:, k] for t in separate_thetas])
+        if has_joint:
+            parts.append(joint_theta[:, k])
+        if not parts:
+            continue
+        all_vals = np.concatenate(parts)
 
-        all_vals = np.concatenate([t[:, k] for t in separate_thetas] +
-                                  [joint_theta[:, k]])
+        if theta_xlims is not None:
+            lo, hi = theta_xlims[k]
+        else:
+            lo, hi = float(np.percentile(all_vals, 0.5)), float(
+                np.percentile(all_vals, 99.5))
         xs = np.linspace(max(lo, float(np.percentile(all_vals, 0.5))),
                          min(hi, float(np.percentile(all_vals, 99.5))), 400)
 
-        for idx, t in enumerate(separate_thetas):
-            vals = t[:, k]
-            vals = vals[(vals >= xs[0]) & (vals <= xs[-1])]
-            if len(vals) < 2:
-                continue
+        if has_separate:
+            for idx, t in enumerate(separate_thetas):
+                vals = t[:, k]
+                vals = vals[(vals >= xs[0]) & (vals <= xs[-1])]
+                if len(vals) < 2:
+                    continue
+                ax.plot(xs,
+                        _kde_on_grid(vals, xs),
+                        color='steelblue',
+                        lw=0.7,
+                        alpha=0.35,
+                        label='separate' if idx == 0 else None)
+
+            mix_vals = mixture_theta[:, k]
+            mix_vals = mix_vals[(mix_vals >= xs[0]) & (mix_vals <= xs[-1])]
             ax.plot(xs,
-                    _kde_on_grid(vals, xs),
+                    _kde_on_grid(mix_vals, xs),
                     color='steelblue',
-                    lw=0.7,
-                    alpha=0.35,
-                    label='separate' if idx == 0 else None)
+                    lw=2.0,
+                    ls='--',
+                    label=f'mixture (n={n_geoms})')
+            ax.axvline(np.median(mix_vals),
+                       color='steelblue',
+                       lw=1.0,
+                       ls=':',
+                       alpha=0.7)
 
-        mix_vals = mixture_theta[:, k]
-        mix_vals = mix_vals[(mix_vals >= xs[0]) & (mix_vals <= xs[-1])]
-        ax.plot(xs,
-                _kde_on_grid(mix_vals, xs),
-                color='steelblue',
-                lw=2.0,
-                ls='--',
-                label=f'mixture (n={n_geoms})')
-        ax.axvline(np.median(mix_vals),
-                   color='steelblue',
-                   lw=1.0,
-                   ls=':',
-                   alpha=0.7)
-
-        j_vals = joint_theta[:, k]
-        j_vals = j_vals[(j_vals >= xs[0]) & (j_vals <= xs[-1])]
-        ax.plot(xs,
-                _kde_on_grid(j_vals, xs),
-                color='C1',
-                lw=2.0,
-                label='joint')
-        ax.axvline(np.median(j_vals), color='C1', lw=1.0, ls=':', alpha=0.7)
+        if has_joint:
+            j_vals = joint_theta[:, k]
+            j_vals = j_vals[(j_vals >= xs[0]) & (j_vals <= xs[-1])]
+            ax.plot(xs,
+                    _kde_on_grid(j_vals, xs),
+                    color='C1',
+                    lw=2.0,
+                    label='joint')
+            ax.axvline(np.median(j_vals),
+                       color='C1',
+                       lw=1.0,
+                       ls=':',
+                       alpha=0.7)
 
         if joint_standard_post is not None:
             js_theta = _physical_to_theta(joint_standard_post, f_inf)
@@ -857,13 +910,14 @@ def _plot_theta_latent_comparison(separate_posts,
                        ls=':',
                        alpha=0.7)
 
-        from scipy.stats import norm
-        ax.plot(xs,
-                norm.pdf(xs, prior_mean[k], prior_std[k]),
-                color='C2',
-                lw=1.5,
-                ls='--',
-                label='prior')
+        if prior_mean is not None and prior_std is not None:
+            from scipy.stats import norm
+            ax.plot(xs,
+                    norm.pdf(xs, prior_mean[k], prior_std[k]),
+                    color='C2',
+                    lw=1.5,
+                    ls='--',
+                    label='prior')
 
         ax.set_xlim(xs[0], xs[-1])
         ax.set_xlabel(THETA_LATENT_NAMES[k], fontsize=9)
@@ -897,53 +951,67 @@ def _plot_psi_comparison_physical(separate_posts, joint_post,
     prior_physical_psi: array (n × 3) of prior samples already exp-transformed.
     """
     separate_list = [_psi_to_physical(p) for p in separate_posts.values()]
-    mixture = np.concatenate(separate_list, axis=0)
-    joint_phys = _psi_to_physical(joint_post)
+    has_separate = len(separate_list) > 0
+    has_joint = joint_post is not None
+    mixture = np.concatenate(separate_list, axis=0) if has_separate else None
+    joint_phys = _psi_to_physical(joint_post) if has_joint else None
     n_geoms = len(separate_list)
 
     fig, axes = plt.subplots(1, 3, figsize=(12, 4))
     for k, ax in enumerate(axes):
         i = k + 3  # column index in the full array
 
-        all_vals = np.concatenate([p[:, i] for p in separate_list] +
-                                  [joint_phys[:, i]])
+        parts = []
+        if has_separate:
+            parts.extend([p[:, i] for p in separate_list])
+        if has_joint:
+            parts.append(joint_phys[:, i])
+        if not parts:
+            continue
+        all_vals = np.concatenate(parts)
         xs = np.linspace(float(np.percentile(all_vals, 1)),
                          float(np.percentile(all_vals, 99)), 400)
 
-        for idx, post in enumerate(separate_list):
-            vals = post[:, i]
-            vals = vals[(vals >= xs[0]) & (vals <= xs[-1])]
-            if len(vals) < 2:
-                continue
+        if has_separate:
+            for idx, post in enumerate(separate_list):
+                vals = post[:, i]
+                vals = vals[(vals >= xs[0]) & (vals <= xs[-1])]
+                if len(vals) < 2:
+                    continue
+                ax.plot(xs,
+                        _kde_on_grid(vals, xs),
+                        color='steelblue',
+                        lw=0.7,
+                        alpha=0.35,
+                        label='separate' if idx == 0 else None)
+
+            mix_vals = mixture[:, i]
+            mix_vals = mix_vals[(mix_vals >= xs[0]) & (mix_vals <= xs[-1])]
             ax.plot(xs,
-                    _kde_on_grid(vals, xs),
+                    _kde_on_grid(mix_vals, xs),
                     color='steelblue',
-                    lw=0.7,
-                    alpha=0.35,
-                    label='separate' if idx == 0 else None)
+                    lw=2.0,
+                    ls='--',
+                    label=f'mixture (n={n_geoms})')
+            ax.axvline(np.median(mix_vals),
+                       color='steelblue',
+                       lw=1.0,
+                       ls=':',
+                       alpha=0.7)
 
-        mix_vals = mixture[:, i]
-        mix_vals = mix_vals[(mix_vals >= xs[0]) & (mix_vals <= xs[-1])]
-        ax.plot(xs,
-                _kde_on_grid(mix_vals, xs),
-                color='steelblue',
-                lw=2.0,
-                ls='--',
-                label=f'mixture (n={n_geoms})')
-        ax.axvline(np.median(mix_vals),
-                   color='steelblue',
-                   lw=1.0,
-                   ls=':',
-                   alpha=0.7)
-
-        j_vals = joint_phys[:, i]
-        j_vals = j_vals[(j_vals >= xs[0]) & (j_vals <= xs[-1])]
-        ax.plot(xs,
-                _kde_on_grid(j_vals, xs),
-                color='C1',
-                lw=2.0,
-                label='joint')
-        ax.axvline(np.median(j_vals), color='C1', lw=1.0, ls=':', alpha=0.7)
+        if has_joint:
+            j_vals = joint_phys[:, i]
+            j_vals = j_vals[(j_vals >= xs[0]) & (j_vals <= xs[-1])]
+            ax.plot(xs,
+                    _kde_on_grid(j_vals, xs),
+                    color='C1',
+                    lw=2.0,
+                    label='joint')
+            ax.axvline(np.median(j_vals),
+                       color='C1',
+                       lw=1.0,
+                       ls=':',
+                       alpha=0.7)
 
         if prior_physical_psi is not None:
             p_vals = prior_physical_psi[:, k]
@@ -983,18 +1051,23 @@ def _plot_pairplot_comparison(separate_posts,
                               joint_standard_post=None):
     """3×3 pairwise scatter for ρ, l, f_∞: mixture of separate (blue) vs joint (orange)."""
     separate_list = list(separate_posts.values())
-    mixture = np.concatenate(separate_list, axis=0)[:, :3]
-    joint_params = joint_post[:, :3]
+    has_separate = len(separate_list) > 0
+    has_joint = joint_post is not None
+    mixture = np.concatenate(separate_list, axis=0)[:, :3] if has_separate else None
+    joint_params = joint_post[:, :3] if has_joint else None
 
     # Optional outlier removal
     if outlier_pct is not None:
-        mask_mix = np.ones(len(mixture), dtype=bool)
-        mask_jnt = np.ones(len(joint_params), dtype=bool)
-        for k in range(3):
-            mask_mix &= _filter_outliers(mixture[:, k], outlier_pct)
-            mask_jnt &= _filter_outliers(joint_params[:, k], outlier_pct)
-        mixture = mixture[mask_mix]
-        joint_params = joint_params[mask_jnt]
+        if has_separate:
+            mask_mix = np.ones(len(mixture), dtype=bool)
+            for k in range(3):
+                mask_mix &= _filter_outliers(mixture[:, k], outlier_pct)
+            mixture = mixture[mask_mix]
+        if has_joint:
+            mask_jnt = np.ones(len(joint_params), dtype=bool)
+            for k in range(3):
+                mask_jnt &= _filter_outliers(joint_params[:, k], outlier_pct)
+            joint_params = joint_params[mask_jnt]
 
     std_params = None
     scatter_std = None
@@ -1007,14 +1080,18 @@ def _plot_pairplot_comparison(separate_posts,
             std_params = std_params[mask_std]
 
     rng = np.random.default_rng(0)
-    idx_mix = rng.choice(len(mixture),
-                         size=min(max_scatter, len(mixture)),
-                         replace=False)
-    idx_jnt = rng.choice(len(joint_params),
-                         size=min(max_scatter, len(joint_params)),
-                         replace=False)
-    scatter_mix = mixture[idx_mix]
-    scatter_jnt = joint_params[idx_jnt]
+    scatter_mix = None
+    scatter_jnt = None
+    if has_separate:
+        idx_mix = rng.choice(len(mixture),
+                             size=min(max_scatter, len(mixture)),
+                             replace=False)
+        scatter_mix = mixture[idx_mix]
+    if has_joint:
+        idx_jnt = rng.choice(len(joint_params),
+                             size=min(max_scatter, len(joint_params)),
+                             replace=False)
+        scatter_jnt = joint_params[idx_jnt]
     if std_params is not None:
         idx_std = rng.choice(len(std_params),
                              size=min(max_scatter, len(std_params)),
@@ -1030,20 +1107,22 @@ def _plot_pairplot_comparison(separate_posts,
             xlim = theta_xlims[j] if theta_xlims is not None else None
             ylim = theta_xlims[i] if theta_xlims is not None else None
             if i == j:
-                ax.hist(mixture[:, i],
-                        bins=40,
-                        density=True,
-                        color='steelblue',
-                        alpha=0.4,
-                        edgecolor='none',
-                        label='mixture')
-                ax.hist(joint_params[:, i],
-                        bins=40,
-                        density=True,
-                        color='C1',
-                        alpha=0.4,
-                        edgecolor='none',
-                        label='joint')
+                if has_separate:
+                    ax.hist(mixture[:, i],
+                            bins=40,
+                            density=True,
+                            color='steelblue',
+                            alpha=0.4,
+                            edgecolor='none',
+                            label='mixture')
+                if has_joint:
+                    ax.hist(joint_params[:, i],
+                            bins=40,
+                            density=True,
+                            color='C1',
+                            alpha=0.4,
+                            edgecolor='none',
+                            label='joint')
                 if std_params is not None:
                     ax.hist(std_params[:, i],
                             bins=40,
@@ -1058,18 +1137,20 @@ def _plot_pairplot_comparison(separate_posts,
                 if i == 0:
                     ax.legend(fontsize=7)
             elif i > j:
-                ax.scatter(scatter_mix[:, j],
-                           scatter_mix[:, i],
-                           s=2.5,
-                           alpha=0.4,
-                           color='steelblue',
-                           linewidths=0)
-                ax.scatter(scatter_jnt[:, j],
-                           scatter_jnt[:, i],
-                           s=2.5,
-                           alpha=0.4,
-                           color='C1',
-                           linewidths=0)
+                if scatter_mix is not None:
+                    ax.scatter(scatter_mix[:, j],
+                               scatter_mix[:, i],
+                               s=2.5,
+                               alpha=0.4,
+                               color='steelblue',
+                               linewidths=0)
+                if scatter_jnt is not None:
+                    ax.scatter(scatter_jnt[:, j],
+                               scatter_jnt[:, i],
+                               s=2.5,
+                               alpha=0.4,
+                               color='C1',
+                               linewidths=0)
                 if scatter_std is not None:
                     ax.scatter(scatter_std[:, j],
                                scatter_std[:, i],
@@ -1111,90 +1192,98 @@ def main():
                         help='Fraction of samples to discard as burn-in')
     parser.add_argument('--skip-separate',
                         action='store_true',
-                        help='Skip per-geometry analysis; load existing '
-                        'samples_physical.dat files instead')
+                        help='Skip separate analysis entirely (no processing, '
+                        'no plotting)')
     parser.add_argument('--skip-joint',
                         action='store_true',
-                        help='Skip joint analysis; load existing '
-                        'samples_physical.dat instead')
+                        help='Skip joint analysis entirely (no processing, '
+                        'no plotting); prior params are still loaded from '
+                        'config for overlays')
     parser.add_argument('--skip-comparison',
                         action='store_true',
                         help='Skip comparison figures')
     parser.add_argument('--skip-joint-standard',
                         action='store_true',
-                        help='Skip joint standard analysis; load existing '
-                        'samples_physical.dat instead')
+                        help='Skip joint standard analysis entirely (no '
+                        'processing, no plotting)')
     args = parser.parse_args()
 
     # ── Separate analysis ────────────────────────────────────────────────────
+    separate_posts = {}
     if not args.skip_separate:
         separate_posts = analyze_all_separate(args.separate_dir,
                                               args.burnin_frac)
-    else:
-        separate_posts = load_separate_physical(args.separate_dir)
-
-    if not separate_posts:
-        print("No separate results available — skipping comparison.")
-        return
 
     # ── Joint analysis ───────────────────────────────────────────────────────
+    joint_post = None
+    prior_physical = prior_mean = prior_cov = f_inf = None
+    psi_prior_mean = psi_prior_std = None
     if not args.skip_joint:
         (joint_post, prior_physical, prior_mean, prior_cov, f_inf,
          psi_prior_mean,
          psi_prior_std) = analyze_joint(args.joint_dir, args.burnin_frac)
     else:
-        (joint_post, prior_physical, prior_mean, prior_cov, f_inf,
-         psi_prior_mean, psi_prior_std) = load_joint_physical(args.joint_dir)
+        try:
+            (prior_physical, prior_mean, prior_cov, f_inf, psi_prior_mean,
+             psi_prior_std) = _load_joint_prior_params(args.joint_dir)
+        except (FileNotFoundError, KeyError) as exc:
+            print(f"WARNING: could not load joint prior params: {exc}")
 
     # ── Joint standard analysis ──────────────────────────────────────────────
     joint_standard_post = None
-    try:
-        if not args.skip_joint_standard:
+    if not args.skip_joint_standard:
+        try:
             joint_standard_post, *_ = analyze_joint_standard(
                 args.joint_dir, args.burnin_frac)
-        else:
-            joint_standard_post, *_ = load_joint_standard_physical(
-                args.joint_dir)
-    except FileNotFoundError as exc:
-        print(f"WARNING: joint standard run not available — skipping: {exc}")
+        except FileNotFoundError as exc:
+            print(f"WARNING: joint standard run not available — skipping: {exc}")
 
     # ── Comparison figures ───────────────────────────────────────────────────
     if not args.skip_comparison:
-        fig_dir = os.path.join(HERE, 'figures')
-        os.makedirs(fig_dir, exist_ok=True)
-        print(f"\n{'='*60}")
-        print("Comparison figures")
-        print(f"{'='*60}")
-        theta_xlims = _standard_xlims()
-        _plot_marginals_comparison(separate_posts,
-                                   joint_post,
-                                   prior_physical,
-                                   psi_prior_mean,
-                                   psi_prior_std,
-                                   fig_dir,
-                                   theta_xlims=theta_xlims,
-                                   joint_standard_post=joint_standard_post)
-        _plot_theta_latent_comparison(separate_posts,
+        has_data = (separate_posts or joint_post is not None
+                    or joint_standard_post is not None)
+        if not has_data:
+            print("Nothing to compare — all data sources skipped.")
+        else:
+            fig_dir = os.path.join(HERE, 'figures')
+            os.makedirs(fig_dir, exist_ok=True)
+            print(f"\n{'='*60}")
+            print("Comparison figures")
+            print(f"{'='*60}")
+            theta_xlims = _standard_xlims()
+            _plot_marginals_comparison(separate_posts,
+                                       joint_post,
+                                       prior_physical,
+                                       psi_prior_mean,
+                                       psi_prior_std,
+                                       fig_dir,
+                                       theta_xlims=theta_xlims,
+                                       joint_standard_post=joint_standard_post)
+            _plot_theta_latent_comparison(
+                separate_posts,
+                joint_post,
+                f_inf,
+                prior_mean,
+                prior_cov,
+                fig_dir,
+                joint_standard_post=joint_standard_post)
+            prior_psi_physical = None
+            if psi_prior_mean is not None and psi_prior_std is not None:
+                _rng = np.random.default_rng(0)
+                _psi_log_samples = _rng.multivariate_normal(
+                    psi_prior_mean,
+                    np.diag(psi_prior_std**2),
+                    size=200_000)
+                prior_psi_physical = np.exp(_psi_log_samples)
+            _plot_psi_comparison_physical(separate_posts, joint_post,
+                                          prior_psi_physical, fig_dir)
+            _plot_pairplot_comparison(separate_posts,
                                       joint_post,
-                                      f_inf,
-                                      prior_mean,
-                                      prior_cov,
                                       fig_dir,
+                                      theta_xlims=theta_xlims,
+                                      outlier_pct=0.0,
                                       joint_standard_post=joint_standard_post)
-        _rng = np.random.default_rng(0)
-        _psi_log_samples = _rng.multivariate_normal(psi_prior_mean,
-                                                    np.diag(psi_prior_std**2),
-                                                    size=200_000)
-        prior_psi_physical = np.exp(_psi_log_samples)
-        _plot_psi_comparison_physical(separate_posts, joint_post,
-                                      prior_psi_physical, fig_dir)
-        _plot_pairplot_comparison(separate_posts,
-                                  joint_post,
-                                  fig_dir,
-                                  theta_xlims=theta_xlims,
-                                  outlier_pct=0.0,
-                                  joint_standard_post=joint_standard_post)
-        print(f"\nComparison figures written to {fig_dir}/")
+            print(f"\nComparison figures written to {fig_dir}/")
 
     print("\nDone.")
 
