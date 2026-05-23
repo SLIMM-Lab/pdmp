@@ -812,6 +812,13 @@ class JaxFemModel(Model):
 
         Default: [{"name": "sensor_left_center", "location_fn": "side_faces",
                    "point": [0, 0.5*d_y, 0.5*d_z]}]
+    solver_options : dict, optional
+        Options passed to ``ad_wrapper`` for the forward solve. The solver is
+        selected by the dict key (e.g. ``"umfpack_solver"``, ``"jax_solver"``,
+        ``"petsc_solver"``). Default: ``{"umfpack_solver": {}}``.
+    adjoint_solver_options : dict, optional
+        Options passed to ``ad_wrapper`` for the adjoint solve. Same format as
+        ``solver_options``. Default: ``{"umfpack_solver": {}}``.
     """
 
     def __init__(self,
@@ -826,8 +833,15 @@ class JaxFemModel(Model):
                  total_load=None,
                  n_params: int = 1,
                  field=None,
-                 sensors=None):
+                 sensors=None,
+                 solver_options=None,
+                 adjoint_solver_options=None):
         super().__init__()
+
+        if solver_options is None:
+            solver_options = {"umfpack_solver": {}}
+        if adjoint_solver_options is None:
+            adjoint_solver_options = {"umfpack_solver": {}}
 
         if traction is not None and total_load is not None:
             raise ValueError(
@@ -996,8 +1010,8 @@ class JaxFemModel(Model):
         # DOF counts.
         self.fwd_pred = ad_wrapper(
             self.problem,
-            solver_options={"umfpack_solver": {}},
-            adjoint_solver_options={"umfpack_solver": {}},
+            solver_options=solver_options,
+            adjoint_solver_options=adjoint_solver_options,
         )
 
         # total observed dofs = total point-wise displacements from all sensors
@@ -1258,6 +1272,8 @@ class JaxFemModel(Model):
         indenter_loc = config.get('indenter_loc', None)
         traction = config.get('traction', None)
         total_load = config.get('total_load', None)
+        solver_options = config.get('solver_options', None)
+        adjoint_solver_options = config.get('adjoint_solver_options', None)
 
         # Determine n_params from field if available
         if field is not None:
@@ -1302,6 +1318,8 @@ class JaxFemModel(Model):
             n_params=n_params,
             field=field,
             sensors=sensors,
+            solver_options=solver_options,
+            adjoint_solver_options=adjoint_solver_options,
         )
 
 
