@@ -19,6 +19,17 @@ import torch
 
 import numpy as np
 
+# Tighten PETSc KSP tolerances before any solver is constructed. jax-fem's
+# `petsc_solve` calls ksp.setFromOptions(), which reads from this global
+# options database. The defaults (rtol=1e-5) leave the absolute residual at
+# ~rtol·||b||, which on this problem's traction-driven RHS can be O(10), well
+# above the hard-coded `assert err < 0.1` in jax_fem/solver.py:135.
+from petsc4py import PETSc
+_petsc_opts = PETSc.Options()
+_petsc_opts.setValue('ksp_rtol', '1e-10')
+_petsc_opts.setValue('ksp_atol', '1e-50')
+_petsc_opts.setValue('ksp_max_it', '50000')
+
 from pdmp import logger
 from pdmp.logger_setup import setup_file_handler, suppress_external_loggers
 from pdmp.loader import get_target, get_sampler, get_surrogate, get_config, save_config
