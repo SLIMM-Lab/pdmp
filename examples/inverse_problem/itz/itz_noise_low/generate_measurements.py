@@ -262,6 +262,18 @@ _MODEL_TEMPLATE = {
     'indenter_loc': 110.0,
     'total_load': [0.0, 60.0, 0.0],
     'sensors': [],
+    'solver_options': {
+        'petsc_solver': {
+            'ksp_type': 'bcgsl',
+            'pc_type': 'ilu'
+        }
+    },
+    'adjoint_solver_options': {
+        'petsc_solver': {
+            'ksp_type': 'bcgsl',
+            'pc_type': 'ilu'
+        }
+    }
 }
 
 _CONFIG_TEMPLATE = {
