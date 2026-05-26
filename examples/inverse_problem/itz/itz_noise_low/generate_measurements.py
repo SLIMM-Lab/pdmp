@@ -51,7 +51,7 @@ INNER_CSH = 3
 ANHYDROUS = 4
 AGGREGATE = 7
 
-E_MAP = {OUTER_CSH: 25.0, INNER_CSH: 31.0, ANHYDROUS: 130.0, AGGREGATE: 70.0}
+E_MAP = {OUTER_CSH: 25.0, INNER_CSH: 31.0, ANHYDROUS: 99.0, AGGREGATE: 70.0}
 NU = 0.18
 
 VOXEL_SIZE = 2.0  # µm
@@ -59,6 +59,11 @@ Z_THRES = 110.0  # µm — load applied above this z-coordinate
 TOTAL_FORCE = 60.0  # mN
 
 NOISE_STD = 0.01  # µm — noise added to observations and assumed in inference
+
+# Model prior: physical-space (mean, std) for each field coefficient
+MODEL_COEFF0 = (0.5, 0.3)    # θ₀ via Sigmoid(0, 1)
+MODEL_COEFF1 = (70.0, 50.0)  # θ₁ via Exponential
+MODEL_COEFF2 = (50.0, 25.0)  # θ₂ via Sigmoid(0, E_MAP[ANHYDROUS]) in GPa
 
 # KO prior: physical-space (mean, std) for each hyperparameter
 KO_SIGNAL = (0.1, 0.05)  # (mean, std) of σ_δ (discrepancy amplitude) in µm
@@ -206,6 +211,18 @@ def _lognormal_to_logspace(mean, std):
     return float(mu), float(var)
 
 
+def _sigmoid_to_latentspace(mean, std, b):
+    """Delta-method conversion for a Sigmoid(0, b)-transformed parameter.
+
+    Physical θ = b · σ(x), so x* = logit(θ/b) and dθ/dx|_{x*} = θ·(b−θ)/b.
+    Returns (latent_mean, latent_var).
+    """
+    mu = float(onp.log(mean / (b - mean)))
+    slope = mean * (b - mean) / b
+    var = float((std / slope)**2)
+    return mu, var
+
+
 def _psi_prior_from_physical(signal_mean, signal_std, noise_mean, noise_std,
                              length_mean, length_std):
     """Build the KO psi_prior dict from physical-space parameters.
@@ -230,7 +247,29 @@ def _psi_prior_from_physical(signal_mean, signal_std, noise_mean, noise_std,
     }
 
 
+def _model_prior_from_physical(coeff0_mean, coeff0_std, coeff1_mean, coeff1_std,
+                               coeff2_mean, coeff2_std):
+    """Build the field coefficient_distribution dict from physical-space parameters.
+
+    The three coefficients are stored in latent space as:
+        x[0]  Sigmoid(0, 1)               — delta-method Gaussian
+        x[1]  Exponential (lognormal)     — exact
+        x[2]  Sigmoid(0, E_MAP[ANHYDROUS]) — delta-method Gaussian
+    """
+    mu0, v0 = _sigmoid_to_latentspace(coeff0_mean, coeff0_std, 1.0)
+    mu1, v1 = _lognormal_to_logspace(coeff1_mean, coeff1_std)
+    mu2, v2 = _sigmoid_to_latentspace(coeff2_mean, coeff2_std,
+                                      E_MAP[ANHYDROUS])
+    return {
+        'name': 'MultivariateNormal',
+        'mean': [mu0, mu1, mu2],
+        'cov': [[v0, 0.0, 0.0], [0.0, v1, 0.0], [0.0, 0.0, v2]],
+    }
+
+
 _PSI_PRIOR = _psi_prior_from_physical(*KO_SIGNAL, *KO_NOISE, *KO_LENGTH)
+_MODEL_COEFF_PRIOR = _model_prior_from_physical(*MODEL_COEFF0, *MODEL_COEFF1,
+                                                *MODEL_COEFF2)
 
 # ── Inference config templates ────────────────────────────────────────────────
 
@@ -239,16 +278,7 @@ _MODEL_TEMPLATE = {
     'd_y': 100.0,
     'd_z': 220.0,
     'field': {
-        'coefficient_distribution': {
-            'mean': [0.448315, 4.89906, 0.559249],
-            'cov': [
-                [0.470359, 0.0, 0.0],
-                [0.0, 0.223144, 0.0],
-                [0.0, 0.0, 0.904241],
-            ],
-            'name':
-            'MultivariateNormal',
-        },
+        'coefficient_distribution': _MODEL_COEFF_PRIOR,
         'infer_f_infinity': True,
         'idx': 2,
         'name': 'JaxExponentialRecoveryField',
@@ -299,7 +329,7 @@ _CONFIG_TEMPLATE = {
                     'Exponential',
                     {
                         'a': 0.0,
-                        'b': 130,
+                        'b': E_MAP[ANHYDROUS],
                         'type': 'Sigmoid'
                     },
                     'Identity',
@@ -356,7 +386,7 @@ _CONFIG_TEMPLATE_STANDARD = {
                     'Exponential',
                     {
                         'a': 0.0,
-                        'b': 130,
+                        'b': E_MAP[ANHYDROUS],
                         'type': 'Sigmoid'
                     },
                 ],
@@ -713,6 +743,9 @@ for geom_idx, geom_path in enumerate(geom_files):
     obs_i = u_all.T.ravel()  # [all_ux, all_uy, all_uz] — matches _eval_obs
     noise_rng = onp.random.default_rng(SEED + geom_idx + 1000)
     obs_i = obs_i + noise_rng.normal(0.0, NOISE_STD, obs_i.shape)
+    # Propagate the noise realisation back to (P, 3) so the joint output
+    # (built from all_observations below) uses the same noised measurements.
+    u_all = obs_i.reshape(3, -1).T
 
     # ── Write separate/NN/rwm/ output ────────────────────────────────────────
     sep_rwm_dir = os.path.join(SEPARATE_DIR, geom_name, 'rwm')
