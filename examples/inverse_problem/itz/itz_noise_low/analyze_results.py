@@ -285,6 +285,132 @@ def _plot_pairplot(post,
     print(f"Saved {path}")
 
 
+def _plot_psi_pairplot(post,
+                       fig_dir,
+                       psi_prior_mean=None,
+                       psi_prior_std=None,
+                       title_suffix='',
+                       filename='psi_pairplot.pdf',
+                       max_scatter=1000):
+    """3×3 corner plot of (log σ²_δ, log σ²_ε, log ρ_KO).
+
+    The (log σ²_δ, log σ²_ε) panel reveals the ridge that arises because only
+    σ²_δ + σ²_ε is tightly identified by the residual scale; the marginal mode
+    of either axis is therefore sensitive to sensor placement.  See
+    HYPERPARAMETER_DISCREPANCY.md at the itz/ level.
+    """
+    from scipy.stats import norm
+    psi = post[:, 3:6]
+    rng = np.random.default_rng(0)
+    idx = rng.choice(len(psi), size=min(max_scatter, len(psi)), replace=False)
+    scatter = psi[idx]
+    fig, axes = plt.subplots(3, 3, figsize=(8, 8))
+    for i in range(3):
+        for j in range(3):
+            ax = axes[i, j]
+            if i == j:
+                ax.hist(psi[:, i],
+                        bins=40,
+                        density=True,
+                        color='steelblue',
+                        alpha=0.5,
+                        edgecolor='none',
+                        label='posterior')
+                if psi_prior_mean is not None and psi_prior_std is not None:
+                    lo, hi = float(psi[:, i].min()), float(psi[:, i].max())
+                    xs = np.linspace(lo, hi, 200)
+                    ax.plot(xs,
+                            norm.pdf(xs, psi_prior_mean[i], psi_prior_std[i]),
+                            color='C2',
+                            lw=1.2,
+                            ls='--',
+                            label='prior')
+                ax.set_xlabel(PSI_NAMES[i], fontsize=8)
+                if i == 0:
+                    ax.legend(fontsize=7)
+            elif i > j:
+                ax.scatter(scatter[:, j],
+                           scatter[:, i],
+                           s=2,
+                           alpha=0.3,
+                           color='steelblue',
+                           linewidths=0)
+                ax.set_xlabel(PSI_NAMES[j], fontsize=8)
+                ax.set_ylabel(PSI_NAMES[i], fontsize=8)
+            else:
+                ax.set_visible(False)
+            ax.tick_params(labelsize=7)
+    suffix = f' — {title_suffix}' if title_suffix else ''
+    fig.suptitle(f'KO hyperparameter pairplot{suffix}', fontsize=10)
+    fig.tight_layout()
+    path = os.path.join(fig_dir, filename)
+    fig.savefig(path, bbox_inches='tight')
+    plt.close(fig)
+    print(f"Saved {path}")
+
+
+def _plot_psi_sum_marginal(post,
+                           fig_dir,
+                           psi_prior_mean=None,
+                           psi_prior_std=None,
+                           title_suffix='',
+                           filename='psi_sum_marginal.pdf'):
+    """KDE of σ²_δ + σ²_ε (the diagonal of Σ_g).
+
+    This sum is identified directly by the residual scale and is more robust
+    than either component alone — the individual components sit on a
+    confounding ridge.  See HYPERPARAMETER_DISCREPANCY.md at the itz/ level.
+    """
+    s2_sum = np.exp(post[:, 3]) + np.exp(post[:, 4])
+    lo, hi = float(np.percentile(s2_sum, 1)), float(np.percentile(s2_sum, 99))
+    s2_clip = s2_sum[(s2_sum >= lo) & (s2_sum <= hi)]
+    xs = np.linspace(lo, hi, 400)
+    fig, ax = plt.subplots(1, 1, figsize=(5, 4))
+    ax.hist(s2_clip,
+            bins=60,
+            density=True,
+            alpha=0.4,
+            color='steelblue',
+            edgecolor='none')
+    if len(s2_clip) > 2:
+        ax.plot(xs,
+                gaussian_kde(s2_clip)(xs),
+                color='steelblue',
+                lw=1.5,
+                label='posterior')
+    if psi_prior_mean is not None and psi_prior_std is not None:
+        rng = np.random.default_rng(0)
+        log_psi = rng.multivariate_normal(psi_prior_mean,
+                                          np.diag(psi_prior_std**2),
+                                          size=100_000)
+        prior_sum = np.exp(log_psi[:, 0]) + np.exp(log_psi[:, 1])
+        prior_sum = prior_sum[(prior_sum >= lo) & (prior_sum <= hi)]
+        if len(prior_sum) > 2:
+            ax.plot(xs,
+                    gaussian_kde(prior_sum)(xs),
+                    color='C2',
+                    lw=1.5,
+                    ls='--',
+                    label='prior')
+    ax.axvline(float(np.median(s2_sum)),
+               color='C1',
+               lw=1.0,
+               ls='--',
+               label=f'median={np.median(s2_sum):.3e}')
+    ax.set_xlabel(r'$\sigma^2_\delta + \sigma^2_\varepsilon$ (µm²)',
+                  fontsize=9)
+    ax.set_ylabel('density', fontsize=9)
+    ax.legend(fontsize=8)
+    suffix = f' — {title_suffix}' if title_suffix else ''
+    ax.set_title(f'KO variance sum (better-identified than the split){suffix}',
+                 fontsize=9)
+    fig.tight_layout()
+    path = os.path.join(fig_dir, filename)
+    fig.savefig(path, bbox_inches='tight')
+    plt.close(fig)
+    print(f"Saved {path}")
+
+
 # ── Config helpers ────────────────────────────────────────────────────────────
 
 
@@ -393,6 +519,16 @@ def analyze_one_separate(geom_name, rwm_dir, burnin_frac):
                     prior_mean=prior_mean[:3],
                     prior_std=prior_std[:3])
     _plot_pairplot(post, fig_dir, theta_xlims=theta_xlims, outlier_pct=1.0)
+    _plot_psi_pairplot(post,
+                       fig_dir,
+                       psi_prior_mean=psi_prior_mean,
+                       psi_prior_std=psi_prior_std,
+                       title_suffix=f'geom {geom_name}')
+    _plot_psi_sum_marginal(post,
+                           fig_dir,
+                           psi_prior_mean=psi_prior_mean,
+                           psi_prior_std=psi_prior_std,
+                           title_suffix=f'geom {geom_name}')
 
     out = os.path.join(rwm_dir, 'samples_physical.dat')
     np.savetxt(out,
@@ -615,6 +751,16 @@ def analyze_joint(joint_dir, burnin_frac):
                     prior_mean=prior_mean[:3],
                     prior_std=prior_std[:3])
     _plot_pairplot(post, fig_dir, theta_xlims=theta_xlims, outlier_pct=1.0)
+    _plot_psi_pairplot(post,
+                       fig_dir,
+                       psi_prior_mean=psi_prior_mean,
+                       psi_prior_std=psi_prior_std,
+                       title_suffix='joint')
+    _plot_psi_sum_marginal(post,
+                           fig_dir,
+                           psi_prior_mean=psi_prior_mean,
+                           psi_prior_std=psi_prior_std,
+                           title_suffix='joint')
 
     out = os.path.join(rwm_dir, 'samples_physical.dat')
     np.savetxt(out,
@@ -1217,6 +1363,104 @@ def _plot_psi_comparison_physical(separate_posts, joint_post,
     print(f"Saved {path}")
 
 
+def _plot_psi_sum_comparison(separate_posts,
+                             joint_post,
+                             fig_dir,
+                             psi_prior_mean=None,
+                             psi_prior_std=None,
+                             filename='psi_sum_comparison.pdf'):
+    """Overlay σ²_δ + σ²_ε for each separate run, the mixture, and the joint.
+
+    The diagonal sum is well-identified by the residual scale even when σ²_δ
+    and σ²_ε individually sit on a confounding ridge — checking that this sum
+    agrees across separate/joint inference is the right consistency check.
+    """
+    separate_list = list(separate_posts.values())
+    has_separate = len(separate_list) > 0
+    has_joint = joint_post is not None
+
+    def _sum(p):
+        return np.exp(p[:, 3]) + np.exp(p[:, 4])
+
+    parts = []
+    if has_separate:
+        parts.extend([_sum(p) for p in separate_list])
+    if has_joint:
+        parts.append(_sum(joint_post))
+    if not parts:
+        return
+    all_vals = np.concatenate(parts)
+    lo = float(np.percentile(all_vals, 1))
+    hi = float(np.percentile(all_vals, 99))
+    xs = np.linspace(lo, hi, 400)
+
+    fig, ax = plt.subplots(1, 1, figsize=(6, 4))
+    if has_separate:
+        for idx, p in enumerate(separate_list):
+            vals = _sum(p)
+            vals = vals[(vals >= lo) & (vals <= hi)]
+            if len(vals) < 2:
+                continue
+            ax.plot(xs,
+                    _kde_on_grid(vals, xs),
+                    color='steelblue',
+                    lw=0.7,
+                    alpha=0.35,
+                    label='separate' if idx == 0 else None)
+        mix = np.concatenate([_sum(p) for p in separate_list])
+        mix = mix[(mix >= lo) & (mix <= hi)]
+        if len(mix) >= 2:
+            ax.plot(xs,
+                    _kde_on_grid(mix, xs),
+                    color='steelblue',
+                    lw=2.0,
+                    ls='--',
+                    label=f'mixture (n={len(separate_list)})')
+            ax.axvline(float(np.median(mix)),
+                       color='steelblue',
+                       lw=1.0,
+                       ls=':',
+                       alpha=0.7)
+    if has_joint:
+        j_vals = _sum(joint_post)
+        j_vals = j_vals[(j_vals >= lo) & (j_vals <= hi)]
+        ax.plot(xs,
+                _kde_on_grid(j_vals, xs),
+                color='C1',
+                lw=2.0,
+                label='joint')
+        ax.axvline(float(np.median(j_vals)),
+                   color='C1',
+                   lw=1.0,
+                   ls=':',
+                   alpha=0.7)
+    if psi_prior_mean is not None and psi_prior_std is not None:
+        rng = np.random.default_rng(0)
+        log_psi = rng.multivariate_normal(psi_prior_mean,
+                                          np.diag(psi_prior_std**2),
+                                          size=200_000)
+        prior_sum = np.exp(log_psi[:, 0]) + np.exp(log_psi[:, 1])
+        prior_sum = prior_sum[(prior_sum >= lo) & (prior_sum <= hi)]
+        if len(prior_sum) > 2:
+            ax.plot(xs,
+                    _kde_on_grid(prior_sum, xs),
+                    color='C2',
+                    lw=1.5,
+                    ls='--',
+                    label='prior')
+    ax.set_xlim(lo, hi)
+    ax.set_xlabel(r'$\sigma^2_\delta + \sigma^2_\varepsilon$ (µm²)',
+                  fontsize=9)
+    ax.set_ylabel('density', fontsize=9)
+    ax.set_title('KO variance sum: separate vs joint', fontsize=10)
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    path = os.path.join(fig_dir, filename)
+    fig.savefig(path, bbox_inches='tight')
+    plt.close(fig)
+    print(f"Saved {path}")
+
+
 def _plot_pairplot_comparison(separate_posts,
                               joint_post,
                               fig_dir,
@@ -1499,6 +1743,11 @@ def main():
                 prior_psi_physical = np.exp(_psi_log_samples)
             _plot_psi_comparison_physical(separate_posts, joint_post,
                                           prior_psi_physical, fig_dir)
+            _plot_psi_sum_comparison(separate_posts,
+                                     joint_post,
+                                     fig_dir,
+                                     psi_prior_mean=psi_prior_mean,
+                                     psi_prior_std=psi_prior_std)
             _plot_pairplot_comparison(
                 separate_posts,
                 joint_post,
