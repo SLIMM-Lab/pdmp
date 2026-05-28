@@ -1381,6 +1381,9 @@ class RVEModel:
         'max_von_mises': r'$\sigma_\mathrm{VM}^\mathrm{max}$',
         'max_stress': r'$\sigma^\mathrm{max}$',
         'max_strain': r'$\varepsilon^\mathrm{max}$',
+        'max_von_mises_cell': r'cell$(\sigma_\mathrm{VM}^\mathrm{max})$',
+        'max_stress_cell': r'cell$(\sigma^\mathrm{max})$',
+        'max_strain_cell': r'cell$(\varepsilon^\mathrm{max})$',
     }
 
     def __init__(self,
@@ -1629,13 +1632,41 @@ class RVEModel:
             elif q == 'max_von_mises':
                 sigma_cell_np = np.array(sigma_cell)
                 vm = compute_von_mises_from_cell(sigma_cell_np, self._nu_cell)
-                result[q] = float(np.max(vm))
+                cell = int(np.argmax(vm))
+                result[q] = float(vm[cell])
+                result['max_von_mises_cell'] = cell
             elif q == 'max_stress':
-                result[q] = float(np.max(np.abs(np.array(sigma_cell))))
+                per_cell = np.abs(np.array(sigma_cell)).reshape(
+                    sigma_cell.shape[0], -1).max(axis=1)
+                cell = int(np.argmax(per_cell))
+                result[q] = float(per_cell[cell])
+                result['max_stress_cell'] = cell
             elif q == 'max_strain':
-                result[q] = float(np.max(np.abs(np.array(eps_cell))))
+                per_cell = np.abs(np.array(eps_cell)).reshape(
+                    eps_cell.shape[0], -1).max(axis=1)
+                cell = int(np.argmax(per_cell))
+                result[q] = float(per_cell[cell])
+                result['max_strain_cell'] = cell
 
         return result
+
+    def export_geometry(self):
+        """Geometry needed to map ``*_cell`` output indices to the domain.
+
+        Returns a dict with cell centroids (ordered to match the cell axis of
+        the stress/strain arrays, i.e. the ``*_cell`` indices), the fiber
+        circles, and the RVE side length, so plotting can be done without the
+        model present.
+        """
+        fe = self._problem.fe
+        points = np.asarray(fe.points)[:, :2]
+        centroids = np.mean(points[np.asarray(fe.cells)], axis=1)
+        return {
+            'cell_centroids': centroids,
+            'fibers': [[float(cx), float(cy), float(r)]
+                       for cx, cy, r in self.fibers],
+            'L': float(self.L),
+        }
 
     @staticmethod
     def from_dict(config):
