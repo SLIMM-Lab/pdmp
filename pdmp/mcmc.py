@@ -12,6 +12,7 @@ from tqdm import tqdm
 
 from pdmp.sampler import Sampler, register_sampler
 from pdmp.distributions import Distribution, MultivariateNormal
+from pdmp.forward_model import ForwardModelFailure
 from pdmp import logger
 
 
@@ -47,6 +48,7 @@ class StepSampler(Sampler):
         self._n_accept_last = 1
         self._rescale_interval = 100
         self._cov_factor = cov_factor
+        self._n_solver_rejections = 0
 
         if rng is None and seed is None:
             self._rng = np.random.default_rng(0)
@@ -133,7 +135,8 @@ class StepSampler(Sampler):
 
         data = {
             'acceptance_rate': self._n_accept / self._n_samples,
-            'preconditioner': self._prec
+            'preconditioner': self._prec,
+            'n_solver_rejections': self._n_solver_rejections,
         }
 
         with open(os.path.join(folder, 'other.pkl'), 'wb') as f:
@@ -142,6 +145,10 @@ class StepSampler(Sampler):
         np.savetxt(os.path.join(folder, 'samples.dat'),
                    self.chain,
                    fmt=f'%.{precision}e')
+        if self._n_solver_rejections:
+            logger.info(
+                f"Forward-model solver rejections during run: "
+                f"{self._n_solver_rejections}")
 
 
 @register_sampler('RandomWalkMetropolis')
@@ -199,7 +206,16 @@ class RandomWalkMetropolisSampler(StepSampler):
         proposal = self._state + self._sigma * self._prec_L @ self._proposal_dist.get_sample(
         )
         self._proposals[self._iter, :] = proposal
-        log_density_new = self.target.log_density(proposal)
+        try:
+            log_density_new = self.target.log_density(proposal)
+        except ForwardModelFailure as e:
+            self._n_solver_rejections += 1
+            logger.warning(
+                f"RWM iter {self._iter}: rejecting proposal due to forward "
+                f"model failure (#{self._n_solver_rejections}). {e}")
+            self.chain[self._iter, :] = self._state
+            self._iter += 1
+            return
 
         if (log_density_new - self._log_density_old) > np.log(
                 self._rng.uniform()):
@@ -337,8 +353,17 @@ class LangevinDynamicsSampler(StepSampler):
         # self.randn_ = np.array([0.8037, -1.715])
         prop = (self._state + self.sigma_ * self._prec_L @ self.randn_ +
                 0.5 * self.sigma_**2 * self._prec @ self.grad_log_density_)
-        log_density_prop = self.target.log_density(prop)
-        grad_log_density_prop = self.target.grad_log_density(prop)
+        try:
+            log_density_prop = self.target.log_density(prop)
+            grad_log_density_prop = self.target.grad_log_density(prop)
+        except ForwardModelFailure as e:
+            self._n_solver_rejections += 1
+            logger.warning(
+                f"Langevin iter {self._iter}: rejecting proposal due to "
+                f"forward model failure (#{self._n_solver_rejections}). {e}")
+            self.chain[self._iter, :] = self._state
+            self._iter += 1
+            return
         log_numerator = log_density_prop + self._log_proposal_density(
             self._state, prop, grad_log_density_prop)
         log_denominator = self.log_density_ + self._log_proposal_density(
@@ -488,13 +513,22 @@ class HamiltonianMonteCarlo(StepSampler):
         p_hist[0, :] = p_0 = self._prec_L @ self._proposal_dist.get_sample()
         q_hist[0, :] = q_0 = self._state
 
-        hamiltonian_0 = self._get_hamiltonian(p_0, q_0)
+        try:
+            hamiltonian_0 = self._get_hamiltonian(p_0, q_0)
 
-        for i in range(1, self._leap_frog_steps + 1):
-            p_hist[i, :], q_hist[i, :] = self._leap_frog_step(
-                p_hist[i - 1, :], q_hist[i - 1, :])
+            for i in range(1, self._leap_frog_steps + 1):
+                p_hist[i, :], q_hist[i, :] = self._leap_frog_step(
+                    p_hist[i - 1, :], q_hist[i - 1, :])
 
-        hamiltonian = self._get_hamiltonian(p_hist[-1, :], q_hist[-1, :])
+            hamiltonian = self._get_hamiltonian(p_hist[-1, :], q_hist[-1, :])
+        except ForwardModelFailure as e:
+            self._n_solver_rejections += 1
+            logger.warning(
+                f"HMC iter {self._iter}: rejecting trajectory due to forward "
+                f"model failure (#{self._n_solver_rejections}). {e}")
+            self.chain[self._iter, :] = self._state
+            self._iter += 1
+            return
 
         accept = (-hamiltonian + hamiltonian_0) > np.log(self._rng.uniform())
         if accept:

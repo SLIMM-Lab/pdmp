@@ -12,6 +12,10 @@ import jax
 import jax.numpy as jnp
 
 
+class ForwardModelFailure(RuntimeError):
+    """Both the primary and the UMFPACK fallback FEM solve failed for these params."""
+
+
 class Model:
     """Base class for the forward model"""
 
@@ -839,9 +843,15 @@ class JaxFemModel(Model):
         super().__init__()
 
         if solver_options is None:
-            solver_options = {"umfpack_solver": {}}
+            solver_options = {"petsc_solver": {
+                'ksp_type': 'bcgsl',
+                'pc_type': 'ilu'
+            }}
         if adjoint_solver_options is None:
-            adjoint_solver_options = {"umfpack_solver": {}}
+            adjoint_solver_options = {"petsc_solver": {
+                'ksp_type': 'bcgsl',
+                'pc_type': 'ilu'
+            }}
 
         if traction is not None and total_load is not None:
             raise ValueError(
@@ -1014,6 +1024,18 @@ class JaxFemModel(Model):
             adjoint_solver_options=adjoint_solver_options,
         )
 
+        # Fallback solver: same problem object, direct UMFPACK for both
+        # forward and adjoint. Used when the primary (typically PETSc) raises
+        # AssertionError on convergence failure. ad_wrapper construction is
+        # essentially free — just closures over self.problem.
+        self.fwd_pred_umfpack = ad_wrapper(
+            self.problem,
+            solver_options={"umfpack_solver": {}},
+            adjoint_solver_options={"umfpack_solver": {}},
+        )
+        self._petsc_fallbacks = 0
+        self._umfpack_failures = 0
+
         # total observed dofs = total point-wise displacements from all sensors
         sample_sol = jnp.zeros((self.problem.fe.num_total_nodes, 3))
         sample_readings = evaluate_sensor_displacements(
@@ -1037,17 +1059,23 @@ class JaxFemModel(Model):
         """
         return np.vstack([s["points"] for s in self.sensor_interpolants])
 
-    def _eval_obs(self, params: jnp.ndarray, idx: int = 0) -> jnp.ndarray:
+    def _eval_obs(self,
+                  params: jnp.ndarray,
+                  idx: int = 0,
+                  wrapper=None) -> jnp.ndarray:
         """JAX-compatible forward map params -> observation vector.
 
         This function is purely functional and suitable for jax.vjp, jacrev, etc.
-        It performs a FEM solve via `self.fwd_pred` and then extracts the
-        concatenated sensor displacements.
+        It performs a FEM solve via ``wrapper`` (defaulting to ``self.fwd_pred``)
+        and then extracts the concatenated sensor displacements.
 
         If a random field is attached, params are coefficients that get mapped
         to a spatially-varying material property field. Otherwise, params is
         broadcast directly as a constant field.
         """
+        if wrapper is None:
+            wrapper = self.fwd_pred
+
         # Map parameters to material property field
         if self.field is None:
             # Simple broadcast: scalar/global params to per-cell/quadrature field
@@ -1071,7 +1099,7 @@ class JaxFemModel(Model):
             param_field = field_values_flat.reshape(self.problem.fe.num_cells,
                                                     self.problem.fe.num_quads)
 
-        sol_list = self.fwd_pred([param_field])
+        sol_list = wrapper([param_field])
         sensor_readings = evaluate_sensor_displacements(
             sol_list[0], self.sensor_interpolants)
         if not sensor_readings:
@@ -1082,6 +1110,25 @@ class JaxFemModel(Model):
         # This matches the block-diagonal covariance structure used by
         # KOGaussianLikelihood (n_components = vec_dim independent GP components).
         return u_all.T.ravel()
+
+    def _run_with_fallback(self, fn, where: str = 'forward'):
+        """Call ``fn(wrapper)`` with the primary wrapper; on AssertionError,
+        retry with the UMFPACK wrapper. Raise ForwardModelFailure if both fail.
+        """
+        try:
+            return fn(self.fwd_pred)
+        except AssertionError as e:
+            self._petsc_fallbacks += 1
+            logger.warning(
+                f"Primary {where} solve failed (fallback #{self._petsc_fallbacks}); "
+                f"retrying with UMFPACK. Error: {e}")
+            try:
+                return fn(self.fwd_pred_umfpack)
+            except AssertionError as e2:
+                self._umfpack_failures += 1
+                raise ForwardModelFailure(
+                    f"Both primary and UMFPACK {where} solves failed: {e2}"
+                ) from e2
 
     def eval(self,
              params: np.ndarray,
@@ -1094,7 +1141,9 @@ class JaxFemModel(Model):
         from jax_fem.utils import save_sol
 
         theta = jnp.asarray(params)
-        y = self._eval_obs(theta, idx)
+        y = self._run_with_fallback(
+            lambda w: self._eval_obs(theta, idx, wrapper=w),
+            where='forward')
 
         # Optionally still write full-field VTK for debugging
         # Recompute with full field to save; this keeps eval() side-effects
@@ -1111,7 +1160,9 @@ class JaxFemModel(Model):
                                                     self.problem.fe.num_quads)
 
         if save_dir:
-            sol_list = self.fwd_pred([param_field])
+            sol_list = self._run_with_fallback(
+                lambda w: w([param_field]),
+                where='forward')
             os.makedirs(save_dir, exist_ok=True)
             vtk_path = os.path.join(save_dir, 'vtk/u.vtu')
             os.makedirs(os.path.dirname(vtk_path), exist_ok=True)
@@ -1144,14 +1195,58 @@ class JaxFemModel(Model):
         """
         theta = jnp.asarray(params)
 
-        def obs_fn(theta_local):
-            return self._eval_obs(theta_local, idx)
+        def build_vjp(wrapper):
+            def obs_fn(theta_local):
+                return self._eval_obs(theta_local, idx, wrapper=wrapper)
+            return jax.vjp(obs_fn, theta)
 
-        y, vjp_handle = jax.vjp(obs_fn, theta)
+        # Forward pass with UMFPACK fallback. ``used_umfpack`` records whether
+        # the primary wrapper already failed; if so, an adjoint failure inside
+        # ``apply_vjp`` cannot fall back further and must be raised.
+        try:
+            y, vjp_handle = build_vjp(self.fwd_pred)
+            used_umfpack = False
+        except AssertionError as e:
+            self._petsc_fallbacks += 1
+            logger.warning(
+                f"Primary forward solve failed in linearize "
+                f"(fallback #{self._petsc_fallbacks}); retrying with UMFPACK. "
+                f"Error: {e}")
+            try:
+                y, vjp_handle = build_vjp(self.fwd_pred_umfpack)
+                used_umfpack = True
+            except AssertionError as e2:
+                self._umfpack_failures += 1
+                raise ForwardModelFailure(
+                    f"Both primary and UMFPACK forward solves failed in "
+                    f"linearize: {e2}") from e2
 
         def apply_vjp(v: np.ndarray) -> np.ndarray:
-            (g, ) = vjp_handle(jnp.asarray(v))
-            return np.asarray(g)
+            try:
+                (g, ) = vjp_handle(jnp.asarray(v))
+                return np.asarray(g)
+            except AssertionError as e:
+                if used_umfpack:
+                    self._umfpack_failures += 1
+                    raise ForwardModelFailure(
+                        f"UMFPACK adjoint solve failed: {e}") from e
+                # PETSc adjoint failed but forward succeeded — rebuild the
+                # whole forward+adjoint with UMFPACK. One redundant forward
+                # solve, but keeps us within the public ad_wrapper API.
+                self._petsc_fallbacks += 1
+                logger.warning(
+                    f"Primary adjoint solve failed "
+                    f"(fallback #{self._petsc_fallbacks}); rebuilding with "
+                    f"UMFPACK. Error: {e}")
+                try:
+                    _, vjp_handle_um = build_vjp(self.fwd_pred_umfpack)
+                    (g, ) = vjp_handle_um(jnp.asarray(v))
+                    return np.asarray(g)
+                except AssertionError as e2:
+                    self._umfpack_failures += 1
+                    raise ForwardModelFailure(
+                        f"Both primary and UMFPACK adjoint solves failed: "
+                        f"{e2}") from e2
 
         return np.asarray(y), apply_vjp
 
@@ -1169,29 +1264,20 @@ class JaxFemModel(Model):
     def eval_grad(self, params: np.ndarray, idx: int = 0) -> np.ndarray:
         """Return full Jacobian d_obs x n_params using JAX.
 
-        This forms the dense Jacobian by looping over output components and
-        applying a scalar VJP for each, which avoids batched VJP issues in
-        the implicit solver.
+        Forms the dense Jacobian by looping over output components and
+        applying a scalar VJP for each, via ``linearize`` so the UMFPACK
+        fallback applies transparently. Avoids batched VJP issues in the
+        implicit solver.
         """
-        theta = jnp.asarray(params)
-
-        def obs_fn(theta_local):
-            return self._eval_obs(theta_local, idx)
-
-        # Build VJP at theta once
-        y, vjp_handle = jax.vjp(obs_fn, theta)
-        y = jnp.atleast_1d(y)
+        y, vjp_fun = self.linearize(params, idx)
+        y = np.atleast_1d(np.asarray(y))
         d_obs = y.shape[0]
-        n_params = theta.shape[0]
         J_rows = []
-        # For each output component e_i, compute J^T e_i via VJP and treat it
-        # as the i-th row of the Jacobian.
         for i in range(d_obs):
-            e_i = jnp.zeros_like(y).at[i].set(1.0)
-            (g_i, ) = vjp_handle(e_i)
-            J_rows.append(g_i)
-        J = jnp.stack(J_rows, axis=0)  # (d_obs, n_params)
-        return np.asarray(J)
+            e_i = np.zeros(d_obs)
+            e_i[i] = 1.0
+            J_rows.append(vjp_fun(e_i))
+        return np.stack(J_rows, axis=0)
 
     def eval_hessian(self,
                      params: np.ndarray,

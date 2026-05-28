@@ -12,6 +12,7 @@ from tqdm import tqdm
 from pdmp import logger
 from pdmp.sampler import Sampler, SAMPLER_REGISTRY, register_sampler
 from pdmp.distributions import Distribution
+from pdmp.forward_model import ForwardModelFailure
 from pdmp.surrogates import (SurrogateModel, LaplaceSurrogate, NeuralNetwork,
                              GaussianProcess, DerivativeGaussianProcess,
                              ConstantSurrogate, RandomConstantSurrogate)
@@ -100,6 +101,8 @@ class BouncyParticleSampler(Sampler):
         self._print_every = print_every
         self._update_bar_every = update_bar_every
         self._offset_shrinkage = offset_shrinkage
+        self._n_solver_rejections = 0
+        self._dt = 0.01  # small step used when handling solver rejections
 
         if rng is None and seed is None:
             self._rng = np.random.default_rng(0)
@@ -312,7 +315,15 @@ class BouncyParticleSampler(Sampler):
         """
         Perform a single Bouncy Particle Sampler step.
         """
-        T, event_type = self._generate_event_times()
+        try:
+            T, event_type = self._generate_event_times()
+        except ForwardModelFailure as e:
+            self._n_solver_rejections += 1
+            logger.warning(
+                f"BPS iter {self._iter}: rejecting event due to forward "
+                f"model failure (#{self._n_solver_rejections}). {e}")
+            self._handle_solver_rejection()
+            return
 
         # Update position
         new_pos = self.positions[self._iter] + T * self.velocities[self._iter]
@@ -321,8 +332,22 @@ class BouncyParticleSampler(Sampler):
 
         # Handle event based on type
         if event_type == 0:  # Bounce
-            # Get gradient at new position
-            grad = self.target.grad_log_density(new_pos)
+            # Get gradient at new position. If the FEM solver fails here,
+            # treat as "no bounce": keep velocity unchanged.
+            try:
+                grad = self.target.grad_log_density(new_pos)
+            except ForwardModelFailure as e:
+                self._n_solver_rejections += 1
+                logger.warning(
+                    f"BPS iter {self._iter}: bounce skipped due to forward "
+                    f"model failure at new position "
+                    f"(#{self._n_solver_rejections}). {e}")
+                self.velocities[self._iter + 1] = self.velocities[self._iter]
+                dt = self.times[self._iter + 1] - self.times[self._iter]
+                self._offset *= np.exp(-self._offset_shrinkage * dt)
+                self._offset_history[self._iter + 1] = self._offset
+                self._iter += 1
+                return
 
             # Reflection formula: v' = v - 2(v·∇U/|∇U|²)∇U
             grad_norm_sq = np.sum(grad**2)
@@ -336,7 +361,18 @@ class BouncyParticleSampler(Sampler):
 
             if self._thinning:
                 self._eval_times.append(self.times[self._iter + 1])
-                self._poisson_thinning(new_pos, T)
+                try:
+                    self._poisson_thinning(new_pos, T)
+                except ForwardModelFailure as e:
+                    # Undo the bounce velocity update; treat as rejected.
+                    self.velocities[self._iter +
+                                    1] = self.velocities[self._iter]
+                    self._eval_times.pop()
+                    self._n_solver_rejections += 1
+                    logger.warning(
+                        f"BPS iter {self._iter}: rejecting candidate bounce "
+                        f"in thinning due to forward model failure "
+                        f"(#{self._n_solver_rejections}). {e}")
 
         else:  # Refresh
             # Sample new velocity from unit sphere
@@ -349,6 +385,22 @@ class BouncyParticleSampler(Sampler):
         # Update offset for thinning
         dt = self.times[self._iter + 1] - self.times[self._iter]
         self._offset *= np.exp(-self._offset_shrinkage * dt)
+        self._offset_history[self._iter + 1] = self._offset
+        self._iter += 1
+
+    def _handle_solver_rejection(self):
+        """Advance one small step with the current velocity, no event.
+
+        Used when ``_generate_event_times`` raises ForwardModelFailure so the
+        run loop keeps going instead of getting stuck at the failing position.
+        """
+        T = self._dt
+        self.times[self._iter + 1] = self.times[self._iter] + T
+        self.positions[self._iter +
+                       1] = (self.positions[self._iter] +
+                             T * self.velocities[self._iter])
+        self.velocities[self._iter + 1] = self.velocities[self._iter]
+        self._offset *= np.exp(-self._offset_shrinkage * T)
         self._offset_history[self._iter + 1] = self._offset
         self._iter += 1
 
@@ -486,13 +538,18 @@ class BouncyParticleSampler(Sampler):
         if not os.path.exists(folder):
             os.makedirs(folder)
 
-        data = {}
+        data = {'n_solver_rejections': self._n_solver_rejections}
         if self._thinning:
             data['acceptance_rate'] = self.acceptance_rate
             data['offset'] = self._offset
 
         with open(os.path.join(folder, 'other.pkl'), 'wb') as f:
             pickle.dump(data, f)
+
+        if self._n_solver_rejections:
+            logger.info(
+                f"Forward-model solver rejections during run: "
+                f"{self._n_solver_rejections}")
 
         np.savetxt(os.path.join(folder, 'positions.dat'),
                    self.positions,

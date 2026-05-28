@@ -14,6 +14,7 @@ from tqdm import tqdm
 from pdmp import logger
 from pdmp.sampler import Sampler, SAMPLER_REGISTRY, register_sampler
 from pdmp.distributions import Distribution, MultivariateNormal
+from pdmp.forward_model import ForwardModelFailure
 from pdmp.surrogates import (SurrogateModel, LaplaceSurrogate, NeuralNetwork,
                              GaussianProcess, DerivativeGaussianProcess,
                              ConstantSurrogate, RandomConstantSurrogate)
@@ -98,6 +99,7 @@ class ZigZagSampler(Sampler):
         self._offset_shrinkage = offset_shrinkage
         self._sub_sampling = sub_sampling
         self._thinning = False
+        self._n_solver_rejections = 0
 
         # init logging related variables
         self._print_every = print_every
@@ -448,7 +450,20 @@ class ZigZagSampler(Sampler):
 
     def _step(self):
         """Perform a single ZigZag step."""
-        T, j = self._generate_event_times()
+        try:
+            T, j = self._generate_event_times()
+        except ForwardModelFailure as e:
+            # No event time could be determined. Treat as "no event":
+            # continue straight by self._dt without flipping velocity, so the
+            # outer loop makes forward progress instead of looping forever at
+            # the failing position.
+            self._n_solver_rejections += 1
+            logger.warning(
+                f"ZigZag iter {self._iter}: rejecting event due to forward "
+                f"model failure (#{self._n_solver_rejections}). {e}")
+            self._handle_solver_rejection()
+            return
+
         self.times[self._iter + 1] = self.times[self._iter] + T
         self.positions[
             self._iter +
@@ -458,12 +473,44 @@ class ZigZagSampler(Sampler):
 
         if self._thinning:
             self._eval_times.append(self.times[self._iter + 1])
-            self._poisson_thinning(j, T)
+            try:
+                self._poisson_thinning(j, T)
+            except ForwardModelFailure as e:
+                # The state at iter+1 was set with a velocity flip. Undo the
+                # flip and the eval_times append; treat as rejected event.
+                self.velocities[self._iter + 1,
+                                j] = self.velocities[self._iter, j]
+                self._eval_times.pop()
+                self._s = None
+                self._n_solver_rejections += 1
+                logger.warning(
+                    f"ZigZag iter {self._iter}: rejecting candidate event in "
+                    f"thinning due to forward model failure "
+                    f"(#{self._n_solver_rejections}). {e}")
         else:
             self._s = None
 
         dt = self.times[self._iter + 1] - self.times[self._iter]
         self.offset *= np.exp(-self._offset_shrinkage * dt)
+        self._offset_history[self._iter + 1] = self.offset
+        self._iter += 1
+
+    def _handle_solver_rejection(self):
+        """Advance one tiny step with the current velocity, no event flip.
+
+        Used when `_generate_event_times` raises ForwardModelFailure so the
+        run loop can keep going. We do not flip velocity (no event) and we
+        do not reroll the exponential samples (set self._s = None so they get
+        redrawn fresh next iteration).
+        """
+        T = self._dt
+        self.times[self._iter + 1] = self.times[self._iter] + T
+        self.positions[self._iter +
+                       1] = (self.positions[self._iter] +
+                             T * self.velocities[self._iter])
+        self.velocities[self._iter + 1] = self.velocities[self._iter]
+        self._s = None
+        self.offset *= np.exp(-self._offset_shrinkage * T)
         self._offset_history[self._iter + 1] = self.offset
         self._iter += 1
 
@@ -567,13 +614,18 @@ class ZigZagSampler(Sampler):
         if not os.path.exists(folder):
             os.makedirs(folder)
 
-        data = {}
+        data = {'n_solver_rejections': self._n_solver_rejections}
         if self._thinning:
             data['acceptance_rate'] = self.acceptance_rate
             data['offset'] = self.offset
 
         with open(os.path.join(folder, 'other.pkl'), 'wb') as f:
             pickle.dump(data, f)
+
+        if self._n_solver_rejections:
+            logger.info(
+                f"Forward-model solver rejections during run: "
+                f"{self._n_solver_rejections}")
 
         np.savetxt(os.path.join(folder, 'positions.dat'),
                    self.positions,
