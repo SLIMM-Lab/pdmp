@@ -399,9 +399,9 @@ class BouncyParticleSampler(Sampler):
         self._iter -= 1
 
     def _shutdown(self):
-        """Shutdown the ZigZag sampler."""
+        """Shutdown the BouncyParticle sampler."""
 
-        logger.info("Shutting down ZigZag sampler. Summary:")
+        logger.info("Shutting down Bouncy Particle sampler. Summary:")
         if self._thinning:
             logger.info(f"    Acceptance rate : {self.acceptance_rate:.3f}")
             logger.info(f"    Final offsets    : {self._offset}")
@@ -443,7 +443,7 @@ class BouncyParticleSampler(Sampler):
         self._shutdown()
 
     def _run_time(self):
-        """Run the ZigZag sampler."""
+        """Run the BouncyParticle sampler."""
 
         logger.warning(
             f"Running Bouncy Particle Sampler with time limit T={self._t_max}")
