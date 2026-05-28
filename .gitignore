@@ -83,3 +83,6 @@ examples/inverse_problem/exponential_recovery_field/investigate_likelihood.py
 sync_cluster.sh
 *.err
 *.out
+
+# paraview
+*.pvcc
