@@ -1634,8 +1634,9 @@ class RVEModel:
             ``[rho, l_scale]`` — uses the far-field stiffness set at init.
             ``[rho, l_scale, E_inf]`` — overrides the init value for this call.
         save_dir : str or None
-            If given, writes ``<save_dir>/vtk/u.vtu`` containing the
-            displacement field and the cell-averaged Young's modulus E.
+            If given, writes ``<save_dir>/vtk/u.vtu`` containing the full
+            displacement, stress and strain fields plus the cell-averaged
+            Young's modulus E (see :meth:`_write_vtk`).
 
         Returns
         -------
@@ -1650,21 +1651,39 @@ class RVEModel:
         sol = self._fwd_pred(fem_params)[0]
 
         if save_dir is not None:
-            self._write_vtk(sol, E_q, save_dir)
+            self._write_vtk(sol, E_q, fem_params, save_dir)
 
         return self._assemble_outputs(sol, fem_params)
 
-    def _write_vtk(self, sol, E_q, save_dir):
-        """Write displacement and E field to a VTK file."""
+    def _write_vtk(self, sol, E_q, fem_params, save_dir):
+        """Write the full displacement, stress and strain fields to VTK.
+
+        The displacement is stored as point data (``sol``); the cell-averaged
+        Young's modulus and the in-plane stress/strain tensor components
+        (``xx``, ``yy``, ``xy``) are stored as cell data, so the complete
+        fields can be inspected in ParaView regardless of which scalar
+        ``quantities`` were requested.
+        """
         from jax_fem.utils import save_sol
 
         vtk_path = os.path.join(save_dir, 'vtk', 'u.vtu')
         os.makedirs(os.path.dirname(vtk_path), exist_ok=True)
+
         E_cell = np.array(jnp.mean(E_q, axis=1))
+        _, sigma_cell = self._problem.compute_avg_stress(sol, fem_params)
+        eps_cell = self._problem.compute_avg_strain(sol, self._eps_macro_q)
+        sigma_cell = np.array(sigma_cell)
+        eps_cell = np.array(eps_cell)
+
+        cell_infos = [('E', E_cell)]
+        for comp, (r, c) in self.VOIGT_COMPONENTS.items():
+            cell_infos.append((f'stress_{comp}', sigma_cell[:, r, c]))
+            cell_infos.append((f'strain_{comp}', eps_cell[:, r, c]))
+
         save_sol(self._problem.fe,
                  np.array(sol),
                  vtk_path,
-                 cell_infos=[('E', E_cell)])
+                 cell_infos=cell_infos)
 
     def _assemble_outputs(self, sol, fem_params):
         """Compute the requested output quantities from a solved FEM state.

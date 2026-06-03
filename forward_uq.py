@@ -85,11 +85,31 @@ def main():
     model = get_model(model_cfg, field=field)
     suppress_external_loggers()
 
+    out_dir = config.get('output', {}).get('dir', './results_forward_uq')
+    os.makedirs(out_dir, exist_ok=True)
+
+    # Indices of samples whose full displacement/stress/strain fields are
+    # written to VTK. Only models that expose `_write_vtk` (RVE models) support
+    # this; for anything else the request is ignored with a warning.
+    save_field_idx = set(int(i) for i in uq_cfg.get('save_field_samples', []))
+    if save_field_idx and not hasattr(model, '_write_vtk'):
+        print(f'Warning: save_field_samples set but model '
+              f'{type(model).__name__} does not support full-field export; '
+              f'ignoring.')
+        save_field_idx = set()
+    if save_field_idx:
+        print(f'Saving full fields for samples: '
+              f'{sorted(save_field_idx)}')
+
     # Evaluate model on each sample, flattening dict outputs
     column_names = None
     rows = []
     for i, s in enumerate(samples):
-        raw = model.eval(s)
+        if i in save_field_idx:
+            field_dir = os.path.join(out_dir, 'fields', f'sample_{i:04d}')
+            raw = model.eval(s, save_dir=field_dir)
+        else:
+            raw = model.eval(s)
         flat, names = flatten_output(raw)
         if column_names is None:
             column_names = names
@@ -104,9 +124,6 @@ def main():
     labels = [label_map.get(name, name) for name in column_names]
 
     # Save results
-    out_dir = config.get('output', {}).get('dir', './results_forward_uq')
-    os.makedirs(out_dir, exist_ok=True)
-
     np.savetxt(os.path.join(out_dir, 'samples.dat'), samples)
     np.savetxt(os.path.join(out_dir, 'outputs.dat'),
                outputs,

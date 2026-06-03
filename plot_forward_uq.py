@@ -237,6 +237,17 @@ def plot_location_heatmaps(results_dir, fig_dir, names, labels, outputs,
         base = name[:-len(LOCATION_SUFFIX)]
         title = labels[name_to_idx[base]] if base in name_to_idx else name
 
+        # Report the cells that most often hold the extremum for this quantity.
+        uniq, counts = np.unique(cells, return_counts=True)
+        order = np.argsort(counts)[::-1][:5]
+        n_samples = len(cells)
+        print(f'  Top 5 cells for {title}:')
+        for cell, cnt in zip(uniq[order], counts[order]):
+            cx, cy = centroids[cell]
+            print(f'    cell {cell:6d}: {cnt:4d}/{n_samples} samples '
+                  f'({100 * cnt / n_samples:5.1f}%), '
+                  f'centroid ({cx:.3f}, {cy:.3f})')
+
         fig, ax = plt.subplots(figsize=(5.5, 4.5))
         hb = ax.hexbin(pts[:, 0],
                        pts[:, 1],
