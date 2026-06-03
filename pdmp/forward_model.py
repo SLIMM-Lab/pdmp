@@ -961,7 +961,11 @@ class JaxFemModel(Model):
                 },
             ]
 
-        data_dir = os.path.join(os.path.dirname(__file__), 'data')
+        # Write the generated mesh next to the config file (run_inference.py
+        # chdir's to the config dir), not into the package's data directory.
+        # The latter is shared across processes, so concurrent runs on the
+        # cluster would all collide on the same msh/box.msh.
+        data_dir = os.getcwd()
         cell_type = get_meshio_cell_type(ele_type)
         n_x = int(d_x / h)
         n_y = int(d_y / h)
