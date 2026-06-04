@@ -160,6 +160,23 @@ def main():
     print(f'Output dim: {outputs.shape[1]}')
     for i, name in enumerate(column_names):
         print(f'  {name}: mean = {mean_out[i]:.4f}, std = {std_out[i]:.4f}')
+
+    # Top samples by output value, per quantity.
+    n_top = min(5, outputs.shape[0])
+    top_samples = {}
+    print(f'\nTop {n_top} samples by output value, per quantity:')
+    for i, name in enumerate(column_names):
+        top_idx = np.argsort(outputs[:, i])[::-1][:n_top]
+        top_samples[name] = [{
+            'index': int(idx),
+            'value': float(outputs[idx, i])
+        } for idx in top_idx]
+        print(f'  {name}:')
+        for rank, idx in enumerate(top_idx, start=1):
+            print(f'    {rank}. #{idx} ({outputs[idx, i]:.4f})')
+    with open(os.path.join(out_dir, 'top_samples.json'), 'w') as f:
+        json.dump(top_samples, f, indent=2)
+
     print(f'\nTo plot: python plot_forward_uq.py {out_dir}')
 
 
