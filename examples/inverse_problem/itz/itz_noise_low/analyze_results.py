@@ -349,6 +349,90 @@ def _plot_psi_pairplot(post,
     print(f"Saved {path}")
 
 
+def _plot_xi_pairplot(post_xi,
+                      fig_dir,
+                      title_suffix='',
+                      filename='xi_pairplot.pdf',
+                      max_scatter=1000):
+    """Corner plot of the affine (whitened) sampling space xi.
+
+    These are the raw PDMP positions, before the linear map to theta and the
+    non-linear physical transform. The prior is standard normal in this space,
+    so an N(0,1) reference is overlaid on each diagonal to make prior/posterior
+    contraction visible per latent direction.
+    """
+    from scipy.stats import norm
+    d = post_xi.shape[1]
+    names = [rf'$\xi_{{{k}}}$' for k in range(d)]
+    rng = np.random.default_rng(0)
+    idx = rng.choice(len(post_xi),
+                     size=min(max_scatter, len(post_xi)),
+                     replace=False)
+    scatter = post_xi[idx]
+
+    # Common limits per dimension (combine posterior spread with the N(0,1)
+    # reference so the standard normal stays visible).
+    lims = []
+    for k in range(d):
+        lo, hi = np.percentile(post_xi[:, k], [0.5, 99.5])
+        lo = min(float(lo), -3.0)
+        hi = max(float(hi), 3.0)
+        pad = 0.05 * (hi - lo)
+        lims.append((lo - pad, hi + pad))
+
+    fig, axes = plt.subplots(d, d, figsize=(2.4 * d, 2.4 * d))
+    if d == 1:
+        axes = np.array([[axes]])
+    for i in range(d):
+        for j in range(d):
+            ax = axes[i, j]
+            if i == j:
+                xs = np.linspace(lims[i][0], lims[i][1], 300)
+                vals = post_xi[:, i]
+                vals = vals[(vals >= lims[i][0]) & (vals <= lims[i][1])]
+                ax.hist(vals,
+                        bins=40,
+                        density=True,
+                        color='steelblue',
+                        alpha=0.5,
+                        edgecolor='none',
+                        label='posterior')
+                if len(vals) > 2:
+                    ax.plot(xs, gaussian_kde(vals)(xs), color='steelblue',
+                            lw=1.2)
+                ax.plot(xs,
+                        norm.pdf(xs, 0.0, 1.0),
+                        color='C2',
+                        lw=1.0,
+                        ls='--',
+                        label='N(0,1)')
+                ax.set_xlabel(names[i], fontsize=8)
+                ax.set_xlim(*lims[i])
+                if i == 0:
+                    ax.legend(fontsize=7)
+            elif i > j:
+                ax.scatter(scatter[:, j],
+                           scatter[:, i],
+                           s=2,
+                           alpha=0.25,
+                           color='steelblue',
+                           linewidths=0)
+                ax.set_xlabel(names[j], fontsize=8)
+                ax.set_ylabel(names[i], fontsize=8)
+                ax.set_xlim(*lims[j])
+                ax.set_ylim(*lims[i])
+            else:
+                ax.set_visible(False)
+            ax.tick_params(labelsize=7)
+    suffix = f' — {title_suffix}' if title_suffix else ''
+    fig.suptitle(f'Affine (whitened) xi-space pairplot{suffix}', fontsize=10)
+    fig.tight_layout()
+    path = os.path.join(fig_dir, filename)
+    fig.savefig(path, bbox_inches='tight')
+    plt.close(fig)
+    print(f"Saved {path}")
+
+
 def _plot_psi_sum_marginal(post,
                            fig_dir,
                            psi_prior_mean=None,
@@ -519,6 +603,7 @@ def analyze_one_separate(geom_name, rwm_dir, burnin_frac):
                     prior_mean=prior_mean[:3],
                     prior_std=prior_std[:3])
     _plot_pairplot(post, fig_dir, theta_xlims=theta_xlims, outlier_pct=1.0)
+    _plot_xi_pairplot(xi_chain[burnin:], fig_dir, title_suffix=f'geom {geom_name}')
     _plot_psi_pairplot(post,
                        fig_dir,
                        psi_prior_mean=psi_prior_mean,
@@ -637,6 +722,7 @@ def analyze_one_separate_standard(geom_name, rwm_dir, burnin_frac):
                     prior_mean=prior_mean[:3],
                     prior_std=prior_std[:3])
     _plot_pairplot(post, fig_dir, theta_xlims=theta_xlims, outlier_pct=1.0)
+    _plot_xi_pairplot(xi_chain[burnin:], fig_dir, title_suffix=f'geom {geom_name} standard')
 
     out = os.path.join(rwm_dir, 'samples_physical.dat')
     np.savetxt(out, post, header='rho l f_inf', fmt='%.6e')
@@ -751,6 +837,7 @@ def analyze_joint(joint_dir, burnin_frac):
                     prior_mean=prior_mean[:3],
                     prior_std=prior_std[:3])
     _plot_pairplot(post, fig_dir, theta_xlims=theta_xlims, outlier_pct=1.0)
+    _plot_xi_pairplot(xi_chain[burnin:], fig_dir, title_suffix='joint')
     _plot_psi_pairplot(post,
                        fig_dir,
                        psi_prior_mean=psi_prior_mean,
@@ -860,6 +947,7 @@ def analyze_joint_standard(joint_dir, burnin_frac):
         prior_mean=prior_mean[:3],
         prior_std=prior_std[:3])
     _plot_pairplot(post, fig_dir, theta_xlims=theta_xlims, outlier_pct=1.0)
+    _plot_xi_pairplot(xi_chain[burnin:], fig_dir, title_suffix='joint standard')
 
     out = os.path.join(rwm_dir, 'samples_physical.dat')
     np.savetxt(out, post, header='rho l f_inf', fmt='%.6e')
