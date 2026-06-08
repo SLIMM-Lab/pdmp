@@ -278,6 +278,7 @@ class BouncyParticleSampler(Sampler):
         integral = 0.
         rate_t0 = self._cdf_rates(self.positions[self._iter])
         rate_t1 = 0.
+        rate_start = rate_t0  # rate at the start of the last integration step
         dt = self._int_dt  # Step size for numerical integration
         n_evals = 1  # one evaluation for rate_t0
 
@@ -288,6 +289,7 @@ class BouncyParticleSampler(Sampler):
             n_evals += 1
             integral += np.trapezoid([rate_t0, rate_t1], dx=dt)
             tau += dt
+            rate_start = rate_t0  # kept for the second-order back-off below
             rate_t0 = rate_t1
 
         self._n_rate_evals += n_evals
@@ -297,8 +299,17 @@ class BouncyParticleSampler(Sampler):
             # Threshold not reached before refresh_time -> refresh event.
             return refresh_time, 1
 
-        # Linear interpolation for better accuracy
-        tau -= (integral - s) / rate_t1
+        # Second-order back-off over the final step. The rate varies linearly
+        # from rate_start (at tau - dt) to rate_t1 (at tau), so solving the exact
+        # quadratic for the overshoot removes the O(dt^2) error left by a
+        # constant-rate correction (integral - s) / rate_t1. This makes the
+        # scheme effectively exact for piecewise-linear rates (e.g. a Gaussian
+        # target). The rationalized root is numerically stable and reduces to the
+        # constant-rate formula as the slope -> 0.
+        over = integral - s
+        a = (rate_t1 - rate_start) / dt
+        disc = rate_t1**2 - 2.0 * a * over
+        tau -= 2.0 * over / (rate_t1 + np.sqrt(max(disc, 0.0)))
 
         # Return the smaller of bounce time and refresh time, with event type
         if tau < refresh_time:
