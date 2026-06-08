@@ -28,7 +28,7 @@ from petsc4py import PETSc
 _petsc_opts = PETSc.Options()
 _petsc_opts.setValue('ksp_rtol', '1e-10')
 _petsc_opts.setValue('ksp_atol', '1e-50')
-_petsc_opts.setValue('ksp_max_it', '50000')
+_petsc_opts.setValue('ksp_max_it', '1000')
 
 from pdmp import logger
 from pdmp.logger_setup import setup_file_handler, suppress_external_loggers
