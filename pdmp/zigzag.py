@@ -1,4 +1,3 @@
-import pickle
 import os
 import sys
 import yaml
@@ -14,6 +13,7 @@ from typing_extensions import override
 from tqdm import tqdm
 
 from pdmp import logger
+from pdmp.utils import dump_json
 from pdmp.sampler import Sampler, SAMPLER_REGISTRY, register_sampler
 from pdmp.distributions import Distribution, MultivariateNormal
 from pdmp.forward_model import ForwardModelFailure
@@ -753,8 +753,11 @@ class ZigZagSampler(Sampler):
             data['acceptance_rate'] = self.acceptance_rate
             data['offset'] = self.offset
 
-        with open(os.path.join(folder, 'other.pkl'), 'wb') as f:
-            pickle.dump(data, f)
+        dump_json(data, os.path.join(folder, 'other.json'))
+
+        np.savetxt(os.path.join(folder, 'rate_evals_per_event.dat'),
+                   np.asarray(self._rate_evals_per_event, dtype=int),
+                   fmt='%d')
 
         if self._n_solver_rejections:
             logger.info(

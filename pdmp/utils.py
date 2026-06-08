@@ -1,7 +1,28 @@
+import json
+
 import arviz
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.special import binom
+
+
+def dump_json(data: dict, path: str):
+    """Write a metadata dict to ``path`` as human-readable JSON.
+
+    NumPy arrays and scalars are not JSON-serializable by default, so they are
+    converted to plain Python lists/numbers (arrays via ``tolist``). This is the
+    format used for the samplers' ``other.json`` summary files.
+    """
+
+    def default(o):
+        if isinstance(o, np.ndarray):
+            return o.tolist()
+        if isinstance(o, np.generic):
+            return o.item()
+        raise TypeError(f"Object of type {type(o)} is not JSON serializable")
+
+    with open(path, 'w') as f:
+        json.dump(data, f, indent=2, default=default)
 
 
 def central_moment_from_skeleton(t: np.ndarray,

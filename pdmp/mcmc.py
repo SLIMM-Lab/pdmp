@@ -1,4 +1,3 @@
-import pickle
 import os
 import sys
 
@@ -13,6 +12,7 @@ from tqdm import tqdm
 from pdmp.sampler import Sampler, register_sampler
 from pdmp.distributions import Distribution, MultivariateNormal
 from pdmp.forward_model import ForwardModelFailure
+from pdmp.utils import dump_json
 from pdmp import logger
 
 
@@ -139,8 +139,7 @@ class StepSampler(Sampler):
             'n_solver_rejections': self._n_solver_rejections,
         }
 
-        with open(os.path.join(folder, 'other.pkl'), 'wb') as f:
-            pickle.dump(data, f)
+        dump_json(data, os.path.join(folder, 'other.json'))
 
         np.savetxt(os.path.join(folder, 'samples.dat'),
                    self.chain,

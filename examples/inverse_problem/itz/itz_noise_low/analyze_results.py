@@ -21,7 +21,7 @@ Output:
 
 import argparse
 import os
-import pickle
+import json
 from glob import glob
 
 import matplotlib
@@ -66,12 +66,12 @@ def _load_samples(rwm_dir):
 
 
 def _print_acceptance_rate(rwm_dir):
-    path = os.path.join(rwm_dir, 'other.pkl')
+    path = os.path.join(rwm_dir, 'other.json')
     if not os.path.exists(path):
-        print("other.pkl not found — acceptance rate unavailable")
+        print("other.json not found — acceptance rate unavailable")
         return
-    with open(path, 'rb') as f:
-        data = pickle.load(f)
+    with open(path) as f:
+        data = json.load(f)
     rate = data.get('acceptance_rate')
     if rate is not None:
         print(f"Acceptance rate: {rate:.3f}")
