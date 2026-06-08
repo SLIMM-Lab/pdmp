@@ -4,6 +4,8 @@ import sys
 
 import numpy as np
 
+from scipy.integrate import solve_ivp
+
 from typing import cast
 from typing_extensions import override
 
@@ -43,6 +45,10 @@ class BouncyParticleSampler(Sampler):
                  print_every: int = 100,
                  update_bar_every: int = 10,
                  offset_shrinkage: float = 0.0,
+                 integrator: str = 'ode',
+                 int_dt: float = 0.01,
+                 ode_rtol: float = 1e-4,
+                 ode_atol: float = 1e-6,
                  x_0: np.ndarray = None,
                  x_0_lap: bool = False,
                  v_0: np.ndarray = None,
@@ -64,6 +70,15 @@ class BouncyParticleSampler(Sampler):
         print_every (int, optional): Interval to print outputs. Default is 100.
         update_bar_every (int, optional): Update progress bar interval. Default is 10.
         offset_shrinkage (float, optional): Shrinkage rate for offset. Default is 0.0.
+        integrator (str, optional): Event-time integrator for the general
+            (non-analytic) rate path: 'ode' uses adaptive ``scipy.solve_ivp``
+            event detection (default), 'fixed' uses the legacy fixed-step
+            trapezoidal march.
+        int_dt (float, optional): Step size for the 'fixed' integrator. Default 0.01.
+        ode_rtol (float, optional): Relative tolerance for the 'ode' integrator.
+            Default is 1e-4.
+        ode_atol (float, optional): Absolute tolerance for the 'ode' integrator.
+            Default is 1e-6.
         """
         super().__init__()
 
@@ -103,6 +118,18 @@ class BouncyParticleSampler(Sampler):
         self._offset_shrinkage = offset_shrinkage
         self._n_solver_rejections = 0
         self._dt = 0.01  # small step used when handling solver rejections
+        self._int_dt = int_dt  # step for fixed-step rate integration
+        self._integrator = integrator
+        self._ode_rtol = ode_rtol
+        self._ode_atol = ode_atol
+        # General (non-analytic) event-time generator: adaptive ODE or fixed step.
+        self._general_inverse_cdf = (self._inverse_cdf_ode if integrator == 'ode'
+                                     else self._inverse_cdf)
+
+        # Instrumentation: number of rate evaluations spent inside the
+        # event-time generator, used to measure integration cost.
+        self._n_rate_evals = 0
+        self._rate_evals_per_event = []
 
         if rng is None and seed is None:
             self._rng = np.random.default_rng(0)
@@ -145,15 +172,38 @@ class BouncyParticleSampler(Sampler):
                             (ConstantSurrogate, RandomConstantSurrogate)):
                 self._generate_event_times = self._inverse_cdf_constant
             else:
-                self._generate_event_times = self._inverse_cdf
+                self._generate_event_times = self._general_inverse_cdf
             self._cdf_rates = self._surrogate_rates
             self._eval_times = []
             self._times_all = None
         else:
-            self._generate_event_times = self._inverse_cdf
+            self._generate_event_times = self._general_inverse_cdf
             self._cdf_rates = self._target_rates
 
-        logger.info("BouncyParticleSampler initialized.")
+        self._log_settings(surrogate)
+
+    def _log_settings(self, surrogate: SurrogateModel = None):
+        """Log the key sampler settings at initialization."""
+        settings = {
+            'dim': self._dim,
+            'stopping': (f't_max={self._t_max}' if hasattr(self, '_t_max')
+                         else f'n_max={self._n_max}'),
+            'integrator': self._integrator,
+            'event_generator': self._generate_event_times.__name__,
+            'refresh_rate': self._refresh_rate,
+            'gamma': self._gamma,
+            'offset_shrinkage': self._offset_shrinkage,
+            'thinning': self._thinning,
+            'surrogate': type(surrogate).__name__ if surrogate else None,
+        }
+        if self._integrator == 'ode':
+            settings['ode_rtol'] = self._ode_rtol
+            settings['ode_atol'] = self._ode_atol
+        else:
+            settings['int_dt'] = self._int_dt
+
+        body = '\n'.join(f'    {k}: {v}' for k, v in settings.items())
+        logger.info(f"BouncyParticleSampler initialized with settings:\n{body}")
 
     def _target_rates(self,
                       x: np.ndarray,
@@ -176,9 +226,12 @@ class BouncyParticleSampler(Sampler):
             log_p = self.target.log_density(x)
             self.surrogate.add_data(x=x, y=log_p, dy_dx=grad)
 
-        # BPS uses the inner product of gradient and velocity
+        # Canonical BPS reflection rate (v . grad U)_+ ; refresh is handled
+        # solely by the separate refresh clock, not folded in here. A tiny
+        # gamma floor keeps the rate strictly positive (matching the analytic
+        # paths and avoiding divide-by-zero in the fixed-step interpolation).
         rate = np.maximum(-np.dot(grad, self.velocities[self._iter]),
-                          0) + self._refresh_rate
+                          0) + self._gamma
 
         return rate
 
@@ -198,9 +251,10 @@ class BouncyParticleSampler(Sampler):
         float: The calculated surrogate rate.
         """
         grad_surrogate = self.surrogate.grad(x)
+        # Canonical reflection bound; refresh is handled by the separate clock.
         rate = np.maximum(
             -np.dot(grad_surrogate, self.velocities[self._iter]) +
-            self._offset, 0) + self._refresh_rate
+            self._offset, 0) + self._gamma
         return rate
 
     def _inverse_cdf(self) -> tuple[float, int]:
@@ -216,20 +270,32 @@ class BouncyParticleSampler(Sampler):
         # Sample exponential time for next refresh
         refresh_time = self._rng.exponential(scale=1.0 / self._refresh_rate)
 
-        # Calculate next bounce time
+        # Calculate next bounce time. Integration is capped at refresh_time:
+        # the bounce time is only used when it precedes the refresh, so this
+        # bounds the work and -- now that the canonical rate may be ~0 over a
+        # stretch -- prevents the loop from stalling when no bounce occurs.
         tau = 0.
         integral = 0.
         rate_t0 = self._cdf_rates(self.positions[self._iter])
         rate_t1 = 0.
-        dt = 0.01  # Step size for numerical integration
+        dt = self._int_dt  # Step size for numerical integration
+        n_evals = 1  # one evaluation for rate_t0
 
-        while integral < s:
+        while integral < s and tau < refresh_time:
             next_pos = self.positions[
                 self._iter] + (tau + dt) * self.velocities[self._iter]
             rate_t1 = self._cdf_rates(next_pos)
+            n_evals += 1
             integral += np.trapezoid([rate_t0, rate_t1], dx=dt)
             tau += dt
             rate_t0 = rate_t1
+
+        self._n_rate_evals += n_evals
+        self._rate_evals_per_event.append(n_evals)
+
+        if integral < s:
+            # Threshold not reached before refresh_time -> refresh event.
+            return refresh_time, 1
 
         # Linear interpolation for better accuracy
         tau -= (integral - s) / rate_t1
@@ -239,6 +305,53 @@ class BouncyParticleSampler(Sampler):
             return tau, 0  # Bounce event
         else:
             return refresh_time, 1  # Refresh event
+
+    def _inverse_cdf_ode(self) -> tuple[float, int]:
+        """Generate event time via adaptive ODE event detection.
+
+        Solves I'(t) = lambda(t), I(0) = 0 with an adaptive RK45 integrator and
+        a terminal event at I(t) = S (S ~ Exp(1)), integrating only up to the
+        sampled refresh time. The adaptive step size and the event root-find
+        replace the fixed-step trapezoidal march of :meth:`_inverse_cdf`,
+        controlling the integration error via ``ode_rtol``/``ode_atol`` while
+        typically spending far fewer rate evaluations.
+
+        Returns:
+            tuple[float, int]: event time and type (0 bounce, 1 refresh).
+        """
+        # Sample exponential threshold for the next bounce and the next refresh.
+        s = -np.log(self._rng.uniform())
+        refresh_time = self._rng.exponential(scale=1.0 / self._refresh_rate)
+
+        x0 = self.positions[self._iter]
+        v = self.velocities[self._iter]
+        n_evals = 0
+
+        def fun(t, _integral):
+            nonlocal n_evals
+            n_evals += 1
+            return self._cdf_rates(x0 + t * v)
+
+        def hit_threshold(t, integral):
+            return integral[0] - s
+
+        hit_threshold.terminal = True
+        hit_threshold.direction = 1  # integral is monotone increasing
+
+        # Integrate only up to refresh_time: we only use the bounce time when it
+        # precedes the refresh, so this caps the work and yields the min().
+        sol = solve_ivp(fun, (0.0, refresh_time), [0.0],
+                        method='RK45',
+                        events=hit_threshold,
+                        rtol=self._ode_rtol,
+                        atol=self._ode_atol)
+
+        self._n_rate_evals += n_evals
+        self._rate_evals_per_event.append(n_evals)
+
+        if sol.t_events[0].size > 0:
+            return float(sol.t_events[0][0]), 0  # Bounce event
+        return refresh_time, 1  # Refresh event
 
     def _inverse_cdf_linear(self) -> tuple[float, int]:
         """
@@ -468,6 +581,18 @@ class BouncyParticleSampler(Sampler):
             self._offset_history = self._offset_history[
                 self._accepted_iters[:idx]]
 
+        self._log_rate_evals()
+
+    def _log_rate_evals(self):
+        """Log statistics on rate (surrogate/target) evaluations per event."""
+        evals = np.asarray(self._rate_evals_per_event)
+        logger.info(f"    Total rate evaluations : {self._n_rate_evals}")
+        if evals.size:
+            logger.info(
+                f"    Rate evals / event     : "
+                f"mean {evals.mean():.1f}, median {np.median(evals):.1f}, "
+                f"max {int(evals.max())} (over {evals.size} events)")
+
     def _run_budget(self):
         """Run the BouncyParticle sampler."""
 
@@ -538,7 +663,10 @@ class BouncyParticleSampler(Sampler):
         if not os.path.exists(folder):
             os.makedirs(folder)
 
-        data = {'n_solver_rejections': self._n_solver_rejections}
+        data = {
+            'n_solver_rejections': self._n_solver_rejections,
+            'n_rate_evals': self._n_rate_evals,
+        }
         if self._thinning:
             data['acceptance_rate'] = self.acceptance_rate
             data['offset'] = self._offset

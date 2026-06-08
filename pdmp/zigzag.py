@@ -6,6 +6,8 @@ import yaml
 import matplotlib.pyplot as plt
 import numpy as np
 
+from scipy.integrate import solve_ivp
+
 from typing import cast, Any, Union
 from typing_extensions import override
 
@@ -34,6 +36,9 @@ class ZigZagSampler(Sampler):
                  t_max: float = None,
                  gamma: float = 1e-6,
                  dt: float = 0.001,
+                 integrator: str = 'ode',
+                 ode_rtol: float = 1e-4,
+                 ode_atol: float = 1e-6,
                  n_events_accepted: int = None,
                  offset_shrinkage: float = 0.0,
                  x_0: np.ndarray = None,
@@ -53,7 +58,12 @@ class ZigZagSampler(Sampler):
             n_max: The number of events to sample. Default is 1000.
             t_max: The maximum time to sample. Default is None.
             gamma: The refresh rate parameter for the ZigZag process. Default is 1e-6 to avoid zero division.
-            dt: The time step for the ZigZag process. Default is 0.001.
+            dt: The time step for the 'fixed' integrator. Default is 0.001.
+            integrator: Event-time integrator for the general (non-analytic) rate
+                path: 'ode' uses adaptive scipy.solve_ivp event detection (default),
+                'fixed' uses the legacy fixed-step trapezoidal march.
+            ode_rtol: Relative tolerance for the 'ode' integrator. Default 1e-4.
+            ode_atol: Absolute tolerance for the 'ode' integrator. Default 1e-6.
             n_events_accepted: Number of accepted events. Default is None.
             offset_shrinkage: The shrinkage parameter for the offset. Default is 0.0.
             x_0: Initial position. Default is None.
@@ -91,11 +101,22 @@ class ZigZagSampler(Sampler):
         self._iter = 0
         self._gamma = gamma
         self._dt = dt
+        self._integrator = integrator
+        self._ode_rtol = ode_rtol
+        self._ode_atol = ode_atol
+        # General (non-analytic) event-time generator: adaptive ODE or fixed step.
+        self._general_inverse_cdf = (self._inverse_cdf_ode
+                                     if integrator == 'ode' else
+                                     self._inverse_cdf)
+        # Instrumentation: rate evaluations spent inside the event-time generator.
+        self._n_rate_evals = 0
+        self._rate_evals_per_event = []
         self.offset = np.zeros(self._dim)
         self._offset_history = np.zeros((self._n_max, self._dim))
         self._n_accepted = 0
         self._n_accepted_0 = n_events_accepted
-        self._accepted_iters = np.zeros(self._n_accepted_0, dtype=int)
+        self._accepted_iters = np.zeros(
+            self._n_accepted_0, dtype=int) if n_events_accepted else None
         self._offset_shrinkage = offset_shrinkage
         self._sub_sampling = sub_sampling
         self._thinning = False
@@ -152,15 +173,15 @@ class ZigZagSampler(Sampler):
 
             if isinstance(surrogate, NeuralNetwork):
                 self.surrogate = cast(NeuralNetwork, surrogate)
-                self._generate_event_times = self._inverse_cdf
+                self._generate_event_times = self._general_inverse_cdf
 
             if isinstance(surrogate, GaussianProcess):
                 self.surrogate = cast(GaussianProcess, surrogate)
-                self._generate_event_times = self._inverse_cdf
+                self._generate_event_times = self._general_inverse_cdf
 
             if isinstance(surrogate, DerivativeGaussianProcess):
                 self.surrogate = cast(DerivativeGaussianProcess, surrogate)
-                self._generate_event_times = self._inverse_cdf
+                self._generate_event_times = self._general_inverse_cdf
 
             if isinstance(surrogate, ConstantSurrogate):
                 self.surrogate = cast(ConstantSurrogate, surrogate)
@@ -179,7 +200,7 @@ class ZigZagSampler(Sampler):
             self._eval_times = []
 
         else:
-            self._generate_event_times = self._inverse_cdf
+            self._generate_event_times = self._general_inverse_cdf
             self._cdf_rates = self._target_rates
 
         # TODO: either implement sub-sampling or remove it
@@ -193,7 +214,32 @@ class ZigZagSampler(Sampler):
         if kwargs is not None:
             logger.warning(f'Unused kwargs: \n{kwargs}')
 
-        logger.info(f"{self.__class__.__name__} initialized.")
+        self._log_settings(surrogate)
+
+    def _log_settings(self, surrogate: SurrogateModel = None):
+        """Log the key sampler settings at initialization."""
+        event_generator = getattr(self, '_generate_event_times', None)
+        settings = {
+            'dim': self._dim,
+            'stopping': (f't_max={self._t_max}' if hasattr(self, '_t_max')
+                         else f'n_max={self._n_max}'),
+            'integrator': self._integrator,
+            'event_generator': (event_generator.__name__
+                                if event_generator is not None else None),
+            'gamma': self._gamma,
+            'offset_shrinkage': self._offset_shrinkage,
+            'thinning': self._thinning,
+            'surrogate': type(surrogate).__name__ if surrogate else None,
+        }
+        if self._integrator == 'ode':
+            settings['ode_rtol'] = self._ode_rtol
+            settings['ode_atol'] = self._ode_atol
+        else:
+            settings['dt'] = self._dt
+
+        body = '\n'.join(f'    {k}: {v}' for k, v in settings.items())
+        logger.info(f"{self.__class__.__name__} initialized with settings:\n"
+                    f"{body}")
 
     def _target_rates(self,
                       x: np.ndarray,
@@ -272,6 +318,7 @@ class ZigZagSampler(Sampler):
         integral = np.zeros(self._dim)
         rate_t0 = self._cdf_rates(self.positions[self._iter], idx_n=j)
         rate_t1 = np.zeros_like(rate_t0)
+        n_evals = 1  # one evaluation for rate_t0
 
         # advance all process until one reaches s
         while np.all(integral < s):
@@ -279,11 +326,15 @@ class ZigZagSampler(Sampler):
                 self.positions[self._iter] +
                 (taus + self._dt) * self.velocities[self._iter],
                 idx_n=j)
+            n_evals += 1
             integral += np.trapezoid(np.array([rate_t0, rate_t1]),
                                      dx=self._dt,
                                      axis=0)
             taus += self._dt
             rate_t0 = rate_t1
+
+        self._n_rate_evals += n_evals
+        self._rate_evals_per_event.append(n_evals)
 
         # find component that reached s first
         i = np.argmax((integral - s) / rate_t1)
@@ -295,6 +346,74 @@ class ZigZagSampler(Sampler):
         # logger.debug(f"taus : {taus}")
 
         return tau, i
+
+    def _inverse_cdf_ode(self) -> tuple[np.floating, np.integer]:
+        """Generate event times via adaptive ODE event detection.
+
+        Integrates the per-coordinate rates I'_d(t) = lambda_d(t), I_d(0) = 0
+        with an adaptive RK45 integrator and one terminal event per dimension at
+        I_d(t) = s_d. The first coordinate to reach its threshold is the event.
+        The adaptive step and the event root-find replace the fixed-step march of
+        :meth:`_inverse_cdf`, controlling integration error via
+        ``ode_rtol``/``ode_atol`` while typically spending far fewer rate
+        evaluations.
+
+        Returns:
+            tuple[float, int]: the event time and the dimension that flipped.
+        """
+        # recover rng from previous iteration in case of rejection
+        if self._s is None:
+            self._s = -np.log(self._rng.uniform(0, 1, self._dim))
+        s = self._s
+
+        x0 = self.positions[self._iter]
+        v = self.velocities[self._iter]
+        n_evals = 0
+
+        def fun(t, _integral):
+            nonlocal n_evals
+            n_evals += 1
+            return self._cdf_rates(x0 + t * v)
+
+        # One terminal event per coordinate: I_d(t) - s_d = 0.
+        events = []
+        for d in range(self._dim):
+
+            def hit_threshold(t, integral, d=d):
+                return integral[d] - s[d]
+
+            hit_threshold.terminal = True
+            hit_threshold.direction = 1  # each integral is monotone increasing
+            events.append(hit_threshold)
+
+        # rate >= gamma  =>  I_d(t) >= gamma * t, so coordinate d crosses s_d by
+        # t = s_d / gamma. The first crossing is therefore <= min_d s_d / gamma;
+        # capping the integration there bounds the work (and guarantees an event
+        # even if every rate sits at the gamma floor).
+        t_cap = float(np.min(s) / self._gamma)
+
+        sol = solve_ivp(fun, (0.0, t_cap), np.zeros(self._dim),
+                        method='RK45',
+                        events=events,
+                        rtol=self._ode_rtol,
+                        atol=self._ode_atol)
+
+        self._n_rate_evals += n_evals
+        self._rate_evals_per_event.append(n_evals)
+
+        # Earliest triggered event across coordinates.
+        tau = np.inf
+        j = int(np.argmin(s))
+        for d in range(self._dim):
+            if sol.t_events[d].size > 0 and sol.t_events[d][0] < tau:
+                tau = float(sol.t_events[d][0])
+                j = d
+
+        # Guaranteed finite by the t_cap bound; fall back defensively.
+        if not np.isfinite(tau):
+            tau = t_cap
+
+        return tau, j
 
     def _inverse_cdf_linear(self) -> tuple[np.floating, np.integer]:
         """Generate event times using the inverse cdf method assuming b linear rate function.
@@ -543,7 +662,19 @@ class ZigZagSampler(Sampler):
             self._offset_history = self._offset_history[
                 self._accepted_iters[:idx]]
 
+        self._log_rate_evals()
+
         logger.info("Run successfully completed.")
+
+    def _log_rate_evals(self):
+        """Log statistics on rate (surrogate/target) evaluations per event."""
+        evals = np.asarray(self._rate_evals_per_event)
+        logger.info(f"    Total rate evaluations : {self._n_rate_evals}")
+        if evals.size:
+            logger.info(
+                f"    Rate evals / event     : "
+                f"mean {evals.mean():.1f}, median {np.median(evals):.1f}, "
+                f"max {int(evals.max())} (over {evals.size} events)")
 
     def _run_budget(self):
         """Run the ZigZag sampler."""
@@ -614,7 +745,10 @@ class ZigZagSampler(Sampler):
         if not os.path.exists(folder):
             os.makedirs(folder)
 
-        data = {'n_solver_rejections': self._n_solver_rejections}
+        data = {
+            'n_solver_rejections': self._n_solver_rejections,
+            'n_rate_evals': self._n_rate_evals,
+        }
         if self._thinning:
             data['acceptance_rate'] = self.acceptance_rate
             data['offset'] = self.offset
