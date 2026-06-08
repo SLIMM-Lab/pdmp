@@ -532,6 +532,10 @@ class GaussianMixture(Distribution):
                    rng=rng,
                    seed=seed)
 
+    @property
+    def dim(self) -> int:
+        return self.dim_
+
     @override
     def get_sample(self, n: int = 1) -> np.ndarray:
         x = np.zeros((n, self.dim_))
