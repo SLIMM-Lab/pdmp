@@ -921,7 +921,7 @@ class JaxFemModel(Model):
             return jnp.isclose(point[2], 0., atol=1e-5)
 
         def indenter(point):
-            return (point[2] > indenter_loc) * jnp.isclose(
+            return (point[2] > indenter_loc - 1e-3) * jnp.isclose(
                 point[1], d_y, atol=1e-5)
             # return ((point[0] - d_x / 2.) ** 2 + (point[2] - d_z - 0.75) ** 2 > 1.8
             #         * jnp.isclose(point[1], d_y, atol=1e-5))

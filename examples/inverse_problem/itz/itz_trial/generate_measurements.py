@@ -412,7 +412,7 @@ def zero_dirichlet_val(point):
 
 
 def load_face(point):
-    return np.isclose(point[1], domain_y, atol=1e-3) * (point[2] > Z_THRES)
+    return np.isclose(point[1], domain_y, atol=1e-3) * (point[2] > Z_THRES - 1e-3)
 
 
 def side_faces(point):

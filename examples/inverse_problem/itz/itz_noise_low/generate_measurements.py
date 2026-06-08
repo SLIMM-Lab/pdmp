@@ -568,7 +568,7 @@ def _make_bc_fns(domain_x, domain_y, domain_z, z_thres):
         return 0.
 
     def load_face(point):
-        return np.isclose(point[1], domain_y, atol=1e-3) * (point[2] > z_thres)
+        return np.isclose(point[1], domain_y, atol=1e-3) * (point[2] > z_thres - 1e-3)
 
     def side_faces(point):
         return (np.isclose(point[0], 0., atol=1e-5) +
