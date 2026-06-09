@@ -136,6 +136,7 @@ def test_fixed_step_hang_safe_on_zero_bounce_rate():
 
 
 def run_zigzag(target, integrator, t_max=500.0, seed=0, **kw):
+
     zz = ZigZagSampler(target=target,
                        t_max=t_max,
                        integrator=integrator,

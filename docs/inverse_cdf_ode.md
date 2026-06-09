@@ -206,14 +206,15 @@ coordinates and returns `(τ, j)`, where `j` is the dimension that flipped.
 
 The baseline `_inverse_cdf` evaluates the rate on a uniform grid of width
 `int_dt` and accumulates a trapezoidal sum until the running integral exceeds
-`S`, then linearly interpolates the last step. Its cost and accuracy are both
-dictated by a single hand-tuned `int_dt`:
+`S`, then backs off across the last step (the **second-order back-off**
+described below). Its cost and accuracy are both dictated by a single hand-tuned
+`int_dt`:
 
 | | Fixed step (`_inverse_cdf`) | Adaptive ODE (`_inverse_cdf_ode`) |
 |---|---|---|
 | Integrator | Trapezoid, step `int_dt` | RK45, adaptive step |
 | Error control | Implicit in `int_dt` | Explicit via `ode_rtol`, `ode_atol` |
-| Event location | Linear interpolation on last step | Brent root-find on dense interpolant |
+| Event location | Second-order back-off on last step (exact for linear rates) | Brent root-find on dense interpolant |
 | Cost | ∝ `τ / int_dt` rate evals | Few RK stages between adaptive steps |
 | Failure mode | Stalls if rate ≈ 0 for long | Bounded by integration cap |
 
@@ -224,7 +225,50 @@ than by a global step you must guess. The companion study
 `examples/bps_event_study/integration_scheme_study.py` quantifies the
 accuracy/cost trade-off on a mildly non-Gaussian target where the integration
 scheme genuinely matters (a single Gaussian has a piecewise-linear rate that the
-trapezoid already integrates almost exactly, so it is *not* a useful test case).
+trapezoid — with the second-order back-off — integrates *exactly* away from the
+kink, so it is *not* a useful test case).
+
+---
+
+## The final back-off over the last step
+
+The trapezoidal march overshoots: the loop accumulates full `int_dt` steps until
+the running integral first exceeds `S`, landing somewhere *inside* the final
+step. A correction then walks the time back from the end of that step to the true
+crossing `τ`.
+
+Let `O = integral − S` be the overshoot, and let the rate vary linearly across
+the last step from `rate_start` (at `τ − int_dt`) to `rate_t1` (at `τ`), with
+slope `a = (rate_t1 − rate_start) / int_dt`. The back-off distance `Δ` must
+satisfy `∫` over the last `Δ` `= O`, i.e. the quadratic
+
+```
+(a/2)·Δ² − rate_t1·Δ + O = 0,        τ ← τ − Δ.
+```
+
+The implementation takes the rationalised (numerically stable) root
+
+```python
+Δ = 2·O / (rate_t1 + sqrt(rate_t1² − 2·a·O))
+```
+
+which avoids cancellation / division by a small slope and **reduces to the
+constant-rate formula `Δ = O / rate_t1` as `a → 0`**.
+
+Why second order matters: the constant-rate back-off `Δ = O / rate_t1` (assuming
+the rate is flat over the overshoot) is only *first* order and leaves an
+`O(int_dt²)` error in `τ` **even when the rate is exactly linear**. The quadratic
+solve above is *exact* for a linear rate. So on a Gaussian — whose rate
+`λ(t) = max(0, −⟨∇U, v⟩) + γ` is piecewise linear along every ray — the fixed
+scheme reproduces the event time to machine precision, except for the rare events
+where the single `max(0, ·)` kink falls inside the last step (those keep an
+`O(int_dt²)` error). The same back-off is applied per coordinate in the ZigZag
+(`zigzag.py`), to the component selected as the earliest crossing.
+
+The accuracy check `examples/bps_event_study/gaussian_integration_accuracy.py`
+confirms this: against a tight ODE reference the *median* first-event error sits
+at ~1e-16 across step sizes, while only the *max* error (the kink-in-last-step
+events) scales as `O(int_dt²)`.
 
 ---
 
@@ -276,7 +320,9 @@ sampler = BouncyParticleSampler(
 - `pdmp/zigzag.py` — `ZigZagSampler._inverse_cdf_ode`
   (ZigZag, vector ODE with one event per coordinate).
 - `pdmp/bouncy_particle.py` / `pdmp/zigzag.py` — `_inverse_cdf`
-  (fixed-step trapezoidal baseline solving the same equation).
+  (fixed-step trapezoidal baseline with the second-order back-off).
 - `tests/test_event_integration.py` — verifies the ODE generator is selected and
   agrees with the baseline.
 - `examples/bps_event_study/integration_scheme_study.py` — accuracy/cost study.
+- `examples/bps_event_study/gaussian_integration_accuracy.py` — verifies the
+  fixed scheme is exact (to machine precision) on a Gaussian away from the kink.

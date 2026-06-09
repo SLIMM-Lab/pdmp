@@ -318,6 +318,7 @@ class ZigZagSampler(Sampler):
         integral = np.zeros(self._dim)
         rate_t0 = self._cdf_rates(self.positions[self._iter], idx_n=j)
         rate_t1 = np.zeros_like(rate_t0)
+        rate_start = rate_t0  # rates at the start of the last integration step
         n_evals = 1  # one evaluation for rate_t0
 
         # advance all process until one reaches s
@@ -331,6 +332,7 @@ class ZigZagSampler(Sampler):
                                      dx=self._dt,
                                      axis=0)
             taus += self._dt
+            rate_start = rate_t0  # kept for the second-order back-off below
             rate_t0 = rate_t1
 
         self._n_rate_evals += n_evals
@@ -339,8 +341,16 @@ class ZigZagSampler(Sampler):
         # find component that reached s first
         i = np.argmax((integral - s) / rate_t1)
 
-        # linear correction to last step
-        tau = taus[i] - (integral[i] - s[i]) / rate_t1[i]
+        # Second-order back-off over the final step for the selected component.
+        # The rate varies linearly from rate_start[i] (at taus[i] - dt) to
+        # rate_t1[i] (at taus[i]); solving the exact quadratic for the overshoot
+        # removes the O(dt^2) error of the constant-rate correction and is exact
+        # for piecewise-linear rates. The rationalized root stays numerically
+        # stable and reduces to (integral - s) / rate_t1 as the slope -> 0.
+        over = integral[i] - s[i]
+        a = (rate_t1[i] - rate_start[i]) / self._dt
+        disc = rate_t1[i]**2 - 2.0 * a * over
+        tau = taus[i] - 2.0 * over / (rate_t1[i] + np.sqrt(max(disc, 0.0)))
 
         # logger.debug(f"S    : {s}")
         # logger.debug(f"taus : {taus}")
