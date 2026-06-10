@@ -2289,7 +2289,7 @@ def get_transformation(params: dict[str, Any],
         x_0 = params.get('x_0', None)
 
         if b is None and base_object is not None:
-            b = find_mean(base_object, x_0=x_0)
+            b = find_mean(base_object, x_0=x_0, trace_file=None)
             params['b'] = b
 
         if M is None and base_object is not None:
@@ -2753,6 +2753,10 @@ def find_mean(target: Distribution,
 
         if not success:
             x_0 = np.zeros(target.dim)
+
+    # Flatten to a 1-D parameter vector. Some targets (e.g. GaussianMixture)
+    # return samples shaped (1, dim) from get_sample, which BFGS rejects.
+    x_0 = np.asarray(x_0, dtype=float).reshape(-1)
 
     if trace_file is not None:
         dim = len(x_0)

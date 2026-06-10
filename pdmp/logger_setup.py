@@ -41,7 +41,8 @@ def setup_logger(name: str) -> logging.Logger:
 def setup_file_handler(logger: logging.Logger,
                        log_dir: str,
                        log_file: str = "mcmc_run.log",
-                       level="INFO"):
+                       level="INFO",
+                       append: bool = False):
     """Setting up the file handler for the logger.
 
     Args:
@@ -49,18 +50,22 @@ def setup_file_handler(logger: logging.Logger,
         log_dir: The directory where the log file will be created.
         log_file: The name of the log file. Defaults to "mcmc_run.log".
         level: The logging level for the file handler. Defaults to "INFO".
+        append: If True, keep any existing log file and append to it (used when
+            resuming an interrupted run); if False, overwrite it (a fresh
+            start). Defaults to False.
     """
 
     # create log dir and set log path
     os.makedirs(log_dir, exist_ok=True)
     log_path = os.path.join(log_dir, log_file)
 
-    # remove old log-file if exists
-    if os.path.exists(log_path):
+    # On a fresh start, remove any old log; on resume, keep it and append so the
+    # log file is continuous across the chain of restarts.
+    if not append and os.path.exists(log_path):
         os.remove(log_path)
 
     # set up file_handler
-    file_handler = logging.FileHandler(log_path)
+    file_handler = logging.FileHandler(log_path, mode='a' if append else 'w')
     file_handler.setLevel(level)
     if logger.hasHandlers():
         formatter = logger.handlers[0].formatter
