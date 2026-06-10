@@ -5,7 +5,7 @@ import numpy as np
 import yaml
 
 from pdmp import logger
-from pdmp.distributions import Distribution, CubicDistribution, JointDistribution, MultivariateNormal, Posterior, TransformedDistribution, TransformedLikelihood
+from pdmp.distributions import Distribution, CubicDistribution, GaussianMixture, JointDistribution, MultivariateNormal, Posterior, TransformedDistribution, TransformedLikelihood
 from pdmp.distributions import get_prior, get_likelihood
 from pdmp.forward_model import get_model
 from pdmp.sampler import Sampler, SAMPLER_REGISTRY
@@ -35,6 +35,9 @@ def get_target(config: dict[str, Any],
 
     elif config['name'] == 'Gaussian':
         return MultivariateNormal.from_dict(config, rng=rng)
+
+    elif config['name'] == 'GaussianMixture':
+        return GaussianMixture.from_dict(config, rng=rng)
 
     elif config['name'] == 'BayesianInverse':
         # check if config has the necessary keys
