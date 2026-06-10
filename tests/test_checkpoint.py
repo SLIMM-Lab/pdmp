@@ -62,6 +62,51 @@ def test_resume_is_bit_identical(SamplerCls, tmp_path):
     assert s2._rng.bit_generator.state == ref._rng.bit_generator.state
 
 
+def test_gp_surrogate_reload_is_bit_identical(tmp_path):
+    """A GP surrogate trained once and reloaded from disk must reproduce its
+    predictions (and hence the sample path) bit-for-bit.
+
+    This mirrors the fresh-vs-resume flow in ``run_inference.py``: each launch
+    rebuilds the target + surrogate from the same seed, so the (rebuilt) Laplace
+    base is identical; the reloaded GP restores the exact trained state instead
+    of retraining. Kept small so it runs in a couple of seconds.
+    """
+    import torch
+    from pdmp.surrogates import GaussianProcess
+
+    torch.set_default_dtype(torch.float64)
+
+    def build(train_on_init, reload_path=None):
+        # One shared rng for target + surrogate, freshly seeded per "launch".
+        rng = np.random.default_rng(SEED)
+        gp = GaussianProcess(make_target(), rng=rng, n_samples=20,
+                             n_restarts=3, lbfgs_steps=20,
+                             train_on_init=train_on_init)
+        if reload_path is not None:
+            gp.load_model(reload_path)
+        return gp
+
+    save_dir = str(tmp_path / "surrogate")
+
+    # "Fresh run": trains, then persists (train() also auto-saves, but be explicit).
+    gp_fresh = build(train_on_init=True)
+    gp_fresh.save_model(save_dir)
+    # train_data.pt is the exact binary round-trip that guarantees the match.
+    assert (tmp_path / "surrogate" / "train_data.pt").exists()
+
+    # "Resumed run": same seed, no retraining, reload from disk.
+    gp_resumed = build(train_on_init=False, reload_path=save_dir)
+
+    xs = np.random.default_rng(SEED + 7).normal(size=(8, 2))
+    grad_fresh = np.array([gp_fresh.grad(x) for x in xs])
+    grad_resumed = np.array([gp_resumed.grad(x) for x in xs])
+    eval_fresh = np.array([gp_fresh.eval(x) for x in xs])
+    eval_resumed = np.array([gp_resumed.eval(x) for x in xs])
+
+    assert np.array_equal(grad_fresh, grad_resumed)
+    assert np.array_equal(eval_fresh, eval_resumed)
+
+
 @pytest.mark.parametrize("SamplerCls", [ZigZagSampler, BouncyParticleSampler])
 def test_load_state_dict_rejects_mismatched_config(SamplerCls):
     """A checkpoint from a differently-sized run must not be silently loaded."""

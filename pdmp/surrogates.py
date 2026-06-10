@@ -1445,10 +1445,20 @@ class GaussianProcessBase(SurrogateModel, ABC):
         self.train(**self._training_params)
 
     def save_model(self, path: str = None):
-        """Save the neural network model to a file.
+        """Save the Gaussian process model to disk.
+
+        Writes ``model_params.th`` (the GPyTorch state dict) plus the training
+        data in two forms:
+
+        * ``x_data.dat`` / ``y_data.dat`` -- human-readable text, also consumed
+          by analysis scripts (e.g. ``pairplot_xi.py``).
+        * ``train_data.pt`` -- binary tensors used for reloading. The text
+          dumps go through ``%.18e`` and are not guaranteed to round-trip a
+          float64 to the last bit; this binary copy is exact, so a reloaded
+          model reproduces predictions (and hence the sample path) bit-for-bit.
 
         Args:
-            path: The path to the file. Default is 'model_data'.
+            path: The directory to write to. Default is ``self._data_path``.
         """
 
         if path is None:
@@ -1461,21 +1471,34 @@ class GaussianProcessBase(SurrogateModel, ABC):
                    os.path.join(path, 'model_params.th'))
         np.savetxt(os.path.join(path, 'x_data.dat'), self._x_data.numpy())
         np.savetxt(os.path.join(path, 'y_data.dat'), self._y_data.numpy())
+        torch.save({'x': self._x_data, 'y': self._y_data},
+                   os.path.join(path, 'train_data.pt'))
 
     def load_model(self, path: str = 'model_data'):
-        """Load the neural network model from a file.
+        """Restore a Gaussian process model saved by :meth:`save_model`.
+
+        The training data is read from the exact binary ``train_data.pt`` when
+        present, falling back to the lossy ``x_data.dat`` / ``y_data.dat`` text
+        files for models saved before that file existed.
 
         Args:
-            path: The path to the file. Default is 'model_data'.
+            path: The directory to read from. Default is ``'model_data'``.
         """
 
         model_params = torch.load(os.path.join(path, 'model_params.th'))
-        self._x_data = torch.tensor(np.loadtxt(os.path.join(
-            path, 'x_data.dat')),
-                                    dtype=dtype)
-        self._y_data = torch.tensor(np.loadtxt(os.path.join(
-            path, 'y_data.dat')),
-                                    dtype=dtype)
+
+        train_data_path = os.path.join(path, 'train_data.pt')
+        if os.path.exists(train_data_path):
+            train_data = torch.load(train_data_path)
+            self._x_data = train_data['x'].to(dtype)
+            self._y_data = train_data['y'].to(dtype)
+        else:
+            self._x_data = torch.tensor(np.loadtxt(
+                os.path.join(path, 'x_data.dat')),
+                                        dtype=dtype)
+            self._y_data = torch.tensor(np.loadtxt(
+                os.path.join(path, 'y_data.dat')),
+                                        dtype=dtype)
 
         self._model.load_state_dict(model_params)
         self._model.set_train_data(self._x_data, self._y_data, strict=False)
