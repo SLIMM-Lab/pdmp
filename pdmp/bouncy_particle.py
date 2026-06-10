@@ -37,7 +37,7 @@ class BouncyParticleSampler(Sampler):
         '_iter', 'times', 'positions', 'velocities',
         '_n_rate_evals', '_rate_evals_per_event', '_n_solver_rejections',
         '_n_accepted', '_accepted_iters', '_offset_history',
-        '_offset', '_s', '_eval_times', '_times_all',
+        '_offset', '_s', '_refresh_time', '_eval_times', '_times_all',
     )
 
     def __init__(self,
@@ -117,6 +117,12 @@ class BouncyParticleSampler(Sampler):
         self._gamma = gamma
         self._offset = 0.0
         self._offset_history = np.zeros((self._n_max, self._dim))
+        # Cached RNG draws for the next event proposal: the bounce threshold
+        # s = -log(U) and the refresh time ~ Exp(refresh_rate). They are drawn
+        # lazily and reused across an m > M rollback (see _poisson_thinning), so
+        # reverting an event does not bias the sampler toward shorter intervals.
+        self._s = None
+        self._refresh_time = None
         self._thinning = False
         self._n_accepted = 0
         self._n_accepted_0 = n_events_accepted
@@ -173,7 +179,6 @@ class BouncyParticleSampler(Sampler):
         # Setup surrogate model if provided
         if surrogate is not None:
             self._thinning = True
-            self._s = None
             self.surrogate = surrogate
             # Select the correct event time generation method based on surrogate type
             if isinstance(surrogate, LaplaceSurrogate):
@@ -274,11 +279,16 @@ class BouncyParticleSampler(Sampler):
         Returns:
         tuple[float, int]: The generated event time and event type (0 for bounce, 1 for refresh)
         """
-        # Sample exponential time for next event
-        s = -np.log(self._rng.uniform())
+        # recover rng from previous iteration in case of rejection
+        if self._s is None:
+            self._s = -np.log(self._rng.uniform())
+        s = self._s
 
-        # Sample exponential time for next refresh
-        refresh_time = self._rng.exponential(scale=1.0 / self._refresh_rate)
+        # Sample exponential time for next refresh (reused across a rollback).
+        if self._refresh_time is None:
+            self._refresh_time = self._rng.exponential(
+                scale=1.0 / self._refresh_rate)
+        refresh_time = self._refresh_time
 
         # Calculate next bounce time. Integration is capped at refresh_time:
         # the bounce time is only used when it precedes the refresh, so this
@@ -341,8 +351,14 @@ class BouncyParticleSampler(Sampler):
             tuple[float, int]: event time and type (0 bounce, 1 refresh).
         """
         # Sample exponential threshold for the next bounce and the next refresh.
-        s = -np.log(self._rng.uniform())
-        refresh_time = self._rng.exponential(scale=1.0 / self._refresh_rate)
+        # Both are reused across an m > M rollback (see _poisson_thinning).
+        if self._s is None:
+            self._s = -np.log(self._rng.uniform())
+        s = self._s
+        if self._refresh_time is None:
+            self._refresh_time = self._rng.exponential(
+                scale=1.0 / self._refresh_rate)
+        refresh_time = self._refresh_time
 
         x0 = self.positions[self._iter]
         v = self.velocities[self._iter]
@@ -381,11 +397,16 @@ class BouncyParticleSampler(Sampler):
         Returns:
             tuple[float, int]: The generated event time and event type (0 for bounce, 1 for refresh)
         """
-        # Sample exponential time for next event
-        S = -np.log(self._rng.uniform())
+        # recover rng from previous iteration in case of rejection
+        if self._s is None:
+            self._s = -np.log(self._rng.uniform())
+        S = self._s
 
-        # Sample exponential time for next refresh
-        refresh_time = self._rng.exponential(scale=1.0 / self._refresh_rate)
+        # Sample exponential time for next refresh (reused across a rollback).
+        if self._refresh_time is None:
+            self._refresh_time = self._rng.exponential(
+                scale=1.0 / self._refresh_rate)
+        refresh_time = self._refresh_time
 
         v = self.velocities[self._iter]
         x = self.positions[self._iter]
@@ -428,11 +449,16 @@ class BouncyParticleSampler(Sampler):
         Returns:
             tuple[float, int]: The generated event time and event type (0 for bounce, 1 for refresh)
         """
-        # Sample exponential time for next event
-        S = -np.log(self._rng.uniform())
+        # recover rng from previous iteration in case of rejection
+        if self._s is None:
+            self._s = -np.log(self._rng.uniform())
+        S = self._s
 
-        # Sample exponential time for next refresh
-        refresh_time = self._rng.exponential(scale=1.0 / self._refresh_rate)
+        # Sample exponential time for next refresh (reused across a rollback).
+        if self._refresh_time is None:
+            self._refresh_time = self._rng.exponential(
+                scale=1.0 / self._refresh_rate)
+        refresh_time = self._refresh_time
 
         rate = self._offset + self._gamma
         if rate <= 0:
@@ -477,6 +503,8 @@ class BouncyParticleSampler(Sampler):
                     f"model failure at new position "
                     f"(#{self._n_solver_rejections}). {e}")
                 self.velocities[self._iter + 1] = self.velocities[self._iter]
+                self._s = None
+                self._refresh_time = None
                 dt = self.times[self._iter + 1] - self.times[self._iter]
                 self._offset *= np.exp(-self._offset_shrinkage * dt)
                 self._offset_history[self._iter + 1] = self._offset
@@ -502,11 +530,18 @@ class BouncyParticleSampler(Sampler):
                     self.velocities[self._iter +
                                     1] = self.velocities[self._iter]
                     self._eval_times.pop()
+                    self._s = None
+                    self._refresh_time = None
                     self._n_solver_rejections += 1
                     logger.warning(
                         f"BPS iter {self._iter}: rejecting candidate bounce "
                         f"in thinning due to forward model failure "
                         f"(#{self._n_solver_rejections}). {e}")
+            else:
+                # No thinning: the bounce is a genuine event, so draw fresh
+                # randomness for the next proposal.
+                self._s = None
+                self._refresh_time = None
 
         else:  # Refresh
             # Sample new velocity from unit sphere
@@ -515,6 +550,9 @@ class BouncyParticleSampler(Sampler):
             self._n_accepted += 1
             if self._accepted_iters is not None:
                 self._accepted_iters[self._n_accepted] = self._iter + 1
+            # Genuine event -> draw fresh randomness for the next proposal.
+            self._s = None
+            self._refresh_time = None
 
         # Update offset for thinning
         dt = self.times[self._iter + 1] - self.times[self._iter]
@@ -534,6 +572,8 @@ class BouncyParticleSampler(Sampler):
                        1] = (self.positions[self._iter] +
                              T * self.velocities[self._iter])
         self.velocities[self._iter + 1] = self.velocities[self._iter]
+        self._s = None
+        self._refresh_time = None
         self._offset *= np.exp(-self._offset_shrinkage * T)
         self._offset_history[self._iter + 1] = self._offset
         self._iter += 1
@@ -563,13 +603,18 @@ class BouncyParticleSampler(Sampler):
                 f"      ...increasing offset by {delta_offset:.4e} to: {self._offset:.4f}"
             )
         elif u < (m / M):
-            # Accept bounce
+            # Accept bounce. Event consumed -> draw fresh randomness next time.
             self._n_accepted += 1
             if self._accepted_iters is not None:
                 self._accepted_iters[self._n_accepted] = self._iter + 1
+            self._s = None
+            self._refresh_time = None
         else:
-            # Reject bounce, revert to previous velocity
+            # Reject bounce, revert to previous velocity. Event consumed ->
+            # draw fresh randomness next time.
             self.velocities[self._iter + 1] = self.velocities[self._iter]
+            self._s = None
+            self._refresh_time = None
 
     def _revert_step(self):
         """
