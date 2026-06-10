@@ -30,6 +30,16 @@ class BouncyParticleSampler(Sampler):
     the target density rather than flipping individual components.
     """
 
+    # Mutable state snapshotted for resume (see Sampler.state_dict). The offset
+    # is a scalar here (_offset) unlike ZigZag's per-dimension array. Thinning-
+    # only attributes (_s, _eval_times, _times_all) are skipped when absent.
+    _CHECKPOINT_ATTRS = (
+        '_iter', 'times', 'positions', 'velocities',
+        '_n_rate_evals', '_rate_evals_per_event', '_n_solver_rejections',
+        '_n_accepted', '_accepted_iters', '_offset_history',
+        '_offset', '_s', '_eval_times', '_times_all',
+    )
+
     def __init__(self,
                  target: Distribution,
                  *,
@@ -618,12 +628,15 @@ class BouncyParticleSampler(Sampler):
                   file=sys.stdout,
                   dynamic_ncols=True,
                   disable=disable_tqdm) as pbar:
-            for i in range(1, self._n_max):
+            # Resume from the next event after the last completed one. On a
+            # fresh run _iter == 0, so this is the original range(1, n_max).
+            for i in range(self._iter + 1, self._n_max):
                 if i % self._print_every == 0:
                     pbar.clear()
                     logger.debug(f"Sampling event {i}")
                     pbar.refresh()
                 self._step()
+                self._maybe_checkpoint()
                 if self._thinning:
                     if self._n_accepted == self._n_accepted_0 - 1:
                         break
@@ -655,6 +668,7 @@ class BouncyParticleSampler(Sampler):
                     logger.debug(f"Sampling event {self._iter}")
                     pbar.refresh()
                 self._step()
+                self._maybe_checkpoint()
                 if self._iter % self._update_bar_every == 0:
                     incr = np.min(
                         (self._t_max, self.times[max(0, self._iter)])) - time
