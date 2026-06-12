@@ -86,3 +86,5 @@ sync_cluster.sh
 
 # paraview
 *.pvcc
+misc/paraview/example
+misc/cmaps/*.json
