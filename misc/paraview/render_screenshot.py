@@ -56,13 +56,15 @@ CAMERA_E = dict(
 # applied) or the name of a ParaView built-in preset (e.g. 'Fast').
 CREST_JSON = '/home/leon/Nextcloud/Documents/projects/gradient_samplers/pdmp/misc/paraview/crest.json'
 
+# 'range': [lo, hi] pins the color scale so it's identical across files; None
+# auto-fits to each file's data range (RescaleTransferFunctionToDataRange).
 FIELDS = {
     'sol': dict(assoc='POINTS', component='Magnitude', warp=True,
                 title=r'$\|u\|$', labels=[0.0, 0.25, 0.5, 0.75, 1.0],
-                camera=CAMERA_SOL, cmap=CREST_JSON),
+                camera=CAMERA_SOL, cmap=CREST_JSON, range=[0.0, 1.2]),
     'E':   dict(assoc='CELLS',  component='',          warp=False,
                 title='E',        labels=[0.0, 25, 50, 75, 100],
-                camera=CAMERA_E,   cmap='Fast'),   # None -> auto labels
+                camera=CAMERA_E,   cmap='Fast', range=[0.0, 100.0]),
 }
 
 # CLI: render.sh [field] [input.vtu] [output.png]. Field defaults to 'sol';
@@ -74,6 +76,9 @@ parser.add_argument('field', nargs='?', default='sol', choices=list(FIELDS),
 parser.add_argument('input', nargs='?', default=None, help='input .vtu (default: ./u.vtu)')
 parser.add_argument('output', nargs='?', default=None,
                     help='output .png (default: ./<field>.png)')
+parser.add_argument('--edge-width', type=float, default=None,
+                    help='draw mesh edges with this line width (Surface With '
+                         'Edges); omit for a plain Surface')
 args, _ = parser.parse_known_args()
 
 ARRAY = args.field                  # field to color by ('sol' or 'E')
@@ -89,9 +94,11 @@ ZOOM = 1.0                          # 1.0 = exact saved view; >1 zooms in, <1 zo
 # warp the geometry by the displacement field to show the deformed shape
 WARP_SCALE = 15.0                   # magnification factor for the displacements
 
-# mesh edges drawn over the colored surface ('Surface With Edges')
+# mesh edges drawn over the colored surface ('Surface With Edges'). The edge
+# width comes from --edge-width; when it's omitted we render a plain 'Surface'.
 EDGE_COLOR = '#a6a6a6'             # HTML hex color
-LINE_WIDTH = 2.0
+LINE_WIDTH = args.edge_width if args.edge_width is not None else 2.0
+REPRESENTATION = 'Surface With Edges' if args.edge_width is not None else 'Surface'
 
 # lighting — a fresh batch RenderView can render darker than the GUI. Stock
 # ParaView defaults are AMBIENT=0.0, DIFFUSE=1.0, KEY_LIGHT_INTENSITY=0.75.
@@ -122,8 +129,8 @@ view.OrientationAxesVisibility = 0   # hide the XYZ orientation indicator
 
 display = Show(source, view)
 
-# colored surface (use 'Surface With Edges' to overlay the mesh wireframe)
-display.Representation = 'Surface'
+# colored surface; --edge-width overlays the mesh wireframe ('Surface With Edges')
+display.Representation = REPRESENTATION
 display.EdgeColor = hex_to_rgb(EDGE_COLOR)
 display.LineWidth = LINE_WIDTH
 
@@ -139,10 +146,16 @@ if cfg['component']:
 else:
     ColorBy(display, (cfg['assoc'], ARRAY))
 
-# the GUI does these implicitly; in batch we must ask for them explicitly
-display.RescaleTransferFunctionToDataRange(True)
-
 lut = GetColorTransferFunction(ARRAY)
+
+# color scale range: a fixed [lo, hi] keeps the mapping identical across files
+# (so E is comparable plot-to-plot); None auto-fits to this file's data range
+# (what the GUI does implicitly). Set before ApplyPreset so the preset's control
+# points get rescaled onto this range.
+if cfg['range'] is not None:
+    lut.RescaleTransferFunction(cfg['range'][0], cfg['range'][1])
+else:
+    display.RescaleTransferFunctionToDataRange(True)
 
 # apply the field's colormap: a preset JSON file (import, then apply its preset)
 # or a ParaView built-in preset name (e.g. 'Fast')
