@@ -10,10 +10,11 @@ Takes a Laplace approximation of an inverse-problem posterior (produced by
                                     around the posterior mean, then
                                     Σ_y = J Σ_x Jᵀ.
 
-The two are run together so the user can see where they agree (smooth
-output quantities) and where they diverge (max-type quantities like
-`max_von_mises` / `max_von_mises_strain` whose argmax element switches under
-finite parameter perturbations).
+When the (optional) `ut` config block is present, both are run together so
+the user can see where they agree (smooth output quantities) and where they
+diverge (max-type quantities like `max_von_mises` / `max_von_mises_strain`
+whose argmax element switches under finite parameter perturbations). Omitting
+the `ut` block disables the unscented transform and runs only linearization.
 
 The RVE model breaks the JAX trace at the dict-output boundary (it casts
 to plain numpy / Python floats), so `jax.jacfwd` cannot be used directly.
@@ -34,10 +35,10 @@ Required config keys:
       inference_config: /…/inference/config.yaml # source of latent→physical T
       param_indices: [0, 1, 2]                   # which physical-space dims
                                                  # feed the forward model
-      ut:
-        alpha: 1.0      # sigma-point spread; alpha=1 puts points at ±√d·σ.
-        beta:  2.0      # optimal for Gaussian inputs.
-        kappa: 0.0
+      ut:                                        # OPTIONAL — omit the whole
+        alpha: 1.0      # block to disable the unscented transform and run
+        beta:  2.0      # only the linearization scheme. When present, each
+        kappa: 0.0      # key falls back to the default shown here.
       fd_step: 1.0e-3
       n_synthetic_samples: 1000
       seed: 0
@@ -58,7 +59,11 @@ from forward_uq import flatten_output  # noqa: E402
 from pdmp import logger  # noqa: E402
 from pdmp.loader import get_config  # noqa: E402
 from pdmp.forward_model import get_model  # noqa: E402
-from pdmp.distributions import MultivariateNormal, get_transformation  # noqa: E402
+from pdmp.distributions import (  # noqa: E402
+    MultivariateNormal,
+    get_transformation,
+    _safe_cholesky,
+)
 from pdmp.logger_setup import suppress_external_loggers  # noqa: E402
 
 
@@ -108,7 +113,11 @@ def unscented_sigma_points(mu, cov, alpha=1.0, beta=2.0, kappa=0.0):
     lam = alpha * alpha * (d + kappa) - d
     c = np.sqrt(d + lam)
 
-    L = np.linalg.cholesky(cov)
+    # Laplace covariances (inverse of a numerically estimated Hessian) can pick
+    # up tiny negative eigenvalues and fail a plain Cholesky. _safe_cholesky
+    # adds diagonal jitter (and clips eigenvalues as a last resort) to recover
+    # the nearest SPD factor.
+    L, _ = _safe_cholesky(cov, name='UT covariance')
 
     points = np.empty((2 * d + 1, d))
     points[0] = mu
@@ -192,27 +201,34 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
 
     # ---- Unscented transform --------------------------------------------
-    ut_cfg = mm_cfg.get('ut', {})
-    alpha = float(ut_cfg.get('alpha', 1.0))
-    beta = float(ut_cfg.get('beta', 2.0))
-    kappa = float(ut_cfg.get('kappa', 0.0))
+    # The UT is opt-in: it only runs when a `ut` block is present in the
+    # config. Omitting it falls back to the linearization scheme alone.
+    ut_cfg = mm_cfg.get('ut')
+    run_ut = ut_cfg is not None
+    if run_ut:
+        alpha = float(ut_cfg.get('alpha', 1.0))
+        beta = float(ut_cfg.get('beta', 2.0))
+        kappa = float(ut_cfg.get('kappa', 0.0))
 
-    print('--- Unscented transform ---', flush=True)
-    points, wm, wc = unscented_sigma_points(mean_full,
-                                            cov_full,
-                                            alpha=alpha,
-                                            beta=beta,
-                                            kappa=kappa)
-    sigma_outputs = []
-    for i, p in enumerate(points):
-        print(f'  sigma point {i + 1}/{len(points)}', flush=True)
-        sigma_outputs.append(f_eval(p))
-    sigma_outputs = np.asarray(sigma_outputs)
+        print('--- Unscented transform ---', flush=True)
+        points, wm, wc = unscented_sigma_points(mean_full,
+                                                cov_full,
+                                                alpha=alpha,
+                                                beta=beta,
+                                                kappa=kappa)
+        sigma_outputs = []
+        for i, p in enumerate(points):
+            print(f'  sigma point {i + 1}/{len(points)}', flush=True)
+            sigma_outputs.append(f_eval(p))
+        sigma_outputs = np.asarray(sigma_outputs)
 
-    mu_ut = (wm[:, None] * sigma_outputs).sum(axis=0)
-    diffs = sigma_outputs - mu_ut
-    cov_ut = (wc[:, None, None] * diffs[:, :, None] *
-              diffs[:, None, :]).sum(axis=0)
+        mu_ut = (wm[:, None] * sigma_outputs).sum(axis=0)
+        diffs = sigma_outputs - mu_ut
+        cov_ut = (wc[:, None, None] * diffs[:, :, None] *
+                  diffs[:, None, :]).sum(axis=0)
+    else:
+        print('--- Unscented transform: skipped (no `ut` config) ---',
+              flush=True)
 
     # ---- Linearization (central finite differences) ---------------------
     print('--- Linearization (central finite differences) ---', flush=True)
@@ -222,13 +238,14 @@ def main():
     cov_lin = J @ cov_full @ J.T
 
     # ---- Save moments ---------------------------------------------------
-    np.savetxt(os.path.join(out_dir, 'mean_ut.dat'), mu_ut)
-    np.savetxt(os.path.join(out_dir, 'cov_ut.dat'), cov_ut)
     np.savetxt(os.path.join(out_dir, 'mean_lin.dat'), mu_lin)
     np.savetxt(os.path.join(out_dir, 'cov_lin.dat'), cov_lin)
-    np.savetxt(os.path.join(out_dir, 'sigma_points.dat'), points)
-    np.savetxt(os.path.join(out_dir, 'sigma_outputs.dat'), sigma_outputs)
     np.savetxt(os.path.join(out_dir, 'jacobian.dat'), J)
+    if run_ut:
+        np.savetxt(os.path.join(out_dir, 'mean_ut.dat'), mu_ut)
+        np.savetxt(os.path.join(out_dir, 'cov_ut.dat'), cov_ut)
+        np.savetxt(os.path.join(out_dir, 'sigma_points.dat'), points)
+        np.savetxt(os.path.join(out_dir, 'sigma_outputs.dat'), sigma_outputs)
 
     legend = legend[0]
     if legend is not None:
@@ -243,20 +260,27 @@ def main():
     def _draw(mu, cov):
         return MultivariateNormal(mu, cov, rng=rng).get_sample(n_syn)
 
-    np.savetxt(os.path.join(out_dir, 'samples_ut.dat'), _draw(mu_ut, cov_ut))
     np.savetxt(os.path.join(out_dir, 'samples_lin.dat'),
                _draw(mu_lin, cov_lin))
+    if run_ut:
+        np.savetxt(os.path.join(out_dir, 'samples_ut.dat'),
+                   _draw(mu_ut, cov_ut))
 
     # ---- Summary --------------------------------------------------------
     print()
     print(f'Saved moment-matched results to {out_dir}/')
     names = legend if legend is not None else [
-        f'out[{j}]' for j in range(mu_ut.size)
+        f'out[{j}]' for j in range(mu_lin.size)
     ]
     for i, name in enumerate(names):
-        print(f'  {name}: '
-              f'UT  μ={mu_ut[i]:.4g} σ={np.sqrt(max(cov_ut[i, i], 0)):.4g} | '
-              f'LIN μ={mu_lin[i]:.4g} σ={np.sqrt(max(cov_lin[i, i], 0)):.4g}')
+        lin_str = (f'LIN μ={mu_lin[i]:.4g} '
+                   f'σ={np.sqrt(max(cov_lin[i, i], 0)):.4g}')
+        if run_ut:
+            ut_str = (f'UT  μ={mu_ut[i]:.4g} '
+                      f'σ={np.sqrt(max(cov_ut[i, i], 0)):.4g} | ')
+        else:
+            ut_str = ''
+        print(f'  {name}: {ut_str}{lin_str}')
 
 
 if __name__ == '__main__':
