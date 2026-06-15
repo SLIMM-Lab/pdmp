@@ -15,9 +15,9 @@ produced, showing where the max stress/strain occurs across the samples.
 
 Usage:
     python plot_forward_uq.py path/to/results_dir
-    python plot_forward_uq.py path/to/results_dir --columns max_stress avg_stress_xx
-    python plot_forward_uq.py path/to/results_dir --exclude max_strain_cell
-    python plot_forward_uq.py path/to/results_dir --locations max_stress_cell
+    python plot_forward_uq.py path/to/results_dir --columns max_von_mises avg_stress_xx
+    python plot_forward_uq.py path/to/results_dir --exclude max_principal_strain_cell
+    python plot_forward_uq.py path/to/results_dir --locations max_von_mises_strain_cell
 """
 
 import argparse
@@ -87,7 +87,7 @@ def resolve_selection(names, include, exclude):
 def plot_output_marginals(outputs, fig_dir, labels):
     """Histogram + KDE for each output dimension."""
     dim_out = outputs.shape[1]
-    n_cols = min(dim_out, 3)
+    n_cols = min(dim_out, 2)
     n_rows = (dim_out + n_cols - 1) // n_cols
     fig, axes = get_2d_despined_figure(nrows=n_rows,
                                        ncols=n_cols,
@@ -99,26 +99,32 @@ def plot_output_marginals(outputs, fig_dir, labels):
     for j in range(dim_out):
         ax = axes[j // n_cols, j % n_cols]
         y = outputs[:, j]
+        # Display window: central 99% of the data (1% total excluded, 0.5% at
+        # each end) so long tails don't squash the plotted range.
+        lo, hi = (float(np.percentile(y, 0.5)), float(np.percentile(y, 99.5)))
         ax.hist(y,
                 bins=40,
+                range=(lo, hi),
                 density=True,
                 alpha=0.4,
                 color='steelblue',
                 label='Histogram')
 
         kde = gaussian_kde(y)
-        grid = np.linspace(y.min(), y.max(), 300)
+        grid = np.linspace(lo, hi, 300)
         ax.plot(grid, kde(grid), color='steelblue', lw=2, label='KDE')
 
         ax.axvline(y.mean(),
                    color='steelblue',
                    lw=1.2,
                    ls='--',
-                   label=f'Empirical mean {y.mean():.3f}')
+                   label='Empirical mean')
 
+        ax.set_xlim(lo, hi)
         ax.set_xlabel(labels[j])
         ax.set_ylabel('Density' if j % n_cols == 0 else '')
-        ax.legend(fontsize=8)
+        if j == 0:
+            ax.legend(fontsize=8)
 
     for j in range(dim_out, n_rows * n_cols):
         axes[j // n_cols, j % n_cols].set_visible(False)
@@ -128,39 +134,103 @@ def plot_output_marginals(outputs, fig_dir, labels):
     plt.close(fig)
 
 
-def plot_output_pairwise(outputs, fig_dir, labels):
-    """Pairwise scatter plots of output dimensions (only if dim_out > 1)."""
-    dim_out = outputs.shape[1]
-    if dim_out < 2:
+def _kde2d_grid(x, y, xr, yr, n=80, min_pts=10):
+    """2D gaussian KDE evaluated on a grid over the window xr × yr.
+
+    Fits only on samples inside the window so a long tail doesn't inflate the
+    Scott's-rule bandwidth and oversmooth the density. Returns (xx, yy, zz) or
+    None when too few samples fall inside the window.
+    """
+    m = (x >= xr[0]) & (x <= xr[1]) & (y >= yr[0]) & (y <= yr[1])
+    if m.sum() <= min_pts:
+        return None
+    kde = gaussian_kde(np.vstack([x[m], y[m]]))
+    xs = np.linspace(xr[0], xr[1], n)
+    ys = np.linspace(yr[0], yr[1], n)
+    xx, yy = np.meshgrid(xs, ys)
+    zz = kde(np.vstack([xx.ravel(), yy.ravel()])).reshape(xx.shape)
+    return xx, yy, zz
+
+
+def _apply_style(fig):
+    """Apply the project despined figure style (cf. pdmp.plotting_utils).
+
+    Drops the top/right spines, removes the grid, and normalises spine width
+    across every axis. Ticks and labels are kept — these analysis plots are
+    quantitative. Call after fig.tight_layout(), before fig.savefig().
+    """
+    for ax in fig.axes:
+        ax.grid(False)
+        for spine in ('top', 'bottom', 'left', 'right'):
+            ax.spines[spine].set_linewidth(1.0)
+    sns.despine(fig=fig)
+
+
+def plot_output_pairwise(outputs, fig_dir, labels, max_samples=2000):
+    """Corner plot of output dimensions (only if dim_out > 1).
+
+    Lower-triangular layout: histograms on the diagonal, scatter below the
+    diagonal, blank above. Mirrors the styling of the ITZ analyze_results
+    ``_plot_pairplot`` corner plot. At most ``max_samples`` samples are used.
+    """
+    d = outputs.shape[1]
+    if d < 2:
         return
 
-    fig, axes = get_2d_despined_figure(nrows=dim_out,
-                                       ncols=dim_out,
-                                       figsize=(3 * dim_out, 3 * dim_out),
-                                       keep_ticks=True,
-                                       equal_axes=False)
-    axes = np.array(axes).reshape(dim_out, dim_out)
-    for i in range(dim_out):
-        for j in range(dim_out):
+    if len(outputs) > max_samples:
+        rng = np.random.default_rng(0)
+        idx = rng.choice(len(outputs), size=max_samples, replace=False)
+        outputs = outputs[idx]
+
+    # Per-parameter display window: the central 99% of the data, so the long
+    # tails (1% total, 0.5% at each end) don't squash the plotted range.
+    lims = [(float(np.percentile(outputs[:, k], 0.5)),
+             float(np.percentile(outputs[:, k], 99.5))) for k in range(d)]
+
+    fig, axes = plt.subplots(d, d, figsize=(2*d, 2*d))
+    axes = np.array(axes).reshape(d, d)
+    for i in range(d):
+        for j in range(d):
             ax = axes[i, j]
             if i == j:
-                y = outputs[:, i]
-                kde = gaussian_kde(y)
-                grid = np.linspace(y.min(), y.max(), 300)
-                ax.plot(grid, kde(grid), color='steelblue', lw=2, label='KDE')
-                if i == 0:
-                    ax.legend(fontsize=7)
-            else:
+                ax.hist(outputs[:, i],
+                        bins=40,
+                        range=lims[i],
+                        density=True,
+                        color='steelblue',
+                        alpha=0.5,
+                        edgecolor='none')
+                ax.set_xlim(*lims[i])
+                ax.set_xlabel(labels[i], fontsize=8)
+            elif i > j:
                 ax.scatter(outputs[:, j],
                            outputs[:, i],
                            s=2,
-                           alpha=0.3,
+                           alpha=0.25,
                            color='steelblue',
-                           label='Samples')
-            if i == dim_out - 1:
-                ax.set_xlabel(labels[j])
-            if j == 0:
-                ax.set_ylabel(labels[i])
+                           linewidths=0)
+                ax.set_xlim(*lims[j])
+                ax.set_ylim(*lims[i])
+                ax.set_xlabel(labels[j], fontsize=8)
+                ax.set_ylabel(labels[i], fontsize=8)
+            else:  # i < j : upper triangle — filled blue KDE contours
+                # Shared display window: the central 99% of the samples for
+                # this pair, so a long tail doesn't squash the contours.
+                xr, yr = lims[j], lims[i]
+                g = _kde2d_grid(outputs[:, j], outputs[:, i], xr, yr)
+                if g is not None:
+                    xx, yy, zz = g
+                    levels = np.linspace(zz.max() * 0.05, zz.max(), 7)
+                    ax.contourf(xx, yy, zz, levels=levels, cmap='Blues')
+                    ax.set_xlim(*xr)
+                    ax.set_ylim(*yr)
+                    ax.set_xlabel(labels[j], fontsize=8)
+                    ax.set_ylabel(labels[i], fontsize=8)
+                else:
+                    ax.set_visible(False)
+            ax.tick_params(labelsize=7)
+    fig.tight_layout()
+    _apply_style(fig)
     path = os.path.join(fig_dir, 'output_pairwise.pdf')
     fig.savefig(path, bbox_inches='tight')
     print(f'  Saved {path}')
@@ -299,6 +369,11 @@ def main():
                         default=None,
                         help='*_cell column names to plot as domain heatmaps '
                         '(default: all)')
+    parser.add_argument('--max-samples',
+                        type=int,
+                        default=2000,
+                        help='Maximum number of samples shown in the pairwise '
+                        'plot (randomly subsampled if exceeded; default: 2000)')
     parser.add_argument('--bins',
                         type=int,
                         default=40,
@@ -322,7 +397,8 @@ def main():
         sel_outputs = outputs[:, sel]
         sel_labels = [labels[i] for i in sel]
         plot_output_marginals(sel_outputs, fig_dir, sel_labels)
-        # plot_output_pairwise(sel_outputs, fig_dir, sel_labels)
+        plot_output_pairwise(sel_outputs, fig_dir, sel_labels,
+                             max_samples=args.max_samples)
         # plot_input_output_scatter(samples, sel_outputs, fig_dir, sel_labels)
     else:
         print('  No columns selected for distribution plots')

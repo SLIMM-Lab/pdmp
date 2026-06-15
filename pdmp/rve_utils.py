@@ -337,6 +337,56 @@ def compute_von_mises_from_cell(sigma_cells, nu_cell):
     return vm
 
 
+def compute_von_mises_strain_from_cell(eps_cells):
+    """Von Mises equivalent (distortional) strain per cell.
+
+    The strain analog of the von Mises stress, defined as
+    ``sqrt(2/3 * eps'_ij eps'_ij)`` with ``eps'`` the deviatoric strain.
+    Under plane strain ``eps_zz = 0`` exactly, so no material parameter is
+    needed.
+
+    Parameters
+    ----------
+    eps_cells : ndarray (num_cells, 2, 2)
+        In-plane (small-strain) tensor per cell.
+
+    Returns
+    -------
+    ndarray (num_cells,)
+    """
+    e11 = eps_cells[:, 0, 0]
+    e22 = eps_cells[:, 1, 1]
+    e12 = eps_cells[:, 0, 1]
+    e33 = 0.0  # plane strain
+    return np.sqrt((2.0 / 9.0) * ((e11 - e22)**2 + (e22 - e33)**2 +
+                                  (e33 - e11)**2) + (4.0 / 3.0) * e12**2)
+
+
+def compute_max_principal_strain_from_cell(eps_cells):
+    """Maximum principal (tensile) strain per cell.
+
+    Largest eigenvalue of the strain tensor; relevant for tensile/cracking
+    failure. The in-plane principal strains are
+    ``e_avg +/- R`` and the out-of-plane principal strain is ``eps_zz = 0``
+    (plane strain), so the maximum is ``max(e_avg + R, 0)``.
+
+    Parameters
+    ----------
+    eps_cells : ndarray (num_cells, 2, 2)
+        In-plane (small-strain) tensor per cell.
+
+    Returns
+    -------
+    ndarray (num_cells,)
+    """
+    e11 = eps_cells[:, 0, 0]
+    e22 = eps_cells[:, 1, 1]
+    e12 = eps_cells[:, 0, 1]
+    e_avg = 0.5 * (e11 + e22)
+    R = np.sqrt((0.5 * (e11 - e22))**2 + e12**2)
+    return np.maximum(e_avg + R, 0.0)
+
+
 # ── LinearElasticRVE problem ───────────────────────────────────────────
 
 

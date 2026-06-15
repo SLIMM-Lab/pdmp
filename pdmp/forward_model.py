@@ -1454,8 +1454,8 @@ class RVEModel:
         'cell_strains',
         'displacements',
         'max_von_mises',
-        'max_stress',
-        'max_strain',
+        'max_von_mises_strain',
+        'max_principal_strain',
     }
     VOIGT_COMPONENTS = {'xx': (0, 0), 'yy': (1, 1), 'xy': (0, 1)}
     TENSOR_QUANTITIES = {
@@ -1469,11 +1469,11 @@ class RVEModel:
         'avg_strain_yy': r'$\varepsilon_{yy}^M$',
         'avg_strain_xy': r'$\varepsilon_{xy}^M$',
         'max_von_mises': r'$\sigma_\mathrm{VM}^\mathrm{max}$',
-        'max_stress': r'$\sigma^\mathrm{max}$',
-        'max_strain': r'$\varepsilon^\mathrm{max}$',
+        'max_von_mises_strain': r'$\varepsilon_\mathrm{VM}^\mathrm{max}$',
+        'max_principal_strain': r'$\varepsilon_\mathrm{I}^\mathrm{max}$',
         'max_von_mises_cell': r'cell$(\sigma_\mathrm{VM}^\mathrm{max})$',
-        'max_stress_cell': r'cell$(\sigma^\mathrm{max})$',
-        'max_strain_cell': r'cell$(\varepsilon^\mathrm{max})$',
+        'max_von_mises_strain_cell': r'cell$(\varepsilon_\mathrm{VM}^\mathrm{max})$',
+        'max_principal_strain_cell': r'cell$(\varepsilon_\mathrm{I}^\mathrm{max})$',
     }
 
     def __init__(self,
@@ -1691,15 +1691,21 @@ class RVEModel:
         Shared between :class:`RVEModel` and :class:`PerFiberRVEModel` so the
         post-solve quantity extraction stays in one place.
         """
-        from pdmp.rve_utils import compute_von_mises_from_cell
+        from pdmp.rve_utils import (
+            compute_von_mises_from_cell,
+            compute_von_mises_strain_from_cell,
+            compute_max_principal_strain_from_cell,
+        )
 
         result = {}
         needs_stress = any(
-            q in self.quantities for q in
-            ['avg_stress', 'cell_stresses', 'max_von_mises', 'max_stress'])
-        needs_strain = any(
             q in self.quantities
-            for q in ['avg_strain', 'cell_strains', 'max_strain'])
+            for q in ['avg_stress', 'cell_stresses', 'max_von_mises'])
+        needs_strain = any(
+            q in self.quantities for q in [
+                'avg_strain', 'cell_strains', 'max_von_mises_strain',
+                'max_principal_strain'
+            ])
 
         sigma_avg = sigma_cell = None
         if needs_stress:
@@ -1744,18 +1750,18 @@ class RVEModel:
                 cell = int(np.argmax(vm))
                 result[q] = float(vm[cell])
                 result['max_von_mises_cell'] = cell
-            elif q == 'max_stress':
-                per_cell = np.abs(np.array(sigma_cell)).reshape(
-                    sigma_cell.shape[0], -1).max(axis=1)
-                cell = int(np.argmax(per_cell))
-                result[q] = float(per_cell[cell])
-                result['max_stress_cell'] = cell
-            elif q == 'max_strain':
-                per_cell = np.abs(np.array(eps_cell)).reshape(
-                    eps_cell.shape[0], -1).max(axis=1)
-                cell = int(np.argmax(per_cell))
-                result[q] = float(per_cell[cell])
-                result['max_strain_cell'] = cell
+            elif q == 'max_von_mises_strain':
+                eps_vm = compute_von_mises_strain_from_cell(
+                    np.array(eps_cell))
+                cell = int(np.argmax(eps_vm))
+                result[q] = float(eps_vm[cell])
+                result['max_von_mises_strain_cell'] = cell
+            elif q == 'max_principal_strain':
+                eps_p = compute_max_principal_strain_from_cell(
+                    np.array(eps_cell))
+                cell = int(np.argmax(eps_p))
+                result[q] = float(eps_p[cell])
+                result['max_principal_strain_cell'] = cell
 
         return result
 

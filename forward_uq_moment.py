@@ -12,8 +12,8 @@ Takes a Laplace approximation of an inverse-problem posterior (produced by
 
 The two are run together so the user can see where they agree (smooth
 output quantities) and where they diverge (max-type quantities like
-`max_von_mises` / `max_strain` whose argmax element switches under finite
-parameter perturbations).
+`max_von_mises` / `max_von_mises_strain` whose argmax element switches under
+finite parameter perturbations).
 
 The RVE model breaks the JAX trace at the dict-output boundary (it casts
 to plain numpy / Python floats), so `jax.jacfwd` cannot be used directly.

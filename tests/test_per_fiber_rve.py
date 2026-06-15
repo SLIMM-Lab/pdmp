@@ -10,7 +10,59 @@ import jax
 jax.config.update("jax_enable_x64", True)
 
 from pdmp.distributions import PerFiberEmpiricalMixture
-from pdmp.rve_utils import compute_per_fiber_distance_assignment
+from pdmp.rve_utils import (
+    compute_per_fiber_distance_assignment,
+    compute_von_mises_strain_from_cell,
+    compute_max_principal_strain_from_cell,
+)
+
+
+def _eps(e11, e22, e12):
+    """Single-cell (1, 2, 2) strain tensor."""
+    return np.array([[[e11, e12], [e12, e22]]])
+
+
+def test_von_mises_strain_uniaxial():
+    # Plane-strain uniaxial: eps = diag(a, 0), eps_zz = 0.
+    # eps_vm = sqrt(2/3 * eps'_ij eps'_ij) = 2/3 * |a|.
+    a = 1e-3
+    vm = compute_von_mises_strain_from_cell(_eps(a, 0.0, 0.0))
+    np.testing.assert_allclose(vm, [2.0 / 3.0 * a], rtol=1e-12)
+
+
+def test_von_mises_strain_pure_shear():
+    # eps_12 = g -> eps_vm = 2|g|/sqrt(3).
+    g = 2e-3
+    vm = compute_von_mises_strain_from_cell(_eps(0.0, 0.0, g))
+    np.testing.assert_allclose(vm, [2.0 * g / np.sqrt(3.0)], rtol=1e-12)
+
+
+def test_von_mises_strain_equibiaxial_nonzero_under_plane_strain():
+    # eps = diag(a, a): NOT hydrostatic under plane strain (eps_zz = 0),
+    # so distortional measure is nonzero: eps_vm = 2|a|/3.
+    a = 1e-3
+    vm = compute_von_mises_strain_from_cell(_eps(a, a, 0.0))
+    np.testing.assert_allclose(vm, [2.0 / 3.0 * a], rtol=1e-12)
+
+
+def test_max_principal_strain_uniaxial_recovers_applied():
+    a = 1e-3
+    p = compute_max_principal_strain_from_cell(_eps(a, 0.0, 0.0))
+    np.testing.assert_allclose(p, [a], rtol=1e-12)
+
+
+def test_max_principal_strain_pure_shear():
+    g = 2e-3
+    p = compute_max_principal_strain_from_cell(_eps(0.0, 0.0, g))
+    np.testing.assert_allclose(p, [g], rtol=1e-12)
+
+
+def test_max_principal_strain_clamped_to_zero_in_compression():
+    # Pure in-plane compression: in-plane principals < 0, out-of-plane = 0,
+    # so the maximum principal strain is 0.
+    a = 1e-3
+    p = compute_max_principal_strain_from_cell(_eps(-a, -a, 0.0))
+    np.testing.assert_allclose(p, [0.0], atol=1e-15)
 
 
 def test_per_fiber_distance_assignment_basic():
