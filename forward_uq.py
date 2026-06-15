@@ -69,18 +69,30 @@ def main():
     # Get samples: from file or by drawing from distribution
     uq_cfg = config.get('forward_uq', {})
 
+    # `n_samples` caps how many samples are evaluated in both cases: it is the
+    # number drawn from the distribution, and the number kept (the first
+    # `n_samples`) when loading from a file. If unset, all file samples are
+    # used and the distribution default (1000) applies.
+    n_samples = int(uq_cfg['n_samples']) if 'n_samples' in uq_cfg else None
+
     if 'samples_file' in uq_cfg:
         samples = np.loadtxt(uq_cfg['samples_file'])
         if samples.ndim == 1:
             samples = samples[:, None]
-        print(
-            f'Loaded {samples.shape[0]} samples from {uq_cfg["samples_file"]}')
+        n_loaded = samples.shape[0]
+        if n_samples is not None and n_samples < n_loaded:
+            samples = samples[:n_samples]
+            print(f'Loaded {n_loaded} samples from {uq_cfg["samples_file"]}, '
+                  f'using the first {samples.shape[0]}')
+        else:
+            print(f'Loaded {samples.shape[0]} samples from '
+                  f'{uq_cfg["samples_file"]}')
     else:
         seed = int(uq_cfg.get('seed', 42))
-        n_samples = int(uq_cfg.get('n_samples', 1000))
         rng = np.random.default_rng(seed)
         distribution = get_prior(config['distribution'], rng=rng, field=field)
-        samples = distribution.get_sample(n_samples)
+        samples = distribution.get_sample(
+            n_samples if n_samples is not None else 1000)
 
     model = get_model(model_cfg, field=field)
     suppress_external_loggers()
