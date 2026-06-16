@@ -43,7 +43,8 @@ from matplotlib.lines import Line2D
 from scipy.stats import gaussian_kde
 
 # Reuse helpers from the single-distribution plotting script.
-from plot_forward_uq import LOCATION_SUFFIX, _kde2d_grid, _apply_style
+from plot_forward_uq import (LOCATION_SUFFIX, _kde2d_grid, _apply_style,
+                             hdr_levels)
 
 # Empirical first, moment-matched second.
 DEFAULT_COLORS = ('#4C72B0', '#C44E52')  # seaborn blue / red
@@ -96,32 +97,42 @@ def normal_pdf(x, mu, var):
     return np.exp(-0.5 * (x - mu) ** 2 / var) / np.sqrt(2.0 * np.pi * var)
 
 
-def gauss2d_grid(mu, cov, xr, yr, n=80):
-    """2-D Gaussian density on a grid over ``xr × yr``.
+# Both overlays are drawn as the same credible regions: the empirical KDE as
+# highest-density-region contours (see hdr_levels) and the moment-matched
+# Gaussian as the analytic ellipses enclosing the same masses. For a 2-D
+# Gaussian the mass inside Mahalanobis radius r is 1 - exp(-r²/2), so the radius
+# enclosing mass m is √(-2 ln(1 - m)).
+MASS_LEVELS = (0.5, 0.9, 0.99)
+GAUSS_RADII = tuple(float(np.sqrt(-2.0 * np.log(1.0 - m))) for m in MASS_LEVELS)
+
+
+def gauss_ellipse(mu, cov, radius, n=256):
+    """Points on the Mahalanobis-``radius`` iso-density ellipse of a 2-D Gaussian.
 
     ``mu`` is ``[mu_x, mu_y]`` and ``cov`` the corresponding 2×2 block. The
-    linearization covariance ``J Σ Jᵀ`` has rank ≤ n_inputs, so a 2×2 block of
-    strongly correlated outputs can be numerically singular (or slightly
-    indefinite). Eigenvalues are floored to a tiny fraction of the trace to keep
-    the density well-defined — the contours then collapse toward a thin ridge,
-    which faithfully shows a near-perfect linear correlation.
+    ellipse is generated parametrically from the covariance eigendecomposition
+    (``mu + radius · V diag(√w) · unit_circle``), so it stays perfectly smooth
+    at any anisotropy. This is what keeps the contours sharp: the linearization
+    covariance ``J Σ Jᵀ`` has rank ≤ n_inputs, so a 2×2 block of strongly
+    correlated outputs collapses onto a thin, tilted ridge that a Cartesian
+    density grid cannot resolve without aliasing.
 
-    Returns ``(xx, yy, zz)``.
+    Eigenvalues are floored to a tiny fraction of the trace so a numerically
+    singular (or slightly indefinite) block still yields a well-defined — if
+    very thin — ellipse, faithfully showing the near-perfect linear correlation.
+
+    Returns ``(x, y)`` arrays of length ``n`` tracing the closed ellipse.
     """
     cov = 0.5 * (np.asarray(cov, dtype=float) + np.asarray(cov, dtype=float).T)
     w, V = np.linalg.eigh(cov)
     floor = 1e-9 * max(np.trace(cov), 1e-300)
     w = np.maximum(w, floor)
-    cov = (V * w) @ V.T
 
-    xs = np.linspace(xr[0], xr[1], n)
-    ys = np.linspace(yr[0], yr[1], n)
-    xx, yy = np.meshgrid(xs, ys)
-    diff = np.stack([xx - mu[0], yy - mu[1]], axis=-1)
-    inv = (V * (1.0 / w)) @ V.T
-    quad = np.einsum('...i,ij,...j->...', diff, inv, diff)
-    norm = 2.0 * np.pi * np.sqrt(w[0] * w[1])
-    return xx, yy, np.exp(-0.5 * quad) / norm
+    t = np.linspace(0.0, 2.0 * np.pi, n)
+    circle = np.stack([np.cos(t), np.sin(t)])      # (2, n) unit circle
+    axes = V * (radius * np.sqrt(w))               # (2, 2) scaled principal axes
+    pts = np.asarray(mu)[:, None] + axes @ circle  # (2, n)
+    return pts[0], pts[1]
 
 
 def resolve_shared_columns(names_a, names_b, include, exclude):
@@ -223,7 +234,7 @@ def _subsample(x, max_samples, rng):
 
 
 def plot_pairwise(emp, mom_mean, mom_cov, labels, fig_dir, ds_labels, colors,
-                  max_samples=2000, overrides=None):
+                  max_samples=2000, overrides=None, bw_adjust=1.5):
     """Corner plot: empirical samples vs the analytical moment-matched Gaussian.
 
     Diagonal: empirical histogram + analytical 1-D Gaussian. Lower triangle:
@@ -232,6 +243,8 @@ def plot_pairwise(emp, mom_mean, mom_cov, labels, fig_dir, ds_labels, colors,
 
     ``overrides`` is an optional per-column list of ``(lo, hi)`` windows
     (``None`` entries fall back to the automatic :func:`combined_window`).
+    ``bw_adjust`` widens (>1) the empirical KDE bandwidth so the mass-enclosing
+    HDR contours stay smooth out in the low-density tail.
     """
     d = emp.shape[1]
     if d < 2:
@@ -247,12 +260,14 @@ def plot_pairwise(emp, mom_mean, mom_cov, labels, fig_dir, ds_labels, colors,
             else combined_window(emp[:, k], mom_mean[k], mom_std[k])
             for k in range(d)]
 
-    def gauss_contour(ax, j, i, xr, yr):
+    def gauss_contour(ax, j, i):
+        # Analytic iso-density ellipses. matplotlib clips the parts that fall
+        # outside the panel window via the axis limits set by each caller.
         mu = [mom_mean[j], mom_mean[i]]
         cov2 = mom_cov[np.ix_([j, i], [j, i])]
-        xx, yy, zz = gauss2d_grid(mu, cov2, xr, yr)
-        levels = np.linspace(zz.max() * 0.1, zz.max(), 5)
-        ax.contour(xx, yy, zz, levels=levels, colors=colors[1], linewidths=0.8)
+        for radius in GAUSS_RADII:
+            ex, ey = gauss_ellipse(mu, cov2, radius)
+            ax.plot(ex, ey, color=colors[1], lw=0.8)
 
     fig, axes = plt.subplots(d, d, figsize=(2 * d, 2 * d), squeeze=False)
     for i in range(d):
@@ -269,20 +284,22 @@ def plot_pairwise(emp, mom_mean, mom_cov, labels, fig_dir, ds_labels, colors,
             elif i > j:  # lower triangle — empirical scatter + Gaussian contour
                 ax.scatter(emp_s[:, j], emp_s[:, i], s=2, alpha=0.25,
                            color=colors[0], linewidths=0)
-                gauss_contour(ax, j, i, lims[j], lims[i])
+                gauss_contour(ax, j, i)
                 ax.set_xlim(*lims[j])
                 ax.set_ylim(*lims[i])
                 ax.set_xlabel(labels[j], fontsize=8)
                 ax.set_ylabel(labels[i], fontsize=8)
             else:  # upper triangle — empirical KDE + Gaussian contour
                 xr, yr = lims[j], lims[i]
-                g = _kde2d_grid(emp[:, j], emp[:, i], xr, yr)
+                g = _kde2d_grid(emp[:, j], emp[:, i], xr, yr,
+                                bw_adjust=bw_adjust)
                 if g is not None:
                     xx, yy, zz = g
-                    levels = np.linspace(zz.max() * 0.1, zz.max(), 5)
-                    ax.contour(xx, yy, zz, levels=levels,
-                               colors=colors[0], linewidths=0.8)
-                gauss_contour(ax, j, i, xr, yr)
+                    levels = hdr_levels(zz, masses=MASS_LEVELS)
+                    if levels:
+                        ax.contour(xx, yy, zz, levels=levels,
+                                   colors=colors[0], linewidths=0.8)
+                gauss_contour(ax, j, i)
                 ax.set_xlim(*xr)
                 ax.set_ylim(*yr)
                 ax.set_xlabel(labels[j], fontsize=8)
@@ -334,6 +351,10 @@ def main():
     parser.add_argument('--max-samples', type=int, default=2000,
                         help='Max points per dataset in the pairwise scatter '
                         '(default: 2000)')
+    parser.add_argument('--bw-adjust', type=float, default=1.5,
+                        help='Multiplier on the empirical KDE bandwidth for the '
+                        'pairwise contours; >1 smooths the mass-enclosing '
+                        'contours, <1 sharpens them (default: 1.5)')
     parser.add_argument('-o', '--out-dir', default=None,
                         help='Figure output dir (default: '
                         'MOMENT_DIR/figures/compare)')
@@ -378,7 +399,7 @@ def main():
                    ds_labels, args.colors, overrides=overrides)
     plot_pairwise(emp_sel, mom_mean_sel, mom_cov_sel, sel_labels, out_dir,
                   ds_labels, args.colors, max_samples=args.max_samples,
-                  overrides=overrides)
+                  overrides=overrides, bw_adjust=args.bw_adjust)
 
 
 if __name__ == '__main__':
