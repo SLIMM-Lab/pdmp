@@ -67,6 +67,15 @@ from pdmp.distributions import (  # noqa: E402
 from pdmp.logger_setup import suppress_external_loggers  # noqa: E402
 
 
+# RVEModel emits ``*_cell`` columns alongside each max-type quantity — the
+# integer index of the cell holding the extremum. These are discrete argmax
+# locations that jump between elements under parameter perturbations, so a
+# finite-difference Jacobian or unscented-transform moment of them is
+# meaningless. They are dropped before any moment matching (cf. the heatmap
+# treatment in plot_forward_uq.py).
+LOCATION_SUFFIX = '_cell'
+
+
 def build_latent_to_physical(inference_cfg):
     """Reconstruct the latent → physical transformation from an inference config.
 
@@ -186,15 +195,18 @@ def main():
                                                              dtype=float)
         return x_phys[param_indices]
 
-    legend = [None]  # captured on first call
+    legend = [None]    # kept (non-location) column labels, set on first call
+    keep_mask = [None]  # boolean mask over the flattened output, set with it
 
     def f_eval(xi_full):
         x_in = latent_to_input(xi_full)
         raw = model.eval(x_in)
         flat, leg = flatten_output(raw)
-        if legend[0] is None:
-            legend[0] = leg
-        return flat
+        if keep_mask[0] is None:
+            mask = np.array([not n.endswith(LOCATION_SUFFIX) for n in leg])
+            keep_mask[0] = mask
+            legend[0] = [n for n, k in zip(leg, mask) if k]
+        return flat[keep_mask[0]]
 
     # ---- Output dir ------------------------------------------------------
     out_dir = config.get('output', {}).get('dir', './results_moment')
