@@ -134,22 +134,52 @@ def plot_output_marginals(outputs, fig_dir, labels):
     plt.close(fig)
 
 
-def _kde2d_grid(x, y, xr, yr, n=80, min_pts=10):
+def _kde2d_grid(x, y, xr, yr, n=120, min_pts=10, bw_adjust=1.0):
     """2D gaussian KDE evaluated on a grid over the window xr × yr.
 
     Fits only on samples inside the window so a long tail doesn't inflate the
-    Scott's-rule bandwidth and oversmooth the density. Returns (xx, yy, zz) or
-    None when too few samples fall inside the window.
+    Scott's-rule bandwidth and oversmooth the density. ``bw_adjust`` scales the
+    automatic bandwidth (>1 smooths, <1 sharpens) — useful when mass-enclosing
+    contour levels reach into the bumpy low-density tail and need extra
+    smoothing. ``n`` is the per-axis grid resolution (finer = smoother contour
+    lines). Returns (xx, yy, zz) or None when too few samples fall in the window.
     """
     m = (x >= xr[0]) & (x <= xr[1]) & (y >= yr[0]) & (y <= yr[1])
     if m.sum() <= min_pts:
         return None
     kde = gaussian_kde(np.vstack([x[m], y[m]]))
+    if bw_adjust != 1.0:
+        kde.set_bandwidth(bw_method=kde.factor * bw_adjust)
     xs = np.linspace(xr[0], xr[1], n)
     ys = np.linspace(yr[0], yr[1], n)
     xx, yy = np.meshgrid(xs, ys)
     zz = kde(np.vstack([xx.ravel(), yy.ravel()])).reshape(xx.shape)
     return xx, yy, zz
+
+
+def hdr_levels(zz, masses=(0.99, 0.9, 0.5)):
+    """Density contour levels enclosing the given probability masses.
+
+    Highest-density-region (HDR) levels: sort the grid densities descending and
+    accumulate, so the level returned for mass ``m`` is the density threshold
+    whose super-level set holds a fraction ``m`` of the total grid mass. The
+    outermost contour then tracks the bulk of the samples even for highly
+    anisotropic or heavy-tailed clouds — unlike a fixed ``frac * zz.max()``
+    level, which hugs only the peak and leaves the diffuse samples outside.
+
+    Returns the levels ascending and de-duplicated, as ``contour()`` expects.
+    """
+    flat = np.sort(zz.ravel())[::-1]
+    csum = np.cumsum(flat)
+    total = csum[-1]
+    if total <= 0:
+        return []
+    csum = csum / total
+    levels = []
+    for m in masses:
+        idx = int(np.searchsorted(csum, m))
+        levels.append(float(flat[min(idx, flat.size - 1)]))
+    return sorted(set(levels))
 
 
 def _apply_style(fig):
