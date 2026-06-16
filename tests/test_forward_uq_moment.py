@@ -219,6 +219,10 @@ forward_uq_moment:
   n_synthetic_samples: 50
   seed: 0
   fd_step: 1.0e-3
+  ut:
+    alpha: 1.0
+    beta: 2.0
+    kappa: 0.0
 output:
   dir: {out_dir}
 """
