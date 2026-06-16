@@ -341,7 +341,7 @@ def plot_location_heatmaps(results_dir, fig_dir, names, labels, outputs,
         ax.set_aspect('equal')
         ax.set_xticks([])
         ax.set_yticks([])
-        ax.set_title(f'Location of {title}')
+        # ax.set_title(f'Location of {title}')
         path = os.path.join(fig_dir, f'location_{name}.pdf')
         fig.savefig(path, bbox_inches='tight')
         print(f'  Saved {path}')
