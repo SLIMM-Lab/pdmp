@@ -47,7 +47,8 @@ from plot_forward_uq import (LOCATION_SUFFIX, _kde2d_grid, _apply_style,
                              hdr_levels)
 
 # Empirical first, moment-matched second.
-DEFAULT_COLORS = ('#4C72B0', '#C44E52')  # seaborn blue / red
+# DEFAULT_COLORS = ('#DD8452', '#55A868')  # seaborn orange / green
+DEFAULT_COLORS = ('C1', 'C2')  # seaborn blue / red
 
 
 def load_empirical(results_dir):
@@ -181,7 +182,7 @@ def plot_marginals(emp, mom_mean, mom_cov, labels, fig_dir, ds_labels, colors,
     """
     d = emp.shape[1]
     mom_std = np.sqrt(np.diag(mom_cov))
-    n_cols = min(d, 2)
+    n_cols = min(d, 3)
     n_rows = (d + n_cols - 1) // n_cols
     fig, axes = plt.subplots(n_rows, n_cols,
                              figsize=(4 * n_cols, 3.5 * n_rows),
