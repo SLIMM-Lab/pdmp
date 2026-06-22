@@ -122,6 +122,49 @@ class StepSampler(Sampler):
             "The step method must be implemented in a subclass.")
 
     @override
+    def state_dict(self) -> dict:
+        """Collect the full mutable state needed to resume the run.
+
+        Mirrors :meth:`Sampler.state_dict` but keys the budget on
+        ``_n_samples`` -- step samplers count samples, not PDMP events -- so
+        the size guard in :meth:`load_state_dict` is meaningful here.
+        """
+        attrs = {
+            name: getattr(self, name)
+            for name in self._CHECKPOINT_ATTRS if hasattr(self, name)
+        }
+        return {
+            'class': type(self).__name__,
+            'dim': self._dim,
+            'n_samples': self._n_samples,
+            'rng_state': self._rng.bit_generator.state,
+            'attrs': attrs,
+        }
+
+    @override
+    def load_state_dict(self, d: dict):
+        """Restore state captured by :meth:`state_dict` into this instance.
+
+        The instance must already be constructed from the same config (same
+        class, dimension and sample budget); the checks guard against silently
+        resuming into a mismatched run.
+        """
+        if d['class'] != type(self).__name__:
+            raise ValueError(
+                f"Checkpoint is for {d['class']}, but this sampler is "
+                f"{type(self).__name__}.")
+        if d['dim'] != self._dim or d['n_samples'] != self._n_samples:
+            raise ValueError(
+                f"Checkpoint dim/n_samples ({d['dim']}, {d['n_samples']}) does "
+                f"not match this sampler ({self._dim}, {self._n_samples}).")
+
+        for name, value in d['attrs'].items():
+            setattr(self, name, value)
+        # Restore the rng last so it overrides any draws made during
+        # construction (initial state etc.).
+        self._rng.bit_generator.state = d['rng_state']
+
+    @override
     def write_data(self, folder: str = '.', precision: int = 6):
         """Write the sampler data to a file.
 
@@ -153,6 +196,15 @@ class StepSampler(Sampler):
 @register_sampler('RandomWalkMetropolis')
 class RandomWalkMetropolisSampler(StepSampler):
     """A class to perform sampling with the Random-Walk Metropolis algorithm."""
+
+    # Mutable state snapshotted for resume (see Sampler.state_dict). The
+    # preconditioner (_prec, _prec_L) is adapted during the run, so it must be
+    # captured alongside the chain and acceptance counters.
+    _CHECKPOINT_ATTRS = (
+        '_iter', 'chain', '_state', '_log_density_old',
+        '_n_accept', '_n_accept_last', '_prec', '_prec_L',
+        '_n_solver_rejections', '_proposals', '_accepted',
+    )
 
     def __init__(self,
                  target: Distribution,
@@ -236,7 +288,9 @@ class RandomWalkMetropolisSampler(StepSampler):
                   file=sys.stdout,
                   dynamic_ncols=False,
                   disable=disable_tqdm) as pbar:
-            for i in range(1, self._n_samples):
+            # Resume from the next sample after the last completed one. On a
+            # fresh run _iter == 1, so this is the original range(1, n_samples).
+            for i in range(self._iter, self._n_samples):
 
                 if i == 1000:
                     self._set_preconditioner(self._cov_factor * 2.38**2 /
@@ -256,6 +310,7 @@ class RandomWalkMetropolisSampler(StepSampler):
                         logger.info("Increase")
                     self._n_accept_last = 0
                 self._step()
+                self._maybe_checkpoint()
                 pbar.update()
         logger.info(
             f"Total acceptance rate: {self._n_accept / self._n_samples}")
