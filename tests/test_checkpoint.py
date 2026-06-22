@@ -12,6 +12,7 @@ import pytest
 from pdmp.distributions import MultivariateNormal
 from pdmp.zigzag import ZigZagSampler
 from pdmp.bouncy_particle import BouncyParticleSampler
+from pdmp.mcmc import RandomWalkMetropolisSampler
 
 
 SEED = 1234
@@ -105,6 +106,68 @@ def test_gp_surrogate_reload_is_bit_identical(tmp_path):
 
     assert np.array_equal(grad_fresh, grad_resumed)
     assert np.array_equal(eval_fresh, eval_resumed)
+
+
+# Random-Walk Metropolis adapts its preconditioner inside ``run()`` (not in
+# ``_step()``), so its resume path is exercised through the real run loop. The
+# budget is large enough to cross the i == 1000 preconditioner initialisation in
+# the *resumed* segment, proving the adapted state is carried over correctly.
+RWM_N_SAMPLES = 1500
+RWM_STOP_AT = 600
+
+
+def test_rwm_resume_is_bit_identical(tmp_path):
+    """Checkpoint a RWM chain mid-run, resume it, and assert the completed
+    chain matches an uninterrupted run exactly."""
+
+    # --- reference: one uninterrupted run ----------------------------------
+    ref = RandomWalkMetropolisSampler(make_target(), n_samples=RWM_N_SAMPLES,
+                                      rng=np.random.default_rng(SEED))
+    ref.run()
+
+    # --- interrupted run: drive the real run loop up to RWM_STOP_AT ---------
+    # Temporarily shrinking _n_samples stops run() early while reusing its exact
+    # adaptation logic; the budget is restored before the checkpoint so the
+    # size guard matches the resuming sampler.
+    s1 = RandomWalkMetropolisSampler(make_target(), n_samples=RWM_N_SAMPLES,
+                                     rng=np.random.default_rng(SEED))
+    s1._n_samples = RWM_STOP_AT
+    s1.run()
+    s1._n_samples = RWM_N_SAMPLES
+    assert s1._iter == RWM_STOP_AT
+
+    ckpt = str(tmp_path / "checkpoint.pkl")
+    s1.save_checkpoint(ckpt)
+
+    # --- resume: rebuild from the same config, load, finish ----------------
+    s2 = RandomWalkMetropolisSampler(make_target(), n_samples=RWM_N_SAMPLES,
+                                     rng=np.random.default_rng(SEED))
+    resumed_iter = s2.load_checkpoint(ckpt)
+    assert resumed_iter == RWM_STOP_AT
+    s2.run()
+
+    # --- the resumed run must equal the reference exactly ------------------
+    assert s2._iter == ref._iter
+    assert np.array_equal(s2.chain, ref.chain)
+    assert np.array_equal(s2._proposals, ref._proposals)
+    assert np.array_equal(s2._accepted, ref._accepted)
+    assert np.array_equal(s2._prec, ref._prec)
+    assert s2._n_accept == ref._n_accept
+    # The rng must end in the identical internal state.
+    assert s2._rng.bit_generator.state == ref._rng.bit_generator.state
+
+
+def test_rwm_load_state_dict_rejects_mismatched_config():
+    """A RWM checkpoint from a differently-sized run must not be loaded."""
+
+    src = RandomWalkMetropolisSampler(make_target(), n_samples=RWM_N_SAMPLES,
+                                      rng=np.random.default_rng(SEED))
+    state = src.state_dict()
+
+    dst = RandomWalkMetropolisSampler(make_target(), n_samples=RWM_N_SAMPLES + 1,
+                                      rng=np.random.default_rng(SEED))
+    with pytest.raises(ValueError):
+        dst.load_state_dict(state)
 
 
 @pytest.mark.parametrize("SamplerCls", [ZigZagSampler, BouncyParticleSampler])
