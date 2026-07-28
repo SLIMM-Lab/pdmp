@@ -1,0 +1,4 @@
+# The image build only needs environment.yml; keep the build context tiny
+# (the repo carries large meshes, results and a 1.6 GB .sif locally).
+*
+!environment.yml

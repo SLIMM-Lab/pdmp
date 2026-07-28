@@ -1,21 +1,18 @@
-image: condaforge/mambaforge:24.9.0-0   # mamba included
-
-variables:
-  MAMBA_NO_PROMPT: "1"                  # non-interactive solves
+# The environment (conda deps + jax-fem) is baked into pdmp-ci, built from the
+# Dockerfile in this repo. See the Dockerfile header for build instructions.
+#
+# There is no container registry on gitlab.tudelft.nl, so this image exists only
+# in the runner host's local Docker daemon. The pdmp runner is configured with
+# pull_policy = "if-not-present" so it uses that local copy instead of trying to
+# fetch it. Rebuild the image on the host and bump the tag here when
+# environment.yml changes.
+image: pdmp-ci:2026-07
 
 stages: [test]
 
 test:
   stage: test
-  before_script:
-    - apt-get update && apt-get install -y libglu1-mesa libgl1-mesa-glx libxft2 libxrender1 libxcursor1 libxinerama1
-
-
   script:
-    - mamba env create -p /tmp/env -f environment.yml
-    - git clone https://github.com/deepmodeling/jax-fem.git /tmp/jax-fem
-    - cd /tmp/jax-fem && git checkout c3fbcb3 && cd -
-    - mamba run -p /tmp/env pip install /tmp/jax-fem
-    - mamba run -p /tmp/env pytest --cov=pdmp
+    - pytest --cov=pdmp
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
