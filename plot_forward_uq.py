@@ -410,7 +410,7 @@ def main():
                         help='Hexbin grid size for location heatmaps')
     parser.add_argument('--color',
                         type=str,
-                        default='#4C72B0',
+                        default='C0',
                         help='Base color for the location heatmaps; the '
                         'colormap ramps from white to this color '
                         '(default: seaborn blue)')
